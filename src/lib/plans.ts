@@ -23,10 +23,11 @@ export const PLAN_ORDER: PlanName[] = ["Free", "Analyst", "Pro", "Quant"];
 export const DEFAULT_PLAN: PlanName = "Free";
 
 // ── Capabilities (boolean feature gates) ──────────────────────────────────────
+// Only list a capability here once something actually enforces it — a flag no
+// runtime code reads becomes an advertised feature the product doesn't deliver.
 export type Capability =
   | "plaidLinking" // connect a live brokerage via Plaid
-  | "weeklyBriefings" // scheduled AI market briefings
-  | "priorityProcessing"; // faster/priority model routing
+  | "weeklyBriefings"; // scheduled AI market briefings
 
 export type BillingCadence = "monthly" | "annual";
 
@@ -76,7 +77,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     capabilities: {
       plaidLinking: false,
       weeklyBriefings: false,
-      priorityProcessing: false,
     },
     watchlistLimit: 1,
     stripe: { purchasable: false },
@@ -92,7 +92,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     capabilities: {
       plaidLinking: true,
       weeklyBriefings: true,
-      priorityProcessing: false,
     },
     watchlistLimit: Infinity,
     stripe: {
@@ -112,7 +111,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     capabilities: {
       plaidLinking: true,
       weeklyBriefings: true,
-      priorityProcessing: true,
     },
     watchlistLimit: Infinity,
     stripe: {
@@ -132,7 +130,6 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     capabilities: {
       plaidLinking: true,
       weeklyBriefings: true,
-      priorityProcessing: true,
     },
     watchlistLimit: Infinity,
     stripe: {

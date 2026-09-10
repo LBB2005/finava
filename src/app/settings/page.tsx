@@ -30,6 +30,8 @@ interface UserData {
   allowDataTraining: boolean;
   locationMetadata: boolean;
   allowInvestorDNA: boolean;
+  notifyWeeklyBriefing?: boolean;
+  notifyProductUpdates?: boolean;
   stats: { conversations: number; briefings: number };
 }
 
@@ -355,19 +357,6 @@ function GeneralSection() {
   return (
     <div>
       <Head title="General" description="App-wide preferences." />
-      <Row label="Language" description="Language used across the app.">
-        <span
-          className="text-[length:var(--text-sm)] flex items-center gap-2"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          <Icon name="globe" size={14} /> English
-        </span>
-      </Row>
-      <Row label="Start screen" description="Where Finava opens when you launch the app.">
-        <span className="text-[length:var(--text-sm)]" style={{ color: "var(--color-text-secondary)" }}>
-          Chat
-        </span>
-      </Row>
       {devEnabled && (
         <Row
           label="Developer preview mode"
@@ -388,25 +377,40 @@ function GeneralSection() {
   );
 }
 
-function NotificationsSection() {
-  const [s, setS] = useState({ briefing: true, alerts: true, runs: true, product: false, email: true });
-  const set = (k: keyof typeof s) => (v: boolean) => setS((p) => ({ ...p, [k]: v }));
-  const items: [keyof typeof s, string, string][] = [
-    ["briefing", "Weekly briefing ready", "Get notified when your Monday briefing is generated."],
-    ["alerts", "Price & signal alerts", "Movements and agent signals on your watchlist and holdings."],
-    ["runs", "Agent run summaries", "A digest when a scheduled routine finishes."],
-    ["product", "Product updates", "Occasional news about new Finava features."],
-  ];
+// Only the notifications Finava can actually send are offered here. Price and
+// signal alerts, run summaries and a separate email switch were toggles backed
+// by nothing — no persistence and no delivery — so they are gone until the
+// delivery path behind them exists.
+function NotificationsSection({ userData, mutate }: { userData: UserData | undefined; mutate: () => void }) {
+  async function patch(key: string, value: boolean) {
+    await authFetch("/api/user", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: value }),
+    });
+    mutate();
+  }
+
   return (
     <div>
-      <Head title="Notifications" description="Decide what Finava notifies you about." />
-      {items.map(([k, l, d]) => (
-        <Row key={k} label={l} description={d}>
-          <Toggle checked={s[k]} onChange={set(k)} />
-        </Row>
-      ))}
-      <Row label="Email notifications" description="Also deliver the above to your inbox.">
-        <Toggle checked={s.email} onChange={set("email")} />
+      <Head title="Notifications" description="Decide what Finava emails you about." />
+      <Row
+        label="Weekly briefing"
+        description="Email your Monday briefing when it is generated."
+      >
+        <Toggle
+          checked={userData?.notifyWeeklyBriefing ?? true}
+          onChange={(v) => patch("notifyWeeklyBriefing", v)}
+        />
+      </Row>
+      <Row
+        label="Product updates"
+        description="Occasional news about new Finava features."
+      >
+        <Toggle
+          checked={userData?.notifyProductUpdates ?? false}
+          onChange={(v) => patch("notifyProductUpdates", v)}
+        />
       </Row>
     </div>
   );
@@ -1038,10 +1042,11 @@ function planFeatures(plan: PlanName): string[] {
     c.deepResearchPerMonth === Infinity
       ? "Unlimited Deep Research"
       : `${c.deepResearchPerMonth} Deep Research / mo`;
-  const feats = [dr];
+  // Credits are the limit that actually binds day to day, so lead with them —
+  // the meter in Settings → Usage counts the same unit.
+  const feats = [`${c.monthly.toLocaleString()} credits / mo`, dr];
   if (c.capabilities.plaidLinking) feats.push("Live brokerage sync");
   if (c.capabilities.weeklyBriefings) feats.push("Weekly AI briefings");
-  if (c.capabilities.priorityProcessing) feats.push("Priority processing");
   feats.push(
     c.watchlistLimit === Infinity ? "Unlimited watchlists" : `${c.watchlistLimit} watchlist`
   );
@@ -1647,7 +1652,7 @@ export default function SettingsPage() {
           {active === "general" && <GeneralSection />}
           {active === "templates" && <TemplatesSection />}
           {active === "appearance" && <AppearanceSection />}
-          {active === "notifications" && <NotificationsSection />}
+          {active === "notifications" && <NotificationsSection userData={userData} mutate={mutate} />}
           {active === "connections" && <ConnectionsSection userData={userData} />}
           {active === "account" && <ProfileSection userData={userData} mutate={mutate} />}
           {active === "privacy" && <PrivacySection userData={userData} mutate={mutate} />}

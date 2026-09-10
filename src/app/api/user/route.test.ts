@@ -193,6 +193,20 @@ describe("PATCH /api/user", () => {
     await expect(res.json()).resolves.toEqual({ ok: true });
   });
 
+  it("persists the notification preferences it offers in Settings", async () => {
+    // These toggles used to be local component state that silently reverted.
+    const res = await PATCH(new Request("http://localhost/api/user", {
+      method: "PATCH",
+      body: JSON.stringify({ notifyWeeklyBriefing: false, notifyProductUpdates: true }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(deps.settingsSet).toHaveBeenCalledWith(
+      { notifyWeeklyBriefing: false, notifyProductUpdates: true },
+      { merge: true }
+    );
+  });
+
   it("skips empty sanitized appearance updates", async () => {
     deps.sanitizeAppearance.mockReturnValueOnce({});
 

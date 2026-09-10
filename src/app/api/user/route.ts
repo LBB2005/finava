@@ -64,6 +64,8 @@ export async function GET() {
       allowDataTraining: (settings?.allowDataTraining as boolean) ?? true,
       locationMetadata: (settings?.locationMetadata as boolean) ?? true,
       allowInvestorDNA: (settings?.allowInvestorDNA as boolean) ?? true,
+      notifyWeeklyBriefing: (settings?.notifyWeeklyBriefing as boolean) ?? true,
+      notifyProductUpdates: (settings?.notifyProductUpdates as boolean) ?? false,
       appearance: settings?.appearance ?? null,
       stats: {
         conversations: convSnap.size,
@@ -86,7 +88,13 @@ export async function PATCH(request: Request) {
     // NOTE: `plan` is deliberately NOT client-writable — it is server-authoritative
     // and only the Stripe webhook (+ trial stamp) may set it. Otherwise a user
     // could self-upgrade to a paid tier with a PATCH.
-    for (const key of ["allowDataTraining", "locationMetadata", "allowInvestorDNA"]) {
+    for (const key of [
+      "allowDataTraining",
+      "locationMetadata",
+      "allowInvestorDNA",
+      "notifyWeeklyBriefing",
+      "notifyProductUpdates",
+    ]) {
       if (key in body) settingsUpdate[key] = body[key];
     }
 

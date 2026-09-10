@@ -33,7 +33,7 @@ describe("the plan table", () => {
   });
 
   it("never revokes a capability at a higher tier", () => {
-    const caps = ["plaidLinking", "weeklyBriefings", "priorityProcessing"] as const;
+    const caps = ["plaidLinking", "weeklyBriefings"] as const;
     for (const cap of caps) {
       let granted = false;
       for (const p of PLAN_ORDER) {
@@ -114,7 +114,6 @@ describe("planGranting", () => {
   it("returns the cheapest tier that unlocks the capability", () => {
     expect(planGranting("plaidLinking")).toBe("Analyst");
     expect(planGranting("weeklyBriefings")).toBe("Analyst");
-    expect(planGranting("priorityProcessing")).toBe("Pro");
   });
 });
 

@@ -93,7 +93,12 @@ const MODE_CONFIG: Record<ChatMode, { label: string; pill: string; description: 
   },
 };
 
-const MODE_ORDER: ChatMode[] = ["auto", "agent", "discover", "deep_research", "simple"];
+// Only the modes a user should have to choose between. Auto already routes to
+// simple, agent and discover on its own (see /api/classify), so offering them
+// as separate buttons asks a new user to learn five things to ask one question.
+// MODE_CONFIG keeps all five: an older conversation stored in agent/discover/
+// simple still renders its own pill label correctly.
+const MODE_ORDER: ChatMode[] = ["auto", "deep_research"];
 
 /** Tiny attachment-type glyphs (image / file-text / paperclip). */
 function AttachmentGlyph({ type }: { type: Attachment["type"] }) {
