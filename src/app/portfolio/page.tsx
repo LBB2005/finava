@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
@@ -11,14 +11,9 @@ import type { Holding, Quote } from "@/types/portfolio";
 import ConnectBrokerageButton from "@/components/portfolio/ConnectBrokerageButton";
 import ChatContextButton from "@/components/chat/ChatContextButton";
 import PageHeader from "@/components/layout/PageHeader";
-import Sparkline from "@/components/ui/Sparkline";
-import RangeToggle from "@/components/ui/RangeToggle";
 import ScorePill from "@/components/ui/ScorePill";
 import { scoreForTicker } from "@/lib/compositeScore";
-import { seedRng } from "@/lib/portfolioMock";
 
-type Period = "1D" | "1W" | "1M" | "YTD" | "1Y" | "5Y" | "ALL";
-const PERIODS: Period[] = ["1D", "1W", "1M", "YTD", "1Y", "5Y", "ALL"];
 
 // Allocation palette — navy→lighter-blue ramp from the design kit
 function segColor(i: number, n = 8) {
@@ -83,186 +78,21 @@ function KpiStat({ label, value, sub, accent }: {
 }
 
 
-const SPX_RETURNS: Record<Period, number> = {
-  "1D": 0.12, "1W": 0.8, "1M": 2.1, "YTD": 6.8, "1Y": 24.2, "5Y": 80, "ALL": 150,
-};
-const PERIOD_SCALE: Record<Period, number> = {
-  "1D": 0.002, "1W": 0.008, "1M": 0.025, "YTD": 0.08, "1Y": 0.25, "5Y": 0.72, "ALL": 1,
-};
-const PERIOD_LABELS: Record<Period, string[]> = {
-  "1D":  ["9:30", "11", "1", "3", "4"],
-  "1W":  ["Mon", "Tue", "Wed", "Thu", "Fri"],
-  "1M":  ["Wk 1", "Wk 2", "Wk 3", "Wk 4"],
-  "YTD": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-  "1Y":  ["Jul", "Sep", "Nov", "Jan", "Mar", "Jun"],
-  "5Y":  ["'21", "'22", "'23", "'24", "'25", "'26"],
-  "ALL": ["'20", "'21", "'22", "'23", "'24", "'25", "'26"],
-};
-
-// You vs S&P 500 area chart. Portfolio = filled accent area + solid line;
-// S&P 500 = dashed muted line. End dot marks the current value.
-function BenchmarkChart({
-  totalGainPct,
-  period,
-  seed,
-}: {
-  totalGainPct: number;
-  period: Period;
-  seed: string;
-}) {
-  const W = 900, H = 200;
-
-  const { portPts, spxPts, portAreaPath, lastPortPt, yourReturn, spxRet } = useMemo(() => {
-    const n = 60;
-    const yourReturn = totalGainPct * PERIOD_SCALE[period];
-    const spxRet = SPX_RETURNS[period];
-    const rng = seedRng(seed + period);
-    const port: number[] = [];
-    const spx: number[] = [];
-
-    for (let i = 0; i < n; i++) {
-      const t = i / (n - 1);
-      const pN = (rng() - 0.5) * Math.max(Math.abs(yourReturn), 1) * 0.22;
-      const sN = (rng() - 0.5) * Math.max(Math.abs(spxRet), 1) * 0.22;
-      port.push(i === n - 1 ? yourReturn : yourReturn * t + pN);
-      spx.push(i === n - 1 ? spxRet : spxRet * t + sN);
-    }
-
-    const allVals = [...port, ...spx];
-    const vMin = Math.min(...allVals, 0);
-    const vMax = Math.max(...allVals, 0);
-    const vSpan = vMax - vMin || 1;
-    const padY = 6;
-    const xp = (i: number) => (i / (n - 1)) * W;
-    const yp = (v: number) => padY + (1 - (v - vMin) / vSpan) * (H - padY * 2);
-
-    const portCoords = port.map((v, i) => [xp(i), yp(v)] as [number, number]);
-    const spxCoords = spx.map((v, i) => [xp(i), yp(v)] as [number, number]);
-
-    const portPts = portCoords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-    const spxPts = spxCoords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-
-    // Closed path for the filled area
-    const linePath = portCoords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-    const portAreaPath = `${linePath} L${W.toFixed(1)},${H} L0,${H} Z`;
-    const lastPortPt = portCoords[portCoords.length - 1];
-
-    return { portPts, spxPts, portAreaPath, lastPortPt, yourReturn, spxRet };
-  }, [totalGainPct, period, seed]);
-
-  const outperforming = yourReturn >= spxRet;
-  const labels = PERIOD_LABELS[period];
-
+/**
+ * Performance-vs-benchmark panel. The real series (`/api/portfolio/performance`)
+ * is not built yet, and a portfolio return curve is not something to approximate
+ * — so this states that plainly rather than drawing a plausible-looking line.
+ */
+function BenchmarkChart() {
   return (
-    <div>
-      <svg
-        width="100%"
-        height={H}
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        style={{ display: "block", overflow: "visible" }}
-      >
-        <defs>
-          <linearGradient id="pf-area-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.16" />
-            <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {/* Horizontal grid lines */}
-        {[0.2, 0.5, 0.8].map((f, i) => (
-          <line
-            key={i}
-            x1="0" y1={6 + f * (H - 12)} x2={W} y2={6 + f * (H - 12)}
-            stroke="var(--color-border)" strokeWidth="1" strokeDasharray="3 4" vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {/* Area fill under portfolio line */}
-        <path d={portAreaPath} fill="url(#pf-area-grad)" />
-        {/* S&P 500 — dashed muted */}
-        <polyline
-          points={spxPts}
-          fill="none"
-          stroke="var(--color-muted)"
-          strokeWidth="1.6"
-          strokeDasharray="3 4"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-        {/* Portfolio line — solid accent */}
-        <polyline
-          points={portPts}
-          fill="none"
-          stroke="var(--color-accent)"
-          strokeWidth="2.2"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-        {/* End dot */}
-        {lastPortPt && (
-          <circle
-            cx={lastPortPt[0]}
-            cy={lastPortPt[1]}
-            r="3.5"
-            fill="var(--color-accent)"
-            stroke="var(--color-bg)"
-            strokeWidth="2"
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
-      </svg>
-
-      {/* Axis labels */}
-      <div className="mono" style={{
-        display: "flex", justifyContent: "space-between",
-        fontSize: "var(--text-micro)", color: "var(--color-muted)", letterSpacing: "0.04em", marginTop: 6,
-      }}>
-        {labels.map((l, i) => <span key={l + i}>{l}</span>)}
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 18, alignItems: "center", marginTop: 8 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: "var(--text-meta)", color: "var(--color-text-secondary)" }}>
-          <span style={{ width: 14, height: 2.5, borderRadius: 2, background: "var(--color-accent)" }} />
-          You{" "}
-          <b className="mono" style={{ fontWeight: 700, color: yourReturn >= 0 ? "var(--color-bull)" : "var(--color-bear)" }}>
-            {yourReturn >= 0 ? "+" : ""}{fmt(yourReturn, 1)}%
-          </b>
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: "var(--text-meta)", color: "var(--color-text-secondary)" }}>
-          <span style={{ width: 14, height: 0, borderTop: "2.5px dashed var(--color-muted)" }} />
-          S&P 500{" "}
-          <b className="mono" style={{ fontWeight: 700, color: "var(--color-text-secondary)" }}>
-            {spxRet >= 0 ? "+" : ""}{fmt(spxRet, 1)}%
-          </b>
-        </span>
-        {Math.abs(yourReturn - spxRet) > 0.05 && (
-          <div style={{
-            marginLeft: "auto", fontSize: "var(--text-micro)", fontWeight: 700,
-            letterSpacing: "0.08em", textTransform: "uppercase",
-            padding: "2px 8px", borderRadius: "var(--radius-xs)",
-            background: outperforming
-              ? "color-mix(in oklab, var(--color-bull) 10%, transparent)"
-              : "color-mix(in oklab, var(--color-bear) 10%, transparent)",
-            color: outperforming ? "var(--color-bull)" : "var(--color-bear)",
-          }}>
-            {outperforming ? "▲" : "▼"} {fmt(Math.abs(yourReturn - spxRet), 1)}% vs index
-          </div>
-        )}
-      </div>
+    <div
+      className="empty-note flex items-center justify-center"
+      style={{ minHeight: 200, textAlign: "center", padding: "0 16px" }}
+    >
+      Performance history isn&apos;t available yet — the figures above are computed
+      from your live positions and cost basis.
     </div>
   );
-}
-
-// Seeded synthetic trend series for the holdings-table sparkline.
-function trendSeries(ticker: string, gainLossPct: number): number[] {
-  const n = 20;
-  const rng = seedRng(ticker + "trend");
-  return Array.from({ length: n }, (_, i) => {
-    const t = i / (n - 1);
-    const noise = (rng() - 0.5) * Math.max(Math.abs(gainLossPct), 2) * 0.45;
-    return i === n - 1 ? gainLossPct : gainLossPct * t + noise;
-  });
 }
 
 // Quiet shimmer block for in-cell and layout placeholders while data loads.
@@ -326,7 +156,6 @@ export default function PortfolioPage() {
     error: portfolioError, isLoading: holdingsLoading,
   } = usePortfolio();
   const [syncing, setSyncing] = useState(false);
-  const [period, setPeriod] = useState<Period>("YTD");
   const institutionName = plaidInstitutions[0]?.name ?? null;
 
   async function handleSync() {
@@ -419,10 +248,6 @@ export default function PortfolioPage() {
       ticker: r.holding.ticker,
     };
   });
-
-  const benchmarkSeed = holdings.map((h) => h.ticker).sort().join(",");
-  const ytdReturn = totalGainPct * PERIOD_SCALE["YTD"];
-  const ytdOutperform = ytdReturn - SPX_RETURNS["YTD"];
 
   const positionLabel = holdings.length === 0
     ? "NO POSITIONS"
@@ -556,9 +381,8 @@ export default function PortfolioPage() {
                     )}
                   </div>
                 </div>
-                <RangeToggle options={PERIODS} value={period} onChange={setPeriod} />
               </div>
-              <BenchmarkChart totalGainPct={totalGainPct} period={period} seed={benchmarkSeed} />
+              <BenchmarkChart />
             </div>
 
             {/* ── KPI strip ── */}
@@ -579,12 +403,6 @@ export default function PortfolioPage() {
                 label="Equity"
                 value={`$${fmt0(equityValue)}`}
                 sub={`${holdings.length} holding${holdings.length !== 1 ? "s" : ""}`}
-              />
-              <KpiStat
-                label="vs S&P 500 YTD"
-                value={`${ytdOutperform >= 0 ? "+" : ""}${fmt(ytdOutperform, 1)}%`}
-                sub="Outperformance"
-                accent={ytdOutperform >= 0 ? "var(--color-bull)" : "var(--color-bear)"}
               />
               <KpiStat
                 label="Day change"
@@ -679,7 +497,6 @@ export default function PortfolioPage() {
                         { label: "Day",       right: true  },
                         { label: "Mkt Value", right: true  },
                         { label: "Return",    right: true  },
-                        { label: "Trend",     right: true  },
                       ].map(({ label, right }) => (
                         <th
                           key={label}
@@ -764,17 +581,6 @@ export default function PortfolioPage() {
                             color: isPos ? "var(--color-bull)" : "var(--color-bear)",
                           }}>
                             {isPos ? "+" : ""}{fmt(r.gainLossPct, 1)}%
-                          </td>
-                          {/* Sparkline */}
-                          <td style={{ textAlign: "right", padding: "8px 12px" }}>
-                            <div style={{ display: "inline-block" }}>
-                              <Sparkline
-                                data={trendSeries(r.holding.ticker, r.gainLossPct)}
-                                width={68}
-                                height={22}
-                                stroke={r.gainLossPct >= 0 ? "var(--color-bull)" : "var(--color-bear)"}
-                              />
-                            </div>
                           </td>
                         </tr>
                       );

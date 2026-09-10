@@ -8,48 +8,16 @@ import { useToast } from "@/hooks/useToast";
 import { useLiveBoard } from "@/hooks/useLiveBoard";
 import { useFactorUniverse } from "@/hooks/useFactorUniverse";
 import { compositeScore } from "@/lib/compositeScore";
-import {
-  NAME_BY_TICKER,
-  type FactorScores, type Stock,
-} from "@/lib/research";
+import { type FactorScores, type Stock } from "@/lib/research";
+import { CONSTITUENT_BY_TICKER } from "@/lib/extraUniverse";
 import ScorePill from "@/components/ui/ScorePill";
 import ChatContextButton from "@/components/chat/ChatContextButton";
 import PageHeader from "@/components/layout/PageHeader";
 import AddTickerSearch from "@/components/watchlist/AddTickerSearch";
-import Sparkline from "@/components/ui/Sparkline";
 import { useChatStore } from "@/stores/chatStore";
 import { buildWatchlistSnapshot } from "@/lib/pageContext";
 
 // ─── Data helpers ────────────────────────────────────────────────────────────
-
-function mulberry32(seed: number) {
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
-    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function intradaySeries(ticker: string, dayPct: number, n = 30): number[] {
-  let seed = 0;
-  for (let i = 0; i < ticker.length; i++) seed = (seed * 31 + ticker.charCodeAt(i)) | 0;
-  const rnd = mulberry32(seed);
-  const target = dayPct / 100;
-  const out: number[] = [];
-  let v = 0;
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);
-    v += (rnd() - 0.5) * 0.006;
-    v *= 0.9;
-    const wobble = Math.sin(t * Math.PI * 1.4 + seed) * 0.004;
-    out.push(100 * (1 + target * t + v + wobble * (1 - t)));
-  }
-  out[0] = 100;
-  out[n - 1] = 100 * (1 + target);
-  return out;
-}
 
 function scoreTierColor(s: number): string {
   if (s >= 80) return "var(--color-bull)";
@@ -158,8 +126,8 @@ function SignalChip({ sig }: { sig: Signal }) {
 
 // ─── Table ───────────────────────────────────────────────────────────────────
 
-const COLS = ["Ticker", "Finava", "Last", "Day", "Mkt Cap", "Trend"] as const;
-const RIGHT_COLS = new Set(["Last", "Day", "Mkt Cap", "Trend"]);
+const COLS = ["Ticker", "Finava", "Last", "Day", "Mkt Cap"] as const;
+const RIGHT_COLS = new Set(["Last", "Day", "Mkt Cap"]);
 
 function fmtCap(cap: number | null): string {
   if (cap == null) return "—";
@@ -200,7 +168,6 @@ interface RowData {
   marketCap: number | null;
   f: FactorScores | null;
   score: number;
-  series: number[];
   signals: Signal[];
 }
 
@@ -264,12 +231,6 @@ function TableRow({ data, isLast, onRemove, onClick }: {
       {/* Market cap */}
       <td className="mono" style={{ textAlign: "right", fontSize: "var(--text-sm)", color: "var(--color-text)", padding: "8px 12px", fontVariantNumeric: "tabular-nums" }}>
         {fmtCap(data.marketCap)}
-      </td>
-      {/* Trend sparkline */}
-      <td style={{ textAlign: "right", padding: "8px 12px" }}>
-        <div style={{ display: "inline-block" }}>
-          <Sparkline data={data.series} width={68} height={22} stroke={up ? "var(--color-bull)" : "var(--color-bear)"} />
-        </div>
       </td>
       <td style={{ padding: "8px 10px", textAlign: "right" }}>
         <button
@@ -381,13 +342,12 @@ export default function WatchlistSplitRail() {
     const signals = deriveSignals(changePct, f);
     return {
       ticker,
-      name: NAME_BY_TICKER[ticker] ?? ticker,
+      name: CONSTITUENT_BY_TICKER.get(ticker)?.name ?? ticker,
       price: live?.price ?? null,
       changePct,
       marketCap: live?.marketCap ?? null,
       f,
       score: sc,
-      series: intradaySeries(ticker, changePct ?? 0),
       signals,
     };
   }).sort((a, b) => b.score - a.score);
@@ -631,9 +591,7 @@ export default function WatchlistSplitRail() {
                     style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 13px", borderBottom: "1px solid var(--color-border)" }}
                   >
                     <span className="mono" style={{ fontSize: "var(--text-meta)", fontWeight: 700, color: "var(--color-accent)", width: 46 }}>{row.ticker}</span>
-                    <div style={{ flex: 1 }}>
-                      <Sparkline data={row.series} width={60} height={16} stroke={(row.changePct ?? 0) >= 0 ? "var(--color-bull)" : "var(--color-bear)"} />
-                    </div>
+                    <div style={{ flex: 1 }} />
                     <span className="mono" style={{ color: (row.changePct ?? 0) >= 0 ? "var(--color-bull)" : "var(--color-bear)", fontWeight: 700, fontSize: "var(--text-meta)", whiteSpace: "nowrap" }}>
                       {row.changePct == null ? "—" : `${(row.changePct ?? 0) >= 0 ? "▲ +" : "▼ "}${Math.abs(row.changePct).toFixed(2)}%`}
                     </span>

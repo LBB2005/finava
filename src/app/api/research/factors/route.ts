@@ -1,4 +1,4 @@
-// Real factor scores for the Research "Tune" lens, computed across the whole
+// Real factor scores for the Research board, computed across the whole
 // S&P 500. Server-side, app-level API keys, no user auth (works under the dev
 // bypass), mirroring /api/leaderboard.
 //

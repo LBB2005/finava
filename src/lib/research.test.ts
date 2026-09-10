@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   FACTORS,
-  NEUTRAL_WEIGHTS,
   composite,
   factorClass,
   factorColor,
@@ -14,12 +13,8 @@ import {
   fmtVol,
   grade,
   gradeClass,
-  movers,
-  normalizedWeights,
   overlayLive,
   ranked,
-  rankByWeights,
-  topPicks,
   type Stock,
 } from "./research";
 
@@ -77,68 +72,6 @@ describe("research scoring", () => {
     ]);
   });
 
-  it("selects distinct top picks across horizons", () => {
-    const picks = topPicks(universe);
-
-    expect(new Set(picks.map((p) => p.ticker)).size).toBe(3);
-    expect(picks.map((p) => p.horizon.key)).toEqual(["week", "month", "year"]);
-    expect(picks.every((p) => typeof p.take === "string" && p.take.length > 0)).toBe(true);
-  });
-
-  it("returns top gainers and losers for a move window", () => {
-    expect(movers("week", universe)).toMatchObject({
-      gainers: [
-        { ticker: "AAA", move: 5 },
-        { ticker: "CCC", move: 1 },
-        { ticker: "BBB", move: -3 },
-      ],
-      losers: [
-        { ticker: "BBB", move: -3 },
-        { ticker: "CCC", move: 1 },
-        { ticker: "AAA", move: 5 },
-      ],
-    });
-  });
-
-  it("normalizes user weights and falls back to even weights when all are non-positive", () => {
-    expect(normalizedWeights({
-      mom: 100,
-      growth: 100,
-      quality: 0,
-      analyst: -10,
-      value: 0,
-      health: 0,
-    })).toEqual({
-      mom: 50,
-      growth: 50,
-      quality: 0,
-      analyst: 0,
-      value: 0,
-      health: 0,
-    });
-
-    expect(rankByWeights({
-      mom: 0,
-      growth: 0,
-      quality: 0,
-      analyst: 0,
-      value: 0,
-      health: 0,
-    }, universe)[0]).toMatchObject({ ticker: "CCC", score: 70, rank: 1 });
-
-    expect(Object.keys(NEUTRAL_WEIGHTS)).toEqual(FACTORS.map((f) => f.key));
-  });
-
-  it("ranks by custom factor weights", () => {
-    expect(rankByWeights({
-      mom: 0,
-      growth: 0,
-      quality: 0,
-      analyst: 0,
-      value: 100,
-      health: 0,
-    }, universe).map((s) => s.ticker)).toEqual(["BBB", "CCC", "AAA"]);
-  });
 });
 
 describe("research live overlay and presentation helpers", () => {

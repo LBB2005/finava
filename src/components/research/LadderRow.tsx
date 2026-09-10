@@ -3,7 +3,7 @@ import Link from "next/link";
 import { fmtPct1, type RankedStock } from "@/lib/research";
 import { GradeBadge, MiniBars } from "./primitives";
 
-/** One leaderboard / match row — shared by the Board and the Tune results table. */
+/** One leaderboard / match row — shared by the Board and the Screen results table. */
 export default function LadderRow({ s, highlight = false }: { s: RankedStock; highlight?: boolean }) {
   return (
     <tr className={highlight ? "top3" : ""}>

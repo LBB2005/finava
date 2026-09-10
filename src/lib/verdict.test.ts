@@ -23,12 +23,9 @@ describe("verdictFor", () => {
       stance: "Constructive",
       confidence: "High",
       score: 85,
-      fairValue: 114.7,
-      upsidePct: 14.7,
     });
     expect(verdict.take).toContain("screens constructive");
     expect(verdict.take).toContain("momentum and growth");
-    expect(verdict.take).toContain("modest upside");
   });
 
   it("classifies cautious names with limited headroom", () => {
@@ -40,9 +37,7 @@ describe("verdictFor", () => {
     expect(verdict.stance).toBe("Cautious");
     expect(verdict.confidence).toBe("Moderate");
     expect(verdict.score).toBe(40);
-    expect(verdict.fairValue).toBe(71.2);
-    expect(verdict.upsidePct).toBe(-11);
-    expect(verdict.take).toContain("limited headroom");
+    expect(verdict.take).toContain("screens cautious");
   });
 
   it("uses balanced low-confidence language around the middle of the score range", () => {
@@ -54,5 +49,15 @@ describe("verdictFor", () => {
     expect(verdict.confidence).toBe("Low");
     expect(verdict.score).toBe(51);
     expect(verdict.take).toContain("screens balanced");
+  });
+
+  it("never states a price target or implied upside", () => {
+    const verdict = verdictFor(stock({
+      f: { mom: 95, growth: 90, quality: 88, analyst: 86, value: 35, health: 82 },
+    }), "week");
+
+    expect(verdict.take).not.toMatch(/\$|fair value|upside|headroom/i);
+    expect(verdict).not.toHaveProperty("fairValue");
+    expect(verdict).not.toHaveProperty("upsidePct");
   });
 });

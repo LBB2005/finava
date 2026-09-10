@@ -7,7 +7,9 @@ const deps = vi.hoisted(() => ({
 
 vi.mock("@/lib/leaderboardData", () => ({ getBoardData: deps.getBoardData }));
 vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
-vi.mock("@/lib/research", () => ({ UNIVERSE: [{ ticker: "AAPL" }, { ticker: "MSFT" }] }));
+vi.mock("@/lib/extraUniverse", () => ({
+  ALL_CONSTITUENTS: [{ ticker: "AAPL" }, { ticker: "MSFT" }],
+}));
 vi.mock("@/lib/tickers", () => ({
   parseTickersParam: (s: string) => (s ? s.split(",").filter(Boolean) : []),
 }));

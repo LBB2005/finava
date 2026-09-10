@@ -2,7 +2,7 @@
 //
 // `computeFactorUniverse()` fans out across ~500 tickers (a 12-wide Polygon
 // fundamentals pool + 8-wide Finnhub/Alpaca analyst+price pools) — a cold run is
-// expensive. Both the Research "Tune" lens (/api/research/factors) and the chat
+// expensive. Both the Research board (/api/research/factors) and the chat
 // discovery scout need the same 503-name scored universe, so they MUST share one
 // cache, or a Discover request could trigger a second cold compute alongside a
 // Research poll and double the upstream burst.

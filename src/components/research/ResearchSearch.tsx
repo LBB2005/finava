@@ -1,18 +1,19 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UNIVERSE } from "@/lib/research";
+import { ALL_CONSTITUENTS } from "@/lib/extraUniverse";
+import { sanitizeSymbol, searchStocks } from "@/lib/stockSearch";
 
 const MAX_RESULTS = 7;
 
 /**
  * The Research page's lookup hero — type a ticker or company name, hit Enter,
- * land on that stock's page. Suggestions come from the seed UNIVERSE (instant,
- * no network), but a free-typed symbol outside it still routes: the stock page
- * resolves any symbol server-side.
+ * land on that stock's page. Suggestions come from the scannable universe
+ * (instant, no network), but a free-typed symbol outside it still routes: the
+ * stock page resolves any symbol server-side.
  *
- * Matching mirrors AddTickerSearch's scoring so a query ranks the same way
- * everywhere in the app (exact ticker → ticker prefix → name prefix → contains).
+ * Matching goes through the shared `searchStocks` helper, so a query ranks the
+ * same way everywhere in the app (exact ticker → ticker prefix → name match).
  */
 export default function ResearchSearch() {
   const router = useRouter();
@@ -22,24 +23,10 @@ export default function ResearchSearch() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
 
-  const results = useMemo(() => {
-    const q = val.trim().toUpperCase();
-    if (!q) return [];
-    const scored: { s: (typeof UNIVERSE)[number]; score: number }[] = [];
-    for (const s of UNIVERSE) {
-      const t = s.ticker.toUpperCase();
-      const n = s.name.toUpperCase();
-      let score = -1;
-      if (t === q) score = 0;
-      else if (t.startsWith(q)) score = 1;
-      else if (n.startsWith(q)) score = 2;
-      else if (t.includes(q)) score = 3;
-      else if (n.includes(q)) score = 4;
-      if (score >= 0) scored.push({ s, score });
-    }
-    scored.sort((a, b) => a.score - b.score || a.s.ticker.localeCompare(b.s.ticker));
-    return scored.slice(0, MAX_RESULTS).map((x) => x.s);
-  }, [val]);
+  const results = useMemo(
+    () => searchStocks(val, ALL_CONSTITUENTS, MAX_RESULTS),
+    [val],
+  );
 
   useEffect(() => {
     function onOutside(e: MouseEvent) {
@@ -50,7 +37,7 @@ export default function ResearchSearch() {
   }, []);
 
   function go(sym: string) {
-    const t = sym.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, "");
+    const t = sanitizeSymbol(sym);
     if (!t) return;
     setOpen(false);
     router.push(`/stock/${t}`);

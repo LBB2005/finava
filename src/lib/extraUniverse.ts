@@ -17,7 +17,7 @@
    Both are curated safety nets, not a live index — extend freely.
    ============================================================ */
 
-import type { Constituent } from "@/lib/sp500";
+import { SP500, type Constituent } from "@/lib/sp500";
 import type { FactorScores } from "@/lib/research";
 
 /** Popular non-S&P US names + major ADRs. Deduped against the S&P list at merge time. */
@@ -60,6 +60,22 @@ export const EXTRA_CONSTITUENTS: Constituent[] = [
   { ticker: "NIO", name: "NIO (ADR)", sector: "Consumer Discretionary" },
   { ticker: "UL", name: "Unilever (ADR)", sector: "Consumer Staples" },
 ];
+
+/**
+ * Every constituent the factor engine can score: the S&P 500 plus the extras
+ * above, deduped in favour of the index list. This is the single scannable
+ * universe — the server fan-out and the app's ticker autocomplete both read it,
+ * so search never offers a name the engine cannot score.
+ */
+export const ALL_CONSTITUENTS: Constituent[] = (() => {
+  const seen = new Set(SP500.map((c) => c.ticker));
+  return [...SP500, ...EXTRA_CONSTITUENTS.filter((c) => !seen.has(c.ticker))];
+})();
+
+/** Ticker → constituent, over the full scannable universe. */
+export const CONSTITUENT_BY_TICKER: Map<string, Constituent> = new Map(
+  ALL_CONSTITUENTS.map((c) => [c.ticker, c]),
+);
 
 interface EtfProfile { name: string; sector: string; f: FactorScores }
 const F = (mom: number, growth: number, quality: number, analyst: number, value: number, health: number): FactorScores =>

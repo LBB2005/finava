@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { UNIVERSE } from "@/lib/research";
+import { ALL_CONSTITUENTS } from "@/lib/extraUniverse";
+import { sanitizeSymbol, searchStocks } from "@/lib/stockSearch";
 
 interface Props {
   onAdd: (ticker: string) => void;
@@ -13,7 +14,8 @@ const MAX_RESULTS = 8;
 /**
  * Compact add-ticker control with a live suggestion popover. Matches the site's
  * popover styling (the chat composer's "+" menu is the reference). Filters the
- * S&P UNIVERSE by ticker or company name; ↑/↓ to move, Enter to add, Esc to close.
+ * scannable universe by ticker or company name; ↑/↓ to move, Enter to add,
+ * Esc to close.
  */
 export default function AddTickerSearch({ onAdd, existing = [] }: Props) {
   const [val, setVal] = useState("");
@@ -25,25 +27,14 @@ export default function AddTickerSearch({ onAdd, existing = [] }: Props) {
 
   const have = useMemo(() => new Set(existing.map((t) => t.toUpperCase())), [existing]);
 
-  const results = useMemo(() => {
-    const q = val.trim().toUpperCase();
-    if (!q) return [];
-    const scored: { s: (typeof UNIVERSE)[number]; score: number }[] = [];
-    for (const s of UNIVERSE) {
-      if (have.has(s.ticker.toUpperCase())) continue;
-      const t = s.ticker.toUpperCase();
-      const n = s.name.toUpperCase();
-      let score = -1;
-      if (t === q) score = 0;
-      else if (t.startsWith(q)) score = 1;
-      else if (n.startsWith(q)) score = 2;
-      else if (t.includes(q)) score = 3;
-      else if (n.includes(q)) score = 4;
-      if (score >= 0) scored.push({ s, score });
-    }
-    scored.sort((a, b) => a.score - b.score || a.s.ticker.localeCompare(b.s.ticker));
-    return scored.slice(0, MAX_RESULTS).map((x) => x.s);
-  }, [val, have]);
+  // Drop already-listed tickers before ranking, so the capped result set is
+  // never padded out with names the user cannot add.
+  const pool = useMemo(
+    () => ALL_CONSTITUENTS.filter((c) => !have.has(c.ticker.toUpperCase())),
+    [have],
+  );
+
+  const results = useMemo(() => searchStocks(val, pool, MAX_RESULTS), [val, pool]);
 
   useEffect(() => {
     function onOutside(e: MouseEvent) {
@@ -54,7 +45,7 @@ export default function AddTickerSearch({ onAdd, existing = [] }: Props) {
   }, []);
 
   function commit(sym: string) {
-    const t = sym.trim().toUpperCase();
+    const t = sanitizeSymbol(sym);
     if (!t) return;
     onAdd(t);
     setVal("");
@@ -149,8 +140,8 @@ export default function AddTickerSearch({ onAdd, existing = [] }: Props) {
             >
               <span className="mono" style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--color-text)", width: 52, flexShrink: 0 }}>{s.ticker}</span>
               <span className="truncate" style={{ fontSize: "var(--text-meta)", color: "var(--color-muted)", flex: 1, minWidth: 0 }}>{s.name}</span>
-              <span className="mono" style={{ fontSize: "var(--text-micro)", fontWeight: 700, flexShrink: 0, color: s.chg >= 0 ? "var(--color-bull)" : "var(--color-bear)" }}>
-                {s.chg >= 0 ? "+" : ""}{s.chg.toFixed(2)}%
+              <span className="mono" style={{ fontSize: "var(--text-micro)", flexShrink: 0, color: "var(--color-muted)" }}>
+                {s.sector}
               </span>
             </button>
           ))}

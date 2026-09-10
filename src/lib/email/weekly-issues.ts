@@ -14,7 +14,7 @@ export const WEEKLY_ISSUES: WeeklyUpdateInput[] = [
     intro:
       "Thanks for being early. Finava is an AI analyst team for self-directed investors — instead of one chatbot, a crew of agents that research a stock the way a real desk would: fundamentals, valuation, sentiment, and the bear case, each argued out and brought back to you.\nWe'll keep these notes short and weekly, so you can watch it come together.",
     highlights: [
-      "<strong>The lenses.</strong> Tune scores the full S&P 500 on real fundamentals; Board lets the agents debate a name and hand you the verdict.",
+      "<strong>The lenses.</strong> Board scores the full S&P 500 on real fundamentals and ranks it; Screen turns a plain-English brief into a factor screen across the same universe.",
       "<strong>Real data, no hand-waving.</strong> Live fundamentals, prices, and analyst coverage — not vibes.",
       "<strong>Your early-access perk.</strong> Waitlist members get 3 months of Pro free when we open the doors.",
     ],

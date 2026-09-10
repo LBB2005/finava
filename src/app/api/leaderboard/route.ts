@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { getBoardData } from "@/lib/leaderboardData";
-import { UNIVERSE } from "@/lib/research";
+import { ALL_CONSTITUENTS } from "@/lib/extraUniverse";
 import { rateLimitGuard } from "@/lib/rateLimit";
 import { parseTickersParam } from "@/lib/tickers";
 
@@ -15,7 +15,7 @@ import { parseTickersParam } from "@/lib/tickers";
 // keep the sustained rate well below the quotes route.
 const LIMITS = { capacity: 10, refillPerSec: 0.2 };
 
-// The board never legitimately needs more than the seed universe.
+// The board never legitimately needs more than the scannable universe.
 const MAX_TICKERS = 600;
 
 export async function GET(req: Request) {
@@ -32,8 +32,8 @@ export async function GET(req: Request) {
     );
   }
 
-  // Default to the full seed universe when the client sends no explicit list.
-  const tickers = requested.length ? requested : UNIVERSE.map((s) => s.ticker);
+  // Default to the full scannable universe when the client sends no explicit list.
+  const tickers = requested.length ? requested : ALL_CONSTITUENTS.map((c) => c.ticker);
 
   try {
     const rows = await getBoardData(tickers);

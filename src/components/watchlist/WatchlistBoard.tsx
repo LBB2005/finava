@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLiveBoard } from "@/hooks/useLiveBoard";
-import { NAME_BY_TICKER } from "@/lib/research";
+import { CONSTITUENT_BY_TICKER } from "@/lib/extraUniverse";
 
 // Window very large lists: render the first chunk and reveal the rest on
 // demand, so a 200-ticker watchlist doesn't render (and poll-rerender) 200
@@ -17,7 +17,7 @@ function price(n: number | null): string {
   return n === null ? "—" : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function nameFor(t: string): string {
-  return NAME_BY_TICKER[t] ?? "—";
+  return CONSTITUENT_BY_TICKER.get(t)?.name ?? "—";
 }
 
 export default function WatchlistBoard({

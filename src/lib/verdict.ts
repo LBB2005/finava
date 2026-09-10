@@ -5,10 +5,6 @@ export interface Verdict {
   stance: "Constructive" | "Balanced" | "Cautious";
   /** The blended composite the stance is read from (0–100). */
   score: number;
-  /** AI fair-value estimate (absolute price). */
-  fairValue: number;
-  /** Implied upside vs. last price (%). */
-  upsidePct: number;
   /** Confidence in the read. */
   confidence: "High" | "Moderate" | "Low";
   /** One-line natural-language take. */
@@ -16,16 +12,14 @@ export interface Verdict {
 }
 
 /**
- * Deterministic AI "verdict" derived from a stock's six factor sub-scores and
- * its blended composite. Mirrors the design prototype's read so the Board hero
- * stays consistent across the horizon toggle — no live model call required.
+ * Rule-based factor read: a stance, the blended composite it comes from, and a
+ * one-line summary of which sub-scores drive it. This is arithmetic over the
+ * six factor sub-scores, not a model output and not a valuation — so it never
+ * states a price target. Intrinsic value belongs to the DCF on the stock page,
+ * which is computed from filings.
  */
 export function verdictFor(stock: Stock, horizon: HorizonKey = "month"): Verdict {
   const f = stock.f;
-  const price = stock.price;
-
-  const upsidePct = Math.round(((f.analyst - 55) / 2.2 + (100 - f.value) / 14 - 4) * 10) / 10;
-  const fairValue = Math.round(price * (1 + upsidePct / 100) * 100) / 100;
 
   const comp = composite(stock, horizon);
   const stance: Verdict["stance"] = comp >= 62 ? "Constructive" : comp <= 44 ? "Cautious" : "Balanced";
@@ -40,9 +34,7 @@ export function verdictFor(stock: Stock, horizon: HorizonKey = "month"): Verdict
 
   const take =
     `${stock.name} screens ${stance.toLowerCase()} on a blended weighting. The case leans on ` +
-    `${lead1} and ${lead2}; the main drag is ${drag}. Fair value lands near ` +
-    `$${Math.round(fairValue)} versus a recent $${Math.round(price)} — ` +
-    `${upsidePct >= 0 ? "modest upside" : "limited headroom"} on the Finava read.`;
+    `${lead1} and ${lead2}; the main drag is ${drag}.`;
 
-  return { stance, score: comp, fairValue, upsidePct, confidence, take };
+  return { stance, score: comp, confidence, take };
 }

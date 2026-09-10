@@ -7,10 +7,10 @@ import { ShowMore } from "./primitives";
 type MoverRow = Stock & { move: number };
 
 function RailList({
-  title, rows, up, mx, count, tag, onOpen, collapsed = 5, expandTo = 10,
+  title, rows, up, mx, count, tag, onOpen, loading = false, collapsed = 5, expandTo = 10,
 }: {
   title: string; rows: MoverRow[]; up: boolean; mx: number; count: number; tag: string;
-  onOpen: (t: string) => void; collapsed?: number; expandTo?: number;
+  onOpen: (t: string) => void; loading?: boolean; collapsed?: number; expandTo?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const color = up ? "var(--color-bull)" : "var(--color-bear)";
@@ -23,7 +23,11 @@ function RailList({
         <span className="mono b-railcount">{count} · {tag}</span>
       </div>
       {rows.length === 0 ? (
-        <div className="empty-note">No {up ? "gainers" : "laggards"} on this horizon yet.</div>
+        <div className="empty-note">
+          {loading
+            ? "Syncing…"
+            : `No ${up ? "gainers" : "laggards"} on this horizon yet.`}
+        </div>
       ) : (
         shown.map((s, i) => (
           <div key={s.ticker} className="b-railrow" onClick={() => onOpen(s.ticker)}>
@@ -41,7 +45,15 @@ function RailList({
 
 /** Gainers / Laggards rail — ranked one-line movers for the active horizon, each
  *  with a magnitude bar; Show more reveals the rest. */
-export default function MoversRail({ horizon, universe }: { horizon: HorizonKey; universe: Stock[] }) {
+export default function MoversRail({
+  horizon,
+  universe,
+  loading = false,
+}: {
+  horizon: HorizonKey;
+  universe: Stock[];
+  loading?: boolean;
+}) {
   const router = useRouter();
   const tag = HORIZONS.find((h) => h.key === horizon)?.tag ?? "1W";
   const { gainers, losers, mxG, mxL, adv, dec } = useMemo(() => {
@@ -62,8 +74,8 @@ export default function MoversRail({ horizon, universe }: { horizon: HorizonKey;
 
   return (
     <div className="b-rail">
-      <RailList title="GAINERS" rows={gainers} up mx={mxG} count={adv} tag={tag} onOpen={onOpen} />
-      <RailList title="LAGGARDS" rows={losers} up={false} mx={mxL} count={dec} tag={tag} onOpen={onOpen} />
+      <RailList title="GAINERS" rows={gainers} up mx={mxG} count={adv} tag={tag} onOpen={onOpen} loading={loading} />
+      <RailList title="LAGGARDS" rows={losers} up={false} mx={mxL} count={dec} tag={tag} onOpen={onOpen} loading={loading} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
-import { HORIZONS, overlayLive, ranked, UNIVERSE, type HorizonKey } from "@/lib/research";
+import { HORIZONS, overlayLive, ranked, type HorizonKey } from "@/lib/research";
 import { useLiveBoard } from "@/hooks/useLiveBoard";
 import { useFactorUniverse } from "@/hooks/useFactorUniverse";
 import { useChatStore } from "@/stores/chatStore";
@@ -38,6 +38,21 @@ function SectionRule({ label }: { label: string }) {
   );
 }
 
+/** Hard-failure state for the factor feed. Shows nothing rather than a stand-in. */
+function FactorsUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      className="empty-note flex flex-col items-center justify-center"
+      style={{ minHeight: 280, gap: 12, textAlign: "center" }}
+    >
+      <p style={{ margin: 0 }}>
+        Factor scores are unavailable right now, so the board has nothing to rank.
+      </p>
+      <button className="tbtn on" onClick={onRetry}>RETRY</button>
+    </div>
+  );
+}
+
 /** Format asOf ISO string → "Jun 2, 2026 · 9:30 AM ET" */
 function fmtAsOf(iso: string): string {
   try {
@@ -55,10 +70,18 @@ export default function ResearchPage() {
   const [mode, setMode] = useState<Mode>("board");
   const [horizon, setHorizon] = useState<HorizonKey>("week");
 
-  // Real factor universe (S&P 500, scored on real data). Falls back to the
-  // 72-name seed so the Board renders immediately while the API call settles.
-  const { universe: factorUniverse, isLoading: factorsLoading, asOf } = useFactorUniverse();
-  const baseUniverse = factorUniverse ?? UNIVERSE;
+  // Real factor universe (S&P 500 + scannable extras, scored on real data).
+  // There is deliberately no placeholder fallback: until the scores arrive the
+  // Board shows a syncing state, and on failure it says so. Never a stand-in
+  // number that could be mistaken for a market reading.
+  const {
+    universe: factorUniverse,
+    isLoading: factorsLoading,
+    error: factorsError,
+    retry: retryFactors,
+    asOf,
+  } = useFactorUniverse();
+  const baseUniverse = useMemo(() => factorUniverse ?? [], [factorUniverse]);
 
   // Live market overlay — price, % change, market cap, P/E, volume.
   // Re-keys to 503 tickers once the factor universe arrives.
@@ -67,7 +90,10 @@ export default function ResearchPage() {
   const universe = useMemo(() => overlayLive(baseUniverse, liveMap), [baseUniverse, liveMap]);
 
   const isLoading = pricesLoading || factorsLoading;
-  const asOfLabel = asOf ? fmtAsOf(asOf) : "Loading…";
+  // A hard failure with nothing cached — the only honest thing to show is that
+  // the data is unavailable.
+  const factorsUnavailable = !!factorsError && baseUniverse.length === 0;
+  const asOfLabel = asOf ? fmtAsOf(asOf) : factorsUnavailable ? "Unavailable" : "Syncing…";
 
   const rankedTop = useMemo(() => ranked(horizon, universe).slice(0, 8), [horizon, universe]);
   const feature = rankedTop[0];
@@ -116,20 +142,26 @@ export default function ResearchPage() {
           {/* Lookup first — the most common reason to open this page is one stock. */}
           <ResearchSearch />
 
-          {mode === "board" && (
+          {factorsUnavailable ? (
+            <FactorsUnavailable onRetry={retryFactors} />
+          ) : (
             <>
-              {feature && <VerdictHero feature={feature} horizon={horizon} />}
-              <div className="b-split">
-                <BoardLeaderboard horizon={horizon} universe={universe} loading={isLoading} />
-                <MoversRail horizon={horizon} universe={universe} />
-              </div>
-            </>
-          )}
+              {mode === "board" && (
+                <>
+                  {feature && <VerdictHero feature={feature} horizon={horizon} />}
+                  <div className="b-split">
+                    <BoardLeaderboard horizon={horizon} universe={universe} loading={isLoading} />
+                    <MoversRail horizon={horizon} universe={universe} loading={isLoading} />
+                  </div>
+                </>
+              )}
 
-          {mode === "screen" && (
-            <>
-              <div style={{ marginTop: 8 }}><SectionRule label={SECTION_RULE.screen!} /></div>
-              <ScreenMode universe={universe} loading={isLoading} />
+              {mode === "screen" && (
+                <>
+                  <div style={{ marginTop: 8 }}><SectionRule label={SECTION_RULE.screen!} /></div>
+                  <ScreenMode universe={universe} loading={isLoading} />
+                </>
+              )}
             </>
           )}
         </div>

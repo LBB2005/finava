@@ -1,5 +1,5 @@
 /* ============================================================
-   Finava · Research — real factor engine for the "Tune" lens
+   Finava · Research — real factor engine
    ------------------------------------------------------------
    Scores every S&P 500 name on the six Finava factors from REAL
    data, not placeholders:
@@ -31,8 +31,7 @@ import {
 } from "@/lib/alpaca";
 import { getRecommendationTrends } from "@/lib/finnhub";
 import { getCikByTicker, getCompanyFacts } from "@/lib/edgar";
-import { SP500 } from "@/lib/sp500";
-import { EXTRA_CONSTITUENTS } from "@/lib/extraUniverse";
+import { ALL_CONSTITUENTS } from "@/lib/extraUniverse";
 import type { FactorScores, Stock } from "@/lib/research";
 import type { SourceStatus } from "@/lib/fetchRetry";
 
@@ -334,9 +333,8 @@ export interface FactorUniverse {
 export async function computeFactorUniverse(): Promise<FactorUniverse> {
   // S&P 500 plus a curated set of popular non-S&P names + major ADRs the engine
   // can score the same way — so real retail holdings (and Research) aren't limited
-  // to index members. Deduped by ticker; ETFs are handled separately in the DNA layer.
-  const seen = new Set(SP500.map((c) => c.ticker));
-  const list = [...SP500, ...EXTRA_CONSTITUENTS.filter((c) => !seen.has(c.ticker))];
+  // to index members. ETFs are handled separately in the DNA layer.
+  const list = ALL_CONSTITUENTS;
   const tickers = list.map((c) => c.ticker);
   const sectors = list.map((c) => c.sector);
 

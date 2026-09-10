@@ -50,7 +50,7 @@ export interface InvestorDNA {
   dnaVector: Record<FactorKey, number>;
   /** Named identity from the top factors, e.g. "Quality compounder". */
   archetype: string;
-  /** Nearest Tune preset label, e.g. "Quality Compounder". */
+  /** Nearest archetype label, e.g. "Quality Compounder". */
   matchedPreset: string;
   /** The balanced-read editorial sentence (deterministic template). */
   identityLine: string;

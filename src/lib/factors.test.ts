@@ -3,17 +3,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Mock universe + data sources ─────────────────────────────────────────────
 // A tiny 4-name universe: two Tech names (strong AAA vs weak BBB), one Bank that
 // only resolves via the EDGAR fallback, and one name with no data at all.
-vi.mock("@/lib/sp500", () => ({
-  SP500: [
-    { ticker: "AAA", name: "Alpha", sector: "Tech" },
-    { ticker: "BBB", name: "Beta", sector: "Tech" },
-    { ticker: "CCC", name: "Gamma", sector: "Bank" },
-    { ticker: "DDD", name: "Delta", sector: "Tech" },
-  ],
-}));
+const constituents = vi.hoisted(() => [
+  { ticker: "AAA", name: "Alpha", sector: "Tech" },
+  { ticker: "BBB", name: "Beta", sector: "Tech" },
+  { ticker: "CCC", name: "Gamma", sector: "Bank" },
+  { ticker: "DDD", name: "Delta", sector: "Tech" },
+]);
+
+vi.mock("@/lib/sp500", () => ({ SP500: constituents }));
 
 // Isolate the engine to the mocked S&P list — no curated extras in this test.
-vi.mock("@/lib/extraUniverse", () => ({ EXTRA_CONSTITUENTS: [], ETF_PROFILES: {} }));
+vi.mock("@/lib/extraUniverse", () => ({
+  EXTRA_CONSTITUENTS: [],
+  ALL_CONSTITUENTS: constituents,
+  ETF_PROFILES: {},
+}));
 
 // Polygon annual financials, newest-year-first. AAA: growing + profitable + cheap.
 // BBB: flat + low-margin + expensive + levered. CCC/DDD: empty (force fallback).

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { HORIZONS, fmtPct1, type HorizonKey, type RankedStock } from "@/lib/research";
 import { verdictFor } from "@/lib/verdict";
 import { ArcGauge, GradeBadge } from "./primitives";
-import Sparkline from "./Sparkline";
 
 /** Three-dot confidence indicator — 3 = High, 2 = Moderate, 1 = Low. */
 function ConfidenceDots({ level }: { level: "High" | "Moderate" | "Low" }) {
@@ -19,15 +18,17 @@ function ConfidenceDots({ level }: { level: "High" | "Moderate" | "Low" }) {
 }
 
 /**
- * B1 "verdict-line" hero — the horizon's top pick across one strip: arc gauge +
- * identity, price + sparkline, the Finava AI verdict filling the middle, and a
- * clean fair-value / upside stat on the right.
+ * B1 hero — the horizon's top-ranked name across one strip: arc gauge +
+ * identity, live price, and the rule-based factor read filling the middle.
+ * Everything shown is derived from the factor scores; no price target is
+ * implied here (the DCF on the stock page is the valuation surface).
  */
 export default function VerdictHero({ feature, horizon }: { feature: RankedStock; horizon: HorizonKey }) {
   const tag = HORIZONS.find((h) => h.key === horizon)?.tag ?? "1W";
   const v = useMemo(() => verdictFor(feature, horizon), [feature, horizon]);
   const up = feature.chg >= 0;
   const take = v.take.split(". ")[0] + ".";
+  const horizonMove = feature.mv[horizon];
   const stanceColor = v.score >= 60 ? "var(--color-bull)" : v.score <= 44 ? "var(--color-bear)" : "var(--color-warn)";
 
   return (
@@ -51,14 +52,11 @@ export default function VerdictHero({ feature, horizon }: { feature: RankedStock
         <span className="mono b1-chg" style={{ color: up ? "var(--color-bull)" : "var(--color-bear)" }}>
           {up ? "▲" : "▼"} {fmtPct1(feature.chg)} today
         </span>
-        <div className="b1-spark">
-          <Sparkline ticker={feature.ticker} price={feature.price} mv={feature.mv} range={horizon} up={up} w={150} h={34} />
-        </div>
       </div>
 
       <div className="b1-verdict">
         <div className="b1-verdict-head">
-          <span className="mono b1-verdict-eyebrow">FINAVA VERDICT</span>
+          <span className="mono b1-verdict-eyebrow">FACTOR READ</span>
           <span className="b1-stance" style={{ color: stanceColor, borderColor: `color-mix(in oklab, ${stanceColor} 36%, var(--color-border))` }}>
             {v.stance}
           </span>
@@ -69,15 +67,17 @@ export default function VerdictHero({ feature, horizon }: { feature: RankedStock
         <p className="b1-take">{take}</p>
       </div>
 
+      {/* Realised move over the active horizon — backward-looking fact from the
+          price history, deliberately not a forecast. */}
       <div className="b1-val">
         <div className="b1-valrow">
-          <span className="b1-vk">Fair value</span>
-          <span className="serif b1-vv">${Math.round(v.fairValue)}</span>
+          <span className="b1-vk">Factor score</span>
+          <span className="serif b1-vv">{feature.score}</span>
         </div>
         <div className="b1-valrow">
-          <span className="b1-vk">Implied upside</span>
-          <span className="mono b1-vu" style={{ color: v.upsidePct >= 0 ? "var(--color-bull)" : "var(--color-bear)" }}>
-            {v.upsidePct >= 0 ? "+" : ""}{v.upsidePct.toFixed(1)}%
+          <span className="b1-vk">{tag} return</span>
+          <span className="mono b1-vu" style={{ color: horizonMove >= 0 ? "var(--color-bull)" : "var(--color-bear)" }}>
+            {fmtPct1(horizonMove)}
           </span>
         </div>
       </div>

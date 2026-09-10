@@ -14,7 +14,6 @@
 
 import {
   FACTORS,
-  TUNE_PRESETS,
   type FactorKey,
   type FactorScores,
   type Stock,
@@ -99,10 +98,22 @@ function cosine(a: Record<FactorKey, number>, b: FactorScores): number {
   return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
 }
 
+/**
+ * Recognisable investing styles, as factor-weight vectors. These name an
+ * archetype by finding the closest style to a holder's own factor tilt — they
+ * are labels for a shape, never a claim about any stock or any return.
+ * Deliberately characterful so the styles stay genuinely distinct.
+ */
+const ARCHETYPE_PRESETS: { key: string; label: string; weights: FactorScores }[] = [
+  { key: "momentum", label: "Momentum Trader", weights: { mom: 100, growth: 70, quality: 18, analyst: 80, value: 10, health: 22 } },
+  { key: "value", label: "Value Investor", weights: { mom: 14, growth: 22, quality: 20, analyst: 26, value: 100, health: 30 } },
+  { key: "quality", label: "Quality Compounder", weights: { mom: 42, growth: 64, quality: 100, analyst: 58, value: 24, health: 92 } },
+];
+
 function nearestPreset(vector: Record<FactorKey, number>): string {
-  let best = TUNE_PRESETS[0];
+  let best = ARCHETYPE_PRESETS[0];
   let bestSim = -Infinity;
-  for (const p of TUNE_PRESETS) {
+  for (const p of ARCHETYPE_PRESETS) {
     const sim = cosine(vector, p.weights);
     if (sim > bestSim) { bestSim = sim; best = p; }
   }
