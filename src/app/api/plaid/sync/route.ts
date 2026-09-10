@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { plaidConfigured } from "@/lib/plaid";
 import { requireAuth } from "@/lib/requireAuth";
+import { requireEntitlement } from "@/lib/entitlements";
 import { db } from "@/lib/firebase-admin";
 import { rebuildHoldings } from "@/lib/plaidSync";
 
@@ -11,6 +12,10 @@ import { rebuildHoldings } from "@/lib/plaidSync";
 export async function POST() {
   const { userId, error } = await requireAuth();
   if (error) return error;
+  // Linking is gated at Analyst+, so refreshing must be too — otherwise a user
+  // who links and then downgrades keeps pulling brokerage data for free.
+  const gate = await requireEntitlement(userId, "plaidLinking");
+  if (gate) return gate;
 
   if (!plaidConfigured()) {
     return NextResponse.json(

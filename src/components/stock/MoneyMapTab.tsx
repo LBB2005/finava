@@ -1,5 +1,4 @@
 "use client";
-import { useEffect } from "react";
 import { useMoneyMap } from "@/hooks/useMoneyMap";
 import MoneyMapGraph from "@/components/stock/MoneyMapGraph";
 import MoneyFlowList from "@/components/stock/MoneyFlowList";
@@ -17,13 +16,27 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 export function MoneyMapTab({ ticker }: { ticker: string }) {
   const { status, map, error, run, retry } = useMoneyMap(ticker);
 
-  // Tab click mounts this component — fire the run (no-op if already cached).
-  useEffect(() => {
-    run();
-  }, [run]);
-
   const { self, relations } = map;
   const streaming = status === "streaming";
+
+  // Runs start ONLY from an explicit action, mirroring the Finava tab. The
+  // store is session-scoped, so an auto-run on mount re-charged the user's
+  // credits on every reload of the page.
+  if (status === "idle") {
+    return (
+      <div className="fade-in" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12 }}>
+        <Rule>Money Map · who funds {ticker} &amp; who it pays</Rule>
+        <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", maxWidth: 480, lineHeight: 1.6 }}>
+          Trace the money around {ticker.toUpperCase()} — the customers it earns from,
+          the suppliers it pays, and the owners behind it.
+        </p>
+        <button className="tbtn on" onClick={run}>BUILD THE MONEY MAP</button>
+        <span className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
+          Uses credits
+        </span>
+      </div>
+    );
+  }
 
   if (status === "error" && relations.length === 0) {
     return (

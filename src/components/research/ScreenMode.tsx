@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { FACTORS, type RankedStock, type Stock } from "@/lib/research";
 import { applyScreen, type ScreenFilter } from "@/lib/screen";
 import { authFetch } from "@/lib/authFetch";
@@ -44,24 +44,24 @@ export default function ScreenMode({ universe, loading }: { universe: Stock[]; l
     [filter, universe]
   );
 
-  // Fetch AI-suggested screens once the universe is available.
-  useEffect(() => {
+  // Suggested screens cost credits, so they are fetched on the user's first
+  // intent to screen (focusing the box) rather than on merely opening the lens.
+  // Once per mount, and never before real scores exist to summarise.
+  async function loadSuggestions() {
     if (suggestedRef.current || universe.length === 0) return;
     suggestedRef.current = true;
-    (async () => {
-      try {
-        const res = await authFetch("/api/research/screen", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "suggest", summary: universeSummary(universe) }),
-        });
-        const data = await res.json();
-        if (res.ok && Array.isArray(data.screens)) setSuggestions(data.screens);
-      } catch {
-        /* suggestions are a nicety — silent on failure */
-      }
-    })();
-  }, [universe]);
+    try {
+      const res = await authFetch("/api/research/screen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "suggest", summary: universeSummary(universe) }),
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.screens)) setSuggestions(data.screens);
+    } catch {
+      /* suggestions are a nicety — silent on failure */
+    }
+  }
 
   async function run(query: string) {
     const text = query.trim();
@@ -119,6 +119,7 @@ export default function ScreenMode({ universe, loading }: { universe: Stock[]; l
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              onFocus={loadSuggestions}
               placeholder={loading ? "Loading S&P 500…" : "e.g. cheap profitable tech with momentum and low debt"}
               disabled={loading}
               className="input mono"
