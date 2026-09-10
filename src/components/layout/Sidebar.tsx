@@ -293,7 +293,7 @@ function PortfolioNavItem({
         </Link>
 
         {live && <StreamPulse className="mt-[6px] flex-shrink-0" />}
-        {hasHoldings && (
+        {hasHoldings ? (
           <button
             onClick={() => setOpen((v) => !v)}
             className="mt-[3px] flex-shrink-0 p-[2px] rounded hover:bg-[var(--color-sidebar-hover)] transition-colors duration-100"
@@ -301,6 +301,22 @@ function PortfolioNavItem({
           >
             <Chevron open={open} />
           </button>
+        ) : (
+          // With no holdings there is nothing to expand, but the add/import menu
+          // still has to be reachable — it is the only manual way to start a
+          // book, and the empty state on /portfolio points here.
+          !plaidConnected && (
+            <button
+              onClick={onAddClick}
+              title="Add holding"
+              aria-label="Add holding"
+              className="mt-[3px] w-[20px] h-[20px] flex-shrink-0 flex items-center justify-center rounded text-[var(--color-muted)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-light)] transition-colors duration-150"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          )
         )}
       </div>
 

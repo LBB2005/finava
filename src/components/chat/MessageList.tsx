@@ -10,12 +10,28 @@ import { AGENT_LABELS } from "@/types/chat";
 import type { ChatMessage, ChatMode, AgentStep, Template } from "@/types/chat";
 import { useChatStore } from "@/stores/chatStore";
 import { useMarketPulse } from "@/hooks/useMarketPulse";
+import { usePortfolio } from "@/hooks/usePortfolio";
 import { usMarketStatus } from "@/lib/marketHours";
 import useSWR from "swr";
 import { authFetcher } from "@/lib/authFetch";
 
 /* ── Starter prompts with tags ──────────────────────────────────────────── */
-const SUGGESTIONS = [
+
+// Shown before any holdings exist. Every one of these works on an empty
+// account — the portfolio set below would answer "you have no positions".
+const STARTER_SUGGESTIONS = [
+  { tag: "ANALYZE", text: "Run Finava's analysis on AAPL" },
+  { tag: "VERDICT", text: "Is NVDA a buy at today's price?" },
+  { tag: "SCREEN", text: "Find quality compounders that aren't expensive" },
+  { tag: "COMPARE", text: "Compare AMD and NVDA on fundamentals" },
+  { tag: "VALUE", text: "Run a DCF on MSFT and show the assumptions" },
+  { tag: "IDEAS", text: "What's moving in the market today, and why?" },
+  { tag: "SECTOR", text: "Which sectors look cheapest right now?" },
+  { tag: "LEARN", text: "Explain what the Finava score actually measures" },
+];
+
+// Shown once the user has a book — these all lean on real positions.
+const PORTFOLIO_SUGGESTIONS = [
   { tag: "RISK",  text: "What are my biggest position risks right now?" },
   { tag: "VALUE", text: "Run a full DCF on my largest holding" },
   { tag: "TRIM",  text: "Which positions should I consider trimming?" },
@@ -359,6 +375,11 @@ function EmptyState({ onSuggestion }: { onSuggestion?: (text: string) => void })
   // User response templates (Settings → Templates) surface here — picking one
   // attaches it to the next message as a composer chip (shapes how Finava replies).
   const { data: templates } = useSWR<Template[]>("/api/playbooks", authFetcher);
+  // The portfolio prompts all assume positions; on an empty account they would
+  // just answer "you have none". Pick the set that can actually be answered.
+  const { holdings } = usePortfolio();
+  const hasBook = holdings.length > 0;
+  const suggestions = hasBook ? PORTFOLIO_SUGGESTIONS : STARTER_SUGGESTIONS;
   const setActiveTemplate = useChatStore((s) => s.setActiveTemplate);
   const now = new Date();
   const hour = now.getHours();
@@ -383,7 +404,9 @@ function EmptyState({ onSuggestion }: { onSuggestion?: (text: string) => void })
             What would you like<br />to research today?
           </h2>
           <p className="mt-2.5 text-[length:var(--text-sm)] text-[var(--color-muted)]">
-            Fresh conversation — start typing below, or pick a prompt to begin.
+            {hasBook
+              ? "Fresh conversation — start typing below, or pick a prompt to begin."
+              : "Ask about any stock, or pick a prompt below to see what Finava does."}
           </p>
         </div>
 
@@ -428,7 +451,9 @@ function EmptyState({ onSuggestion }: { onSuggestion?: (text: string) => void })
             <span className="eyebrow-label text-[var(--color-muted)]">
               Starter prompts
             </span>
-            <span className="text-[length:var(--text-meta)] text-[var(--color-muted)]">Tailored to your book · scroll for more</span>
+            <span className="text-[length:var(--text-meta)] text-[var(--color-muted)]">
+              {hasBook ? "Tailored to your book · scroll for more" : "Pick one to see how Finava works"}
+            </span>
           </div>
           <div
             className="grid grid-cols-1 sm:grid-cols-2 gap-[10px] overflow-y-auto pr-1"
@@ -439,7 +464,7 @@ function EmptyState({ onSuggestion }: { onSuggestion?: (text: string) => void })
               WebkitMaskImage: "linear-gradient(to bottom, black calc(100% - 28px), transparent 100%)",
             }}
           >
-            {SUGGESTIONS.map((s) => (
+            {suggestions.map((s) => (
               <button
                 key={s.text}
                 onClick={() => onSuggestion?.(s.text)}
