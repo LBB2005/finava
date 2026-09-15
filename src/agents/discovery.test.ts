@@ -135,6 +135,34 @@ describe("runDiscoverySynthesis", () => {
     );
   });
 
+  it("ships the full report with replace: true (it may follow streamed revision deltas)", async () => {
+    h.streamFinal.value = { content: [{ type: "text", text: "Ranked draft" }], stop_reason: "end_turn" };
+    const { runDiscoverySynthesis } = await import("./discovery");
+    const events: AgentEvent[] = [];
+    await runDiscoverySynthesis(req as never, (e) => events.push(e));
+    const finals = events.filter((e) => e.type === "final_response");
+    expect(finals.at(-1)).toEqual({ type: "final_response", content: "Ranked draft [revised]", replace: true });
+  });
+
+  it("marks the empty-draft fallback as replace: true", async () => {
+    h.streamFinal.value = { content: [{ type: "text", text: "" }], stop_reason: "end_turn" };
+    const { runDiscoverySynthesis } = await import("./discovery");
+    const events: AgentEvent[] = [];
+    await runDiscoverySynthesis(req as never, (e) => events.push(e));
+    expect(events).toContainEqual(expect.objectContaining({ type: "final_response", replace: true }));
+  });
+
+  it("dates the synthesis prompt and keeps it free of personal-advice instructions", async () => {
+    h.streamFinal.value = { content: [{ type: "text", text: "Ranked draft" }], stop_reason: "end_turn" };
+    const { runDiscoverySynthesis } = await import("./discovery");
+    await runDiscoverySynthesis(req as never, () => {});
+    const system = (h.critique.mock.calls.at(-1)![0] as unknown as { systemPrompt: string }).systemPrompt;
+    expect(system).toMatch(/Today is \w+day, \d{1,2} \w+ \d{4} \(US\/Eastern\)/);
+    for (const banned of ["stop-loss", "trim level", "actionable recommendation", "rebalance threshold"]) {
+      expect(system.toLowerCase()).not.toContain(banned);
+    }
+  });
+
   it("emits an error event when the synthesis call throws", async () => {
     h.streamThrows.value = true;
     const { runDiscoverySynthesis } = await import("./discovery");

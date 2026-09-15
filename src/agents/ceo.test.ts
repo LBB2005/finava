@@ -479,3 +479,100 @@ describe("crew ↔ dispatch consistency", () => {
     }
   });
 });
+
+// ── Prompt truth: the advice line + today's date ─────────────────────────────
+// Everything the model is told on a crew run: every system prompt handed to
+// stream() plus every string message (the revision instruction lands as one).
+function assembledPromptText(): string {
+  const calls = streamSpy.mock.calls as unknown as Array<Array<Record<string, unknown>>>;
+  return calls
+    .map(([params]) => {
+      const system = (params.system as { text: string }[]).map((b) => b.text).join("\n");
+      const msgs = (params.messages as { content: unknown }[])
+        .map((m) => (typeof m.content === "string" ? m.content : ""))
+        .join("\n");
+      return `${system}\n${msgs}`;
+    })
+    .join("\n");
+}
+
+describe("CEO prompt — advice line", () => {
+  async function runWithRevision() {
+    skepticCritique = "VERDICT: REVISE\n**Skeptic Review:** unsourced beta.";
+    finalMessages.push(
+      { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
+      { stop_reason: "end_turn", content: [text("DRAFT")], usage: {} },
+      { stop_reason: "end_turn", content: [text("REVISED")], usage: {} },
+    );
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("analyze AAPL", "| AAPL | 10 |", () => {}, { deepResearch: true });
+    return assembledPromptText();
+  }
+
+  it("never asks for stop-losses, trim levels, rebalance thresholds or actionable recommendations", async () => {
+    const prompt = (await runWithRevision()).toLowerCase();
+    expect(streamSpy).toHaveBeenCalledTimes(3); // draft turns + the revision pass were both inspected
+    for (const banned of ["stop-loss", "trim level", "actionable recommendation", "rebalance threshold"]) {
+      expect(prompt, banned).not.toContain(banned);
+    }
+  });
+
+  it("keeps research framing: scenario levels about the stock, and 'based on your holdings' wording", async () => {
+    const prompt = await runWithRevision();
+    expect(prompt).toContain("What Would Change the View");
+    expect(prompt).toMatch(/scenario levels about the stock/i);
+    expect(prompt).toContain("based on your holdings");
+    expect(prompt).toMatch(/never call .*"your stated profile"/i);
+    expect(prompt).toMatch(/share counts/i);
+    // Seen live: "13.1% is above the ~5–7% guideline for a moderate-risk investor".
+    expect(prompt).toMatch(/position-size rules of thumb/i);
+    expect(prompt).toMatch(/never label the user with a risk tolerance/i);
+  });
+
+  it("tells the model today's date and market status", async () => {
+    finalMessages.push({ stop_reason: "end_turn", content: [text("report")], usage: {} });
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("analyze AAPL", "", () => {});
+    expect(assembledPromptText()).toMatch(/Today is \w+day, \d{1,2} \w+ \d{4} \(US\/Eastern\)\. US market: /);
+  });
+});
+
+describe("final_response replace flag", () => {
+  const finals = (events: AgentEvent[]) =>
+    events.filter((e) => e.type === "final_response") as { content: string; replace?: boolean }[];
+
+  it("marks a full (non-streamed) report as replace: true", async () => {
+    finalMessages.push(
+      { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
+      { stop_reason: "end_turn", content: [text("Full draft report")], usage: {} },
+    );
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("analyze AAPL", "", (e) => events.push(e));
+    expect(finals(events)).toEqual([{ type: "final_response", content: "Full draft report", replace: true }]);
+  });
+
+  it("keeps streamed revision deltas and appended notes as plain deltas", async () => {
+    skepticCritique = "VERDICT: REVISE\n**Skeptic Review:** x";
+    finalMessages.push(
+      { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
+      { stop_reason: "end_turn", content: [text("DRAFT")], usage: {} },
+      { stop_reason: "max_tokens", content: [text("REVISED")], usage: {} },
+    );
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("analyze AAPL", "", (e) => events.push(e));
+    const f = finals(events);
+    expect(f.length).toBe(2); // the revision delta + the truncation note
+    expect(f.every((e) => e.replace === undefined)).toBe(true);
+  });
+
+  it("marks the no-report fallback as replace: true", async () => {
+    currentRunCreditsMock.mockReturnValue(999);
+    resolvePlanMock.mockResolvedValue({ source: "subscription", degraded: false, config: { deepResearchPerRunCap: 300 } });
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("analyze AAPL", "", (e) => events.push(e), { userId: "u1" });
+    expect(finals(events)[0].replace).toBe(true);
+  });
+});
