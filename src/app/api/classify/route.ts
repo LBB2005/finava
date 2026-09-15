@@ -6,6 +6,7 @@ import { pageContextRouteHint } from "@/lib/pageContext";
 import { checkUsageLimit, usageStore, makeRunContext } from "@/lib/usage";
 import { userRateLimit } from "@/lib/rateLimit";
 import { promptClockLine } from "@/lib/promptClock";
+import { recordProviderFailure } from "@/lib/providerHealth";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -17,6 +18,8 @@ interface ClassifyResult {
   needsClarify: boolean;
   clarifyQuestion?: string;
   clarifyChips?: string[];
+  /** Set only when the router model call failed and this is the default route. */
+  degraded?: true;
 }
 
 const SYSTEM = `You are the router for Finava, an AI stock-research chat. Classify the user's latest message into ONE intent and decide whether a single clarifying question is needed BEFORE answering.
@@ -113,8 +116,12 @@ export async function POST(req: Request) {
         maxTokens: 200,
       });
       return coerce(parseJson(raw));
-    } catch {
-      return fallback;
+    } catch (err) {
+      // Never silent: on 13 Sep an empty OpenRouter balance turned every Auto
+      // send into plain chat with nothing in the logs and nothing on screen.
+      console.error("[classify] router model failed, using default route:", err);
+      recordProviderFailure("router");
+      return { ...fallback, degraded: true as const };
     }
   });
 

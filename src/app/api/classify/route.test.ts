@@ -9,7 +9,10 @@ const deps = vi.hoisted(() => ({
   userRateLimit: vi.fn(),
   checkUsageLimit: vi.fn(),
   pageContextRouteHint: vi.fn(() => "HINT: viewing NVDA"),
+  recordProviderFailure: vi.fn(),
 }));
+
+vi.mock("@/lib/providerHealth", () => ({ recordProviderFailure: deps.recordProviderFailure }));
 
 vi.mock("@/lib/requireAuth", () => ({ requireAuth: deps.requireAuth }));
 vi.mock("@/lib/llm", () => ({ generate: deps.generate }));
@@ -117,12 +120,28 @@ describe("POST /api/classify — model output parsing", () => {
     expect((await classify({ userPrompt: "NVDA" })).json.intent).toBe("simple");
   });
 
-  it("never dead-ends when the model call throws", async () => {
+  it("never dead-ends when the model call throws, and says the route is degraded", async () => {
+    vi.spyOn(console, "error").mockImplementationOnce(() => {});
     deps.generate.mockRejectedValueOnce(new Error("upstream 500"));
     await expect(classify({ userPrompt: "NVDA" })).resolves.toEqual({
       status: 200,
-      json: { intent: "simple", needsClarify: false },
+      json: { intent: "simple", needsClarify: false, degraded: true },
     });
+  });
+
+  it("logs the failure and marks router health degraded (no silent fallback)", async () => {
+    const log = vi.spyOn(console, "error").mockImplementationOnce(() => {});
+    const err = new Error("[llm:chatRouter] 402 Insufficient credits");
+    deps.generate.mockRejectedValueOnce(err);
+    await classify({ userPrompt: "full analysis of NVDA" });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("[classify]"), err);
+    expect(deps.recordProviderFailure).toHaveBeenCalledWith("router");
+  });
+
+  it("does not flag a parse failure as degraded (the model answered)", async () => {
+    deps.generate.mockResolvedValueOnce("I think you want agent mode.");
+    expect((await classify({ userPrompt: "NVDA" })).json.degraded).toBeUndefined();
+    expect(deps.recordProviderFailure).not.toHaveBeenCalled();
   });
 });
 
