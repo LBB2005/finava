@@ -152,6 +152,19 @@ describe("POST /api/chat", () => {
     expect(streamArg.messages).toEqual([{ role: "user", content: "Analyze NVDA" }]);
   });
 
+  it("tells the model today's date, what Finava costs, and where the advice line is", async () => {
+    const res = await POST(chatRequest({ messages: [{ role: "user", content: "does this app cost money?" }] }));
+    await res.text();
+    const system = deps.stream.mock.calls[0][0].system[0].text as string;
+    expect(system).toMatch(/Today is \w+day, \d{1,2} \w+ \d{4} \(US\/Eastern\)\. US market: /);
+    expect(system).toContain("## About Finava");
+    expect(system).toContain("Analyst");
+    expect(system).toContain("based on your holdings");
+    for (const banned of ["stop-loss", "trim level", "actionable recommendation", "rebalance threshold"]) {
+      expect(system.toLowerCase(), banned).not.toContain(banned);
+    }
+  });
+
   it("streams text deltas, records usage, emits followups, and ends with DONE", async () => {
     const res = await POST(chatRequest({ messages: [{ role: "user", content: "What about AAPL?" }] }));
 

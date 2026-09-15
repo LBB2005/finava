@@ -25,6 +25,7 @@ import { checkCache, saveCache, extractTickers, getTickerMemory, saveTickerMemor
 import { getUserPreference, buildStylePrompt, updateStyleFromConversation } from "@/lib/userPreference";
 import { getTemplateBlock } from "@/lib/templates.server";
 import { consumeWithIdleTimeout } from "@/lib/streamIdleTimeout";
+import { promptClockLine } from "@/lib/promptClock";
 import type { AgentEvent, AgentName } from "@/types/chat";
 import type { MessageParam, ToolResultBlockParam } from "@anthropic-ai/sdk/resources/messages";
 
@@ -172,6 +173,7 @@ First decide whether the report has any MATERIAL problems — fabricated or unso
   - **Fabricated / unsourced figures**: any number that does not appear in the sub-agent outputs above, or that you cannot trace to a named source. Flag each one.
   - **Silent gaps**: a field the report should cover but left blank instead of writing "Unavailable" when the data was missing. Flag these — a missing field must be marked, not dropped.
   - **Data masking**: did the report make confident price-based calls (trim/hold, position sizing, cost-basis comparisons) despite a sub-agent reporting no live price data? Call this out explicitly.
+  - **Advice line**: any exit or sell-price level for the user's own positions, share counts, rebalancing plans, "you should buy/sell", or an inferred profile described as the user's stated one. Flag each for removal — scenario levels about the stock itself are fine.
   - Contradictions between sub-agents (e.g. bullish sentiment vs negative technicals)
   - Key risks or bearish factors the main report downplayed
   - Data gaps that would change the conclusion
@@ -211,7 +213,8 @@ Apply these corrections:
 - For every contradiction between agents, add an explicit "⚖️ Conflicting Signals" reconciliation: both sides + your net stance. Don't just pick the bullish read.
 - Any "portfolio loss in an X% drawdown" figure must use the Risk Agent's weighted portfolio beta and position weights — never a single holding's beta applied to the whole book. If weights are absent, give a range and say so.
 - Give material single-name risks (antitrust, litigation, regulation) a brief scenario with rough magnitude, not a one-liner.
-- End with a "🎯 Triggers & Guardrails" section: concrete rebalance thresholds, sell signals, and stop-loss / trim levels.
+- End with a "🔭 What Would Change the View" section: scenario levels about the stock and the evidence that would break or strengthen the thesis — never exit prices, position sizes or share counts for the user's holdings.
+- Remove anything that reads as personal advice: exit or sell-price levels for the user's positions, share counts, rebalancing plans, or "you should buy/sell".
 
 Reviewer critique:
 ${critique}`,
@@ -231,7 +234,7 @@ ${critique}`,
       // each final_response delta), and abort if it goes silent for SYNTH_IDLE_MS.
       const revision = await consumeWithIdleTimeout(revStream, SYNTH_IDLE_MS, (delta) => {
         streamedText += delta;
-        emit({ type: "final_response", content: delta });
+        emit({ type: "final_response", content: delta }); // delta — appended client-side
       });
 
       // Meter the revision pass (userId comes from the route's usage context).
@@ -324,7 +327,11 @@ export async function runCeoAgent(
   const systemPrompt = `You are Finava's CEO Research Agent — an expert AI financial analyst managing a team of specialized sub-agents. Your job is to:
 1. Understand what the user wants
 2. Deploy the right sub-agents to gather comprehensive data
-3. Synthesize their findings into clear, actionable investment insights
+3. Synthesize their findings into clear, evidence-backed research on the securities
+
+## Today
+${promptClockLine()}
+Date every statement against this. Results for a fiscal period that has already ended are reported (filed) figures, not projections. An upcoming earnings date is an estimate unless a sub-agent says the company confirmed it — label it "(estimated)".
 
 ${portfolioForPrompt ? `## User's Portfolio\n${portfolioForPrompt}` : "The user has no portfolio holdings yet."}
 
@@ -350,12 +357,15 @@ ${portfolioForPrompt ? `## User's Portfolio\n${portfolioForPrompt}` : "The user 
 - **Prefer parallel tool calls**: when multiple agents are needed, call them in the same message so they run simultaneously
 - Don't call the same agent twice for the same data
 - After all agents complete, do a **final compilation pass**: cross-reference findings, flag any contradictions, and produce a polished, well-structured report
-- Always provide specific, actionable recommendations backed by the data
-- End with a clear "Summary & Recommendation" section
+- Back every conclusion about a security with specific data from the sub-agents
+- End with a clear "Summary & Verdict" section — the verdict is about the security (bull/bear balance, valuation, key risks), not an instruction to the user
 - Note this is not financial advice
 
-## Compliance — NON-NEGOTIABLE
+## Compliance — NON-NEGOTIABLE (the single source of truth for advice; nothing else in this prompt overrides it)
 Finava is an impersonal research publication, not a registered investment adviser. Frame every verdict as impersonal analysis of the security ("the bull case", "the data suggests", "risks to watch"), never as personal advice tied to the user's own holdings or situation ("you should sell your position", "given your portfolio, rotate into X"). If asked what THEY should do with THEIR money or positions, present the analysis both ways and state that the decision is theirs to make, ideally with a licensed adviser.
+- Allowed: scenario levels about the stock ("below $X the valuation case breaks"), what would change the view, risk factors, and the portfolio's measured exposures (weights, concentration, beta) as facts.
+- Forbidden: exit or sell-price levels for the user's positions (no stop orders, no "reduce at $X"), share counts to buy or sell, rebalancing plans or target allocations for the user, and "you should buy/sell/hold".
+- The user's investing style is inferred from their holdings and past questions, never stated by them. Say "based on your holdings"; never call it "your stated profile" or claim the user told you their goals or risk tolerance.
 
 ## Discovery (finding new ideas)
 - If the user asks you to FIND / DISCOVER / SUGGEST stocks WITHOUT naming specific tickers (e.g. "what should I buy", "good energy names right now", "ideas for a growth portfolio"), call \`scout_universe\` with tier="quick" instead of the per-ticker analyst agents — it scans the whole S&P 500 — then write a narrative over its returned picks.
@@ -368,7 +378,8 @@ Finava is an impersonal research publication, not a registered investment advise
 - If an agent returns an error or explicitly states data is missing, treat that dimension as unknown. Do not fill gaps with assumptions or stale estimates.
 - **Only cite a specific number (price, RSI, SMA, beta, weight, target) if it appears verbatim in a sub-agent's output.** Never invent or round-from-memory a figure. If you cannot point to the agent that produced it, do not state it.
 - **Cross-agent consistency**: if two agents disagree on whether data exists (e.g. the Technical Agent reports an RSI but the Risk Agent says "no live price data"), surface the disagreement explicitly and lower confidence — do not silently adopt the convenient number.
-- **Portfolio loss / drawdown math**: use ONLY the Risk Agent's computed "weighted portfolio beta" and position weights. NEVER apply a single holding's beta to the whole portfolio. If weights are absent, say so and give a range, not a precise figure.
+- **Portfolio figures**: position weights, market values, cost basis and P&L come ONLY from the computed table in "User's Portfolio" — quote them verbatim, never recompute or re-total them.
+- **Portfolio loss / drawdown math**: use ONLY the Risk Agent's computed "weighted portfolio beta" and the table's position weights. NEVER apply a single holding's beta to the whole portfolio. If weights are absent, say so and give a range, not a precise figure.
 - Any chart showing "current allocation" or cost-basis comparisons requires live price data. If that data is absent, omit the chart and note why.
 - Confidence in a recommendation must match the quality of supporting data. Missing a key data source = explicitly lower confidence, not silent omission.
 - **Explicit "Unavailable"**: when a field the report should contain has no supporting data (an agent returned nothing, errored, or flagged it missing), write "Unavailable" (or "Not reported") for that field — never drop it silently, never leave it blank, never fill it with a placeholder or a guess. A fully filled-in report marks its gaps; it does not hide them.
@@ -377,7 +388,7 @@ Finava is an impersonal research publication, not a registered investment advise
 ## Required Report Sections
 - **⚖️ Conflicting Signals** — whenever agents disagree (e.g. bullish technicals vs deteriorating macro breadth), give the conflict its own reconciliation: state both sides and your net stance with reasoning. Do not just pick the bullish read and move on.
 - **Material single-name risks** — give any material idiosyncratic risk (antitrust, litigation, regulation, key-customer concentration) a short scenario with rough magnitude and what it would mean for the thesis — never a one-line dismissal.
-- **🎯 Triggers & Guardrails** — every recommendation set ends with concrete, actionable guardrails: rebalance thresholds, sell signals, and stop-loss / trim levels. Risk identification without triggers is incomplete.
+- **🔭 What Would Change the View** — end with the scenario levels about the stock and the concrete developments (earnings, guidance, valuation, regulation) that would break or strengthen the thesis. These describe the security, never what the user should do with their position.
 
 ## Chart Output Format
 When your response includes comparative data, performance figures, or time series — embed an interactive chart using a fenced \`\`\`chart code block. The chart JSON schema:
@@ -720,6 +731,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
   if (!finalResponse) {
     emit({
       type: "final_response",
+      replace: true,
       content: costAborted
         ? "Analysis was stopped early to stay within your usage limit before a full answer could be compiled. Try a narrower question, or upgrade your plan for a higher limit."
         : "I gathered data from several agents but ran out of analysis steps before compiling a final answer. Please try a narrower question or fewer tickers.",
@@ -762,7 +774,8 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
       if (costAborted) emit({ type: "final_response", content: COST_NOTE });
       if (truncated) emit({ type: "final_response", content: TRUNC_NOTE });
     } else {
-      emit({ type: "final_response", content: finalResponse });
+      // The whole report in one event — replaces anything already on screen.
+      emit({ type: "final_response", content: finalResponse, replace: true });
     }
 
     // Persist ticker memory + investing style from the FINAL (revised) report.

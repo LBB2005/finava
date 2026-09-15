@@ -5,6 +5,7 @@ import { ClassifyRequestSchema } from "@/lib/schemas/chat";
 import { pageContextRouteHint } from "@/lib/pageContext";
 import { checkUsageLimit, usageStore, makeRunContext } from "@/lib/usage";
 import { userRateLimit } from "@/lib/rateLimit";
+import { promptClockLine } from "@/lib/promptClock";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
       // never clarify "which stock?" — the subject is already known.
       const pageBlock = pageContext ? `${pageContextRouteHint(pageContext)}\n` : "";
       const prompt = [
+        promptClockLine(),
         historyBlock ? `Recent conversation:\n${historyBlock}\n` : "",
         pageBlock,
         portfolioContext ? "The user HAS a portfolio with holdings.\n" : "",

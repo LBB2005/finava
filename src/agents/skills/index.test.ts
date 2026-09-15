@@ -36,6 +36,15 @@ describe("getSkillsPrompt", () => {
     expect(getSkillsPrompt("dcf")).not.toBe(getSkillsPrompt("fundamentals"));
   });
 
+  it("dates the prompts whose analysis depends on today (earnings, news, macro) and only those", () => {
+    const clock = /Today is \w+day, \d{1,2} \w+ \d{4} \(US\/Eastern\)\. US market: /;
+    for (const key of ["earnings", "news", "macro"]) {
+      expect(getSkillsPrompt(key), key).toMatch(clock);
+    }
+    // Static prompts stay byte-identical across calls (prompt-cache friendly).
+    expect(getSkillsPrompt("graham")).not.toMatch(clock);
+  });
+
   it("returns an empty string for an unknown key", () => {
     expect(getSkillsPrompt("nonexistent")).toBe("");
   });

@@ -62,6 +62,11 @@ describe("POST /api/classify — routing", () => {
     });
   });
 
+  it("tells the router today's date", async () => {
+    await classify({ userPrompt: "what happened in markets today?" });
+    expect(lastPrompt()).toMatch(/^Today is \w+day, \d{1,2} \w+ \d{4} \(US\/Eastern\)\. US market: /);
+  });
+
   it("accepts the discover intent", async () => {
     deps.generate.mockResolvedValueOnce('{"intent":"discover","needsClarify":false}');
     expect((await classify({ userPrompt: "find cheap energy stocks" })).json.intent).toBe("discover");
@@ -189,7 +194,8 @@ describe("POST /api/classify — clarify handling", () => {
 describe("POST /api/classify — prompt assembly", () => {
   it("includes only the latest message when there is no context", async () => {
     await classify({ userPrompt: "hello" });
-    expect(lastPrompt()).toBe("Latest message: hello");
+    // Only the always-present date line precedes it.
+    expect(lastPrompt()).toMatch(/^Today is [^\n]+\nLatest message: hello$/);
   });
 
   it("includes at most the last six history turns, each truncated", async () => {
