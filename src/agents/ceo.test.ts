@@ -524,6 +524,9 @@ describe("CEO prompt — advice line", () => {
     expect(prompt).toContain("based on your holdings");
     expect(prompt).toMatch(/never call .*"your stated profile"/i);
     expect(prompt).toMatch(/share counts/i);
+    // Seen live: "13.1% is above the ~5–7% guideline for a moderate-risk investor".
+    expect(prompt).toMatch(/position-size rules of thumb/i);
+    expect(prompt).toMatch(/never label the user with a risk tolerance/i);
   });
 
   it("tells the model today's date and market status", async () => {
