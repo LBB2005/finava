@@ -1,13 +1,12 @@
 "use client";
-import { useMemo } from "react";
 import Link from "next/link";
 import { HORIZONS, fmtPct1, type HorizonKey, type RankedStock } from "@/lib/research";
-import { verdictFor } from "@/lib/verdict";
+import { verdictFor, heroTag, priceMoveLabel, SIGNAL_STRENGTH_HELP, type Verdict } from "@/lib/verdict";
 import { ArcGauge, GradeBadge } from "./primitives";
 
-/** Three-dot confidence indicator — 3 = High, 2 = Moderate, 1 = Low. */
-function ConfidenceDots({ level }: { level: "High" | "Moderate" | "Low" }) {
-  const on = level === "High" ? 3 : level === "Moderate" ? 2 : 1;
+/** Three-dot signal-strength indicator — 3 = Strong, 2 = Moderate, 1 = Weak. */
+function StrengthDots({ level }: { level: Verdict["signalStrength"] }) {
+  const on = level === "Strong" ? 3 : level === "Moderate" ? 2 : 1;
   return (
     <span style={{ display: "inline-flex", gap: 3, alignItems: "center" }}>
       {[0, 1, 2].map((i) => (
@@ -18,14 +17,14 @@ function ConfidenceDots({ level }: { level: "High" | "Moderate" | "Low" }) {
 }
 
 /**
- * B1 hero — the horizon's top-ranked name across one strip: arc gauge +
+ * B1 hero — the horizon's highest-scoring name (never a "pick") across one strip: arc gauge +
  * identity, live price, and the rule-based factor read filling the middle.
  * Everything shown is derived from the factor scores; no price target is
  * implied here (the DCF on the stock page is the valuation surface).
  */
 export default function VerdictHero({ feature, horizon }: { feature: RankedStock; horizon: HorizonKey }) {
   const tag = HORIZONS.find((h) => h.key === horizon)?.tag ?? "1W";
-  const v = useMemo(() => verdictFor(feature, horizon), [feature, horizon]);
+  const v = verdictFor(feature, horizon); // cheap arithmetic; the React Compiler memoizes
   const up = feature.chg >= 0;
   const take = v.take.split(". ")[0] + ".";
   const horizonMove = feature.mv[horizon];
@@ -36,7 +35,7 @@ export default function VerdictHero({ feature, horizon }: { feature: RankedStock
       <div className="b1-pick">
         <ArcGauge score={feature.score} size={92} stroke={10} />
         <div className="b1-id">
-          <span className="mono b1-tag">{tag} · TOP PICK</span>
+          <span className="mono b1-tag">{heroTag(tag)}</span>
           <div className="b1-idrow">
             <Link href={`/stock/${feature.ticker}`} className="tklink">
               <span className="serif b1-tk">{feature.ticker}</span>
@@ -50,7 +49,7 @@ export default function VerdictHero({ feature, horizon }: { feature: RankedStock
       <div className="b1-px">
         <span className="serif b1-price">${feature.price.toFixed(2)}</span>
         <span className="mono b1-chg" style={{ color: up ? "var(--color-bull)" : "var(--color-bear)" }}>
-          {up ? "▲" : "▼"} {fmtPct1(feature.chg)} today
+          {up ? "▲" : "▼"} {fmtPct1(feature.chg)} {priceMoveLabel()}
         </span>
       </div>
 
@@ -60,8 +59,8 @@ export default function VerdictHero({ feature, horizon }: { feature: RankedStock
           <span className="b1-stance" style={{ color: stanceColor, borderColor: `color-mix(in oklab, ${stanceColor} 36%, var(--color-border))` }}>
             {v.stance}
           </span>
-          <span className="mono b1-conf">
-            Confidence <ConfidenceDots level={v.confidence} />
+          <span className="mono b1-conf" title={SIGNAL_STRENGTH_HELP} aria-label={`Signal strength ${v.signalStrength}. ${SIGNAL_STRENGTH_HELP}`}>
+            Signal strength <StrengthDots level={v.signalStrength} />
           </span>
         </div>
         <p className="b1-take">{take}</p>
