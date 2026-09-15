@@ -114,11 +114,17 @@ describe("GET /api/user", () => {
       currentPeriodEnd: "2026-07-01T00:00:00Z",
       cancelAtPeriodEnd: true,
       capabilities: { maxWatchlist: 100 },
-      allowDataTraining: false,
       locationMetadata: false,
       appearance: { theme: "dark" },
       stats: { conversations: 7, briefings: 2 },
     });
+  });
+
+  it("does not offer an AI-training consent nothing honours", async () => {
+    // No training/eval export reads this flag, so the API must not advertise it
+    // (a legacy stored value in userSettings stays inert).
+    const body = await (await GET()).json();
+    expect(body).not.toHaveProperty("allowDataTraining");
   });
 
   it("stamps a first-touch trial for unpaid users exactly once", async () => {
@@ -183,13 +189,13 @@ describe("PATCH /api/user", () => {
     expect(deps.sanitizeAppearance).toHaveBeenCalledWith({ theme: "purple", density: "compact" });
     expect(deps.settingsSet).toHaveBeenCalledWith(
       {
-        allowDataTraining: true,
         locationMetadata: false,
         appearance: { theme: "dark", density: "compact" },
       },
       { merge: true }
     );
     expect(JSON.stringify(deps.settingsSet.mock.calls[0][0])).not.toContain("Enterprise");
+    expect(deps.settingsSet.mock.calls[0][0]).not.toHaveProperty("allowDataTraining");
     await expect(res.json()).resolves.toEqual({ ok: true });
   });
 
