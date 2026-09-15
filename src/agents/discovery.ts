@@ -18,6 +18,8 @@ import {
   critiqueAndRevise,
 } from "@/agents/ceo";
 import { checkCache, saveCache } from "@/lib/agentMemory";
+import { isScoutFallbackPick } from "./sub-agents/scout-fallback";
+import { toUserFacingError } from "@/lib/userFacingError";
 import { DATA_ACCURACY_RULE } from "@/lib/dataAccuracy";
 import { promptClockLine } from "@/lib/promptClock";
 import type { AgentEvent } from "@/types/chat";
@@ -95,7 +97,8 @@ async function runOne(agentName: string, input: unknown): Promise<string> {
     saveCache(agentName, input, result).catch(() => {});
     return result;
   } catch (err) {
-    return `Error: ${err instanceof Error ? err.message : "unknown error"}`;
+    console.error(`[discovery] ${agentName} failed:`, err);
+    return `Error: ${toUserFacingError(err)}`;
   }
 }
 
@@ -248,9 +251,17 @@ export async function runDiscoverySynthesis(req: SynthesizeRequest, emit: EventE
     })
     .join("\n\n");
 
+  // A fallback shortlist is just the day's top factor scores — the scout never
+  // matched it to the request, so the report must not pretend it did.
+  const candidatesHeader = picks.some(isScoutFallbackPick)
+    ? `The discovery scout was unavailable, so these candidates are today's highest overall factor scores — NOT names selected for this request. Say so plainly at the top of the report, and do not describe any of them as a fit for the request.
+
+Candidates (ordered by overall factor score):`
+    : "Candidates (in the scout's initial fit order — re-rank as the evidence warrants):";
+
   const userPrompt = `User's discovery request: "${query}"
 
-Candidates (in the scout's initial fit order — re-rank as the evidence warrants):
+${candidatesHeader}
 
 ${pickBlocks}
 
@@ -288,7 +299,8 @@ Write the final ranked report now.`;
     draftAssistantBlocks = response.content;
     truncated = response.stop_reason === "max_tokens";
   } catch (err) {
-    emit({ type: "error", message: err instanceof Error ? err.message : "Synthesis failed." });
+    console.error("[discovery] synthesis failed:", err);
+    emit({ type: "error", message: toUserFacingError(err) });
     return;
   }
 
