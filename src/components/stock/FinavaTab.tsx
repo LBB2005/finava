@@ -11,7 +11,7 @@ import {
 } from "@/lib/finava";
 import ModelBadge, { PoweredByStrip } from "@/components/ui/ModelBadge";
 import Rule from "@/components/ui/Rule";
-import { slugToBrand, rosterFromBrands, type Brand } from "@/lib/models";
+import { slugToBrand, rosterFromBrands, BRAND_META, type Brand } from "@/lib/models";
 
 /* ── tokens / helpers ─────────────────────────────────────────────────────── */
 function stanceColor(stance: Stance): string {
@@ -204,7 +204,10 @@ export function FinavaTab({ ticker }: { ticker: string }) {
     );
   }
 
-  const take = verdict ? splitTake(verdict.take) : null;
+  // A failed AI narrative ships factor data only — never a canned "take" under a model badge.
+  const aiFallback = verdict?.fallback === true;
+  const take = verdict && !aiFallback ? splitTake(verdict.take) : null;
+  const narrator = verdict?.model && !aiFallback ? BRAND_META[slugToBrand(verdict.model)].label : null;
 
   return (
     <div className="fade-in" style={{ minWidth: 0 }}>
@@ -218,7 +221,7 @@ export function FinavaTab({ ticker }: { ticker: string }) {
             ) : (
               <button
                 onClick={refresh}
-                title="Re-run the 5-agent analysis (uses credits)"
+                title="Re-run the analysis (uses credits)"
                 aria-label="Refresh the analysis"
                 style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-accent)", padding: 2, display: "inline-flex" }}
               >
@@ -226,7 +229,11 @@ export function FinavaTab({ ticker }: { ticker: string }) {
               </button>
             )}
           </div>
-          {take ? (
+          {aiFallback ? (
+            <p role="status" style={{ margin: "10px 0 0", fontSize: "var(--text-sm)", lineHeight: 1.6, color: "var(--color-text-secondary)", maxWidth: "68ch" }}>
+              AI analysis unavailable right now — showing factor data only.
+            </p>
+          ) : take ? (
             <>
               <p className="serif" style={{ margin: "10px 0 0", fontSize: "var(--text-stat)", fontWeight: 800, lineHeight: 1.25, color: "var(--color-text)", letterSpacing: "-0.015em", textWrap: "balance" }}>
                 {take.headline}
@@ -315,7 +322,7 @@ export function FinavaTab({ ticker }: { ticker: string }) {
         {(() => {
           const brands = rosterFromBrands([
             ...Array.from(byKey.values()).flatMap((s): Brand[] => (s?.model ? [slugToBrand(s.model)] : [])),
-            ...(verdict?.model ? [slugToBrand(verdict.model)] : []),
+            ...(verdict?.model && !aiFallback ? [slugToBrand(verdict.model)] : []),
           ]);
           return brands.length ? (
             <div className="fade-in" style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--color-border)" }}>
@@ -325,7 +332,9 @@ export function FinavaTab({ ticker }: { ticker: string }) {
         })()}
 
         <p className="mono" style={{ margin: "14px 0 0", fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
-          Five AI signals — each scored by a different best-fit model, synthesised by Claude · AI-generated, may contain errors · research color, not investment advice.
+          {narrator
+            ? `Six computed factor pillars · narrative written by ${narrator} · AI-generated, may contain errors · research color, not investment advice.`
+            : "Six computed factor pillars · no AI narrative for this run · research color, not investment advice."}
         </p>
       </div>
     </div>

@@ -5,7 +5,8 @@
 // (six pillars, each a weighted blend of factors, with exclude-and-reweight on missing
 // data), and stream the six pillar signals followed by a verdict. The LLM is used ONLY
 // to write the narrative ("the take") around the already-decided numbers — never to pick
-// the score. A narrative failure still ships the deterministic verdict.
+// the score. A narrative failure still ships the deterministic verdict, flagged
+// `fallback: true` (no model badge, not cached).
 //
 // Because the pillars are COMPUTED, they carry no model badge — only the narrative does.
 // The completed run is persisted via saveVerdict for the cached-first stock page.
@@ -35,6 +36,8 @@ import { DATA_ACCURACY_RULE } from "@/lib/dataAccuracy";
 import { saveVerdict } from "@/lib/verdictStore";
 
 export const runtime = "nodejs";
+
+const FALLBACK_TAKE = "AI analysis unavailable right now — showing factor data only.";
 export const maxDuration = 60;
 
 /** Pull the first JSON object out of a model response, tolerating code fences. */
@@ -159,9 +162,13 @@ export async function POST(
         }
 
         // ── Narrative (LLM only writes prose around the decided numbers) ────────
-        let take = `Finava scores ${name} ${result.score}/100 (${verdictLabel(result.score)}), confidence ${result.confidence}. See the signal breakdown above. Informational research, not advice.`;
+        // A narrative failure (provider error or no usable take) is NOT dressed
+        // up as model output: no badge, a plain "unavailable" line, and no cache
+        // write — so a canned sentence never persists under "Powered by …".
+        let take = FALLBACK_TAKE;
         let catalysts: string[] = [];
         let risks: string[] = [];
+        let fallback = true;
         try {
           const pillarLine = result.pillars
             .map((p) => `${p.label} ${p.score == null ? "n/a" : Math.round(p.score)}`)
@@ -179,14 +186,14 @@ Explain WHY the score is what it is, grounded in the pillar scores and valuation
 
           const raw = await generate({ agent: "finavaSynthesis", maxTokens: 700, prompt: synthPrompt });
           const p = parseJson(raw);
-          if (p) {
-            if (typeof p.take === "string" && p.take.trim()) take = p.take.trim();
+          if (p && typeof p.take === "string" && p.take.trim()) {
+            take = p.take.trim();
             catalysts = toStrings(p.catalysts);
             risks = toStrings(p.risks);
+            fallback = false;
           }
         } catch (err) {
           console.error("[finava take]", symbol, err);
-          // Keep the templated take — the deterministic verdict still ships.
         }
 
         const verdict: FinavaVerdict = {
@@ -200,14 +207,18 @@ Explain WHY the score is what it is, grounded in the pillar scores and valuation
           catalysts,
           risks,
           comparison: { finava: fairValue, street, dcf: dcfFair },
-          model: AGENT_MODELS["finavaSynthesis"],
+          fallback,
+          // generate() doesn't report which model answered; finavaSynthesis is
+          // routed to Claude and its failover is also Claude, so the brand holds.
+          ...(fallback ? {} : { model: AGENT_MODELS["finavaSynthesis"] }),
         };
         send({ type: "verdict", verdict });
 
         // Persist the completed run for the cached-first stock page (rail /
         // Overview Read / tab hydration). Awaited so the serverless runtime
         // can't kill the write after the stream closes; saveVerdict never throws.
-        await saveVerdict(userId, symbol, verdict, signals);
+        // Fallback runs are not cached (see above).
+        if (!fallback) await saveVerdict(userId, symbol, verdict, signals);
       } catch (err) {
         console.error("[finava assemble]", symbol, err);
         send({ type: "error", message: "Failed to compute the Finava Score." });

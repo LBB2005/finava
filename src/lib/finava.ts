@@ -44,6 +44,7 @@ export interface FinavaVerdict {
     dcf: number | null; // model fair value under default assumptions
   };
   model?: string; // OpenRouter slug of the synthesis LLM (for the badge)
+  fallback?: boolean; // true when the AI narrative failed — factor data only, no badge
 }
 
 export interface FinavaAnalysis {
