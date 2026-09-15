@@ -10,14 +10,19 @@
  *            with its original thinking budget and max_tokens — i.e. behaves exactly
  *            as the app did pre-routing. Flip this env var to A/B or roll back instantly.
  *
+ * If OpenRouter itself is unavailable (billing, auth, 429/5xx, timeout), the call
+ * is retried directly against the vendor — see "Direct providers" below.
+ *
  * Only the model + thinking/token budgets change. Prompts, content, and return
  * types are untouched. The CEO orchestration loop and the chat SSE stream stay on
  * the Anthropic SDK directly (they stream and/or use tools, which the string-return
  * `generate()` below intentionally does not), and Perplexity calls are untouched.
  */
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "@/lib/usage";
-import { observeLlmClient, traceIdentity } from "@/lib/observability";
+import { observeAnthropic, observeLlmClient, traceIdentity } from "@/lib/observability";
+import { recordProviderFailure, recordProviderSuccess } from "@/lib/providerHealth";
 
 // ── Routing flag ────────────────────────────────────────────────────────────
 // Default "on". Any value other than "off" (incl. unset) enables routing.
@@ -291,6 +296,208 @@ function resolveCall(opts: GenerateOptions): {
   return { model, maxTokens, reasoning };
 }
 
+// ── Direct providers (bypass OpenRouter) ─────────────────────────────────────
+//
+// OpenRouter is one account in front of every model, so its balance or an outage
+// at the gateway takes every agent down at once — which is exactly what happened
+// on 13 Sep 2026. When the gateway itself is the problem, retry the call against
+// the vendor directly with the keys we already hold. Anthropic is the floor (the
+// app can't run without ANTHROPIC_API_KEY); the others are used only when their
+// key is configured, and only for the agent's own model family, so a Grok agent
+// stays on Grok rather than silently changing voice.
+
+export type AnsweredVia = "openrouter" | "direct";
+
+export interface GenerateResult {
+  text: string;
+  /** OpenRouter-style slug of the model that ACTUALLY answered (for badges/metering). */
+  model: string;
+  via: AnsweredVia;
+}
+
+type DirectProvider = "anthropic" | "openai" | "google" | "xai";
+
+interface OpenAiCompatibleVendor {
+  provider: Exclude<DirectProvider, "anthropic">;
+  envKey: string;
+  baseURL: string;
+  /** OpenAI's reasoning models reject `max_tokens`; the compat endpoints accept it. */
+  tokenParam: "max_tokens" | "max_completion_tokens";
+}
+
+const OPENAI_COMPATIBLE_VENDORS: Record<string, OpenAiCompatibleVendor> = {
+  "openai/": {
+    provider: "openai",
+    envKey: "OPENAI_API_KEY",
+    baseURL: "https://api.openai.com/v1",
+    tokenParam: "max_completion_tokens",
+  },
+  "google/": {
+    provider: "google",
+    envKey: "GEMINI_API_KEY",
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    tokenParam: "max_tokens",
+  },
+  "x-ai/": {
+    provider: "xai",
+    envKey: "XAI_API_KEY",
+    baseURL: "https://api.x.ai/v1",
+    tokenParam: "max_tokens",
+  },
+};
+
+// OpenRouter slug → Anthropic API id. Anything non-Anthropic lands on Sonnet,
+// the same model the gateway fallback already uses.
+const ANTHROPIC_DIRECT_IDS: Record<string, string> = {
+  [SONNET]: "claude-sonnet-4-6",
+  [HAIKU]: "claude-haiku-4-5",
+};
+
+interface DirectAttempt {
+  provider: DirectProvider;
+  /** Slug recorded as the answering model. */
+  slug: string;
+  run: () => Promise<{ text: string; inputTokens?: number; outputTokens?: number }>;
+}
+
+const clients = globalThis as typeof globalThis & {
+  __directOpenAiClients?: Map<string, OpenAI>;
+  __directAnthropicClient?: Anthropic;
+};
+
+function directOpenAiClient(vendor: OpenAiCompatibleVendor, apiKey: string): OpenAI {
+  if (!clients.__directOpenAiClients) clients.__directOpenAiClients = new Map();
+  let c = clients.__directOpenAiClients.get(vendor.provider);
+  if (!c) {
+    c = new OpenAI({ apiKey, baseURL: vendor.baseURL, timeout: 60_000, maxRetries: 0 });
+    clients.__directOpenAiClients.set(vendor.provider, c);
+  }
+  return c;
+}
+
+function directAnthropicClient(apiKey: string): Anthropic {
+  if (!clients.__directAnthropicClient) {
+    clients.__directAnthropicClient = observeAnthropic(
+      new Anthropic({ apiKey, timeout: 60_000, maxRetries: 0 })
+    );
+  }
+  return clients.__directAnthropicClient;
+}
+
+function parseDataUrl(url: string): { mediaType: string; data: string } | null {
+  const m = url.match(/^data:([^;,]+);base64,([\s\S]*)$/);
+  return m ? { mediaType: m[1], data: m[2] } : null;
+}
+
+/** OpenRouter/OpenAI content parts → Anthropic Messages content blocks. */
+function toAnthropicContent(parts: LlmContentPart[]): unknown[] {
+  return parts.map((p) => {
+    if (p.type === "text") return { type: "text", text: p.text };
+    if (p.type === "image_url") {
+      const d = parseDataUrl(p.image_url.url);
+      return d
+        ? { type: "image", source: { type: "base64", media_type: d.mediaType, data: d.data } }
+        : { type: "image", source: { type: "url", url: p.image_url.url } };
+    }
+    const d = parseDataUrl(p.file.file_data);
+    return {
+      type: "document",
+      source: {
+        type: "base64",
+        media_type: d?.mediaType ?? "application/pdf",
+        data: d?.data ?? p.file.file_data,
+      },
+    };
+  });
+}
+
+function directAttempts(
+  opts: GenerateOptions,
+  primary: string,
+  maxTokens: number,
+  hasFile: boolean
+): DirectAttempt[] {
+  const attempts: DirectAttempt[] = [];
+  const parts = opts.content ?? [{ type: "text" as const, text: opts.prompt ?? "" }];
+
+  const vendorPrefix = Object.keys(OPENAI_COMPATIBLE_VENDORS).find((k) => primary.startsWith(k));
+  const vendor = vendorPrefix ? OPENAI_COMPATIBLE_VENDORS[vendorPrefix] : undefined;
+  const vendorKey = vendor ? process.env[vendor.envKey] : undefined;
+  if (vendor && vendorKey && !hasFile) {
+    attempts.push({
+      provider: vendor.provider,
+      slug: primary,
+      run: async () => {
+        const messages: unknown[] = [];
+        if (opts.system) messages.push({ role: "system", content: opts.system });
+        messages.push({ role: "user", content: parts });
+        const r = await directOpenAiClient(vendor, vendorKey).chat.completions.create({
+          model: primary.slice(vendorPrefix!.length),
+          messages,
+          [vendor.tokenParam]: maxTokens,
+        } as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+        const content = r.choices?.[0]?.message?.content;
+        return {
+          text: typeof content === "string" ? content : "",
+          inputTokens: r.usage?.prompt_tokens,
+          outputTokens: r.usage?.completion_tokens,
+        };
+      },
+    });
+  }
+
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    const slug = ANTHROPIC_DIRECT_IDS[primary] ? primary : SONNET;
+    attempts.push({
+      provider: "anthropic",
+      slug,
+      run: async () => {
+        // No extended thinking on the fallback: its budget rules differ from
+        // OpenRouter's reasoning field, and a degraded answer beats no answer.
+        const r = await directAnthropicClient(anthropicKey).messages.create({
+          model: ANTHROPIC_DIRECT_IDS[slug],
+          max_tokens: maxTokens,
+          ...(opts.system
+            ? {
+                system: opts.cache
+                  ? [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }]
+                  : opts.system,
+              }
+            : {}),
+          messages: [{ role: "user", content: toAnthropicContent(parts) }],
+        } as unknown as Anthropic.MessageCreateParamsNonStreaming);
+        const text = (r.content ?? [])
+          .map((b) => (b.type === "text" ? b.text : ""))
+          .join("");
+        return { text, inputTokens: r.usage?.input_tokens, outputTokens: r.usage?.output_tokens };
+      },
+    });
+  }
+  return attempts;
+}
+
+/**
+ * Whether a gateway failure means "the provider is unavailable" (so going direct
+ * can help) rather than "this request is wrong" (so it can't). A 4xx that isn't
+ * auth/billing/rate-limit is our bug and would fail identically everywhere.
+ * Errors with no HTTP status — timeouts, connection resets, a missing key — are
+ * outages.
+ */
+function isOutage(err: unknown): boolean {
+  const status = err instanceof OpenAI.APIError ? err.status : undefined;
+  if (!status) return true;
+  if (status >= 500) return true;
+  return [401, 402, 403, 408, 429].includes(status);
+}
+
+/** Account-level failures: every model on the gateway will fail the same way. */
+function isGatewayAccountFailure(err: unknown): boolean {
+  const status = err instanceof OpenAI.APIError ? err.status : undefined;
+  if (status === 401 || status === 402 || status === 403) return true;
+  return err instanceof Error && /OPENROUTER_API_KEY is not set/.test(err.message);
+}
+
 /**
  * Single entry point for every routable, non-streaming LLM call. Normalizes to
  * OpenAI chat format, routes via OpenRouter, and returns the assistant text as a
@@ -298,6 +505,14 @@ function resolveCall(opts: GenerateOptions): {
  * existing per-agent try/catch + timeout still isolates it.
  */
 export async function generate(opts: GenerateOptions): Promise<string> {
+  return (await generateWithMeta(opts)).text;
+}
+
+/**
+ * `generate()` plus the model that actually answered. Use this where the answer
+ * is attributed to a model on screen, so a fallback never wears the primary's badge.
+ */
+export async function generateWithMeta(opts: GenerateOptions): Promise<GenerateResult> {
   const { agent, system, cache } = opts;
   const { model, maxTokens, reasoning } = resolveCall(opts);
   const start = Date.now();
@@ -345,20 +560,40 @@ export async function generate(opts: GenerateOptions): Promise<string> {
 
   // Ordered model fallback: if the resolved (possibly non-Anthropic) model errors
   // or returns an empty completion, retry once on a broadly-capable Anthropic
-  // model via the same OpenRouter gateway. OpenRouter fronts every provider, so
-  // this is genuine cross-provider failover — a Grok/GPT/Gemini outage degrades to
-  // Sonnet instead of failing the whole crew. File/PDF calls are NOT re-routed
-  // (the guard above pins them to the primary Anthropic model).
-  const FALLBACK_MODEL = "anthropic/claude-sonnet-4.6";
+  // model via the same OpenRouter gateway. That covers a single vendor being down
+  // behind the gateway; the direct-provider pass below covers the gateway itself.
+  // File/PDF calls are NOT re-routed (the guard above pins them to the primary
+  // Anthropic model).
+  const FALLBACK_MODEL = SONNET;
   const hasFile = opts.content?.some((p) => p.type === "file") ?? false;
   const candidates =
     model === FALLBACK_MODEL || hasFile ? [model] : [model, FALLBACK_MODEL];
 
-  let text = "";
   let lastError: Error | null = null;
+  let gatewayOutage = false;
   // Read once: the run context cannot change mid-call, and every attempt in the
   // loop below belongs to the same user and the same crew run.
   const identity = traceIdentity();
+
+  const meterAndLog = (answered: string, inputTokens?: number, outputTokens?: number) => {
+    // Meter every attempt that returned — an empty completion still burned tokens.
+    // (userId comes from the route's run context; fire-and-forget; skipped when
+    // meter:false for system-cost calls the user shouldn't pay for.)
+    if (opts.meter !== false) {
+      void recordUsage({ agent, model: answered, inputTokens, outputTokens });
+    }
+    if (process.env.LLM_LOG === "on") {
+      console.log(
+        `[llm] ${JSON.stringify({
+          agent,
+          model: answered,
+          inputTokens: inputTokens ?? null,
+          outputTokens: outputTokens ?? null,
+          ms: Date.now() - start,
+        })}`
+      );
+    }
+  };
 
   for (const candidate of candidates) {
     let response;
@@ -381,40 +616,23 @@ export async function generate(opts: GenerateOptions): Promise<string> {
         err instanceof OpenAI.APIError && err.status ? ` (status ${err.status})` : "";
       const msg = err instanceof Error ? err.message : "Unknown error";
       lastError = new Error(`[llm:${agent}] ${candidate} request failed${status}: ${msg}`);
+      if (isOutage(err)) {
+        gatewayOutage = true;
+        recordProviderFailure("openrouter");
+        console.warn(`[llm:${agent}] OpenRouter ${candidate} failed${status}: ${msg}`);
+      }
+      if (isGatewayAccountFailure(err)) break; // every gateway model fails the same way
       continue; // fall back to the next candidate
     }
 
     const rawContent = response.choices?.[0]?.message?.content;
     const attemptText = typeof rawContent === "string" ? rawContent : "";
     const u = response.usage;
-
-    // Meter every attempt that returned — an empty completion still burned tokens.
-    // (userId comes from the route's run context; fire-and-forget; skipped when
-    // meter:false for system-cost calls the user shouldn't pay for.)
-    if (opts.meter !== false) {
-      void recordUsage({
-        agent,
-        model: candidate,
-        inputTokens: u?.prompt_tokens,
-        outputTokens: u?.completion_tokens,
-      });
-    }
-    if (process.env.LLM_LOG === "on") {
-      console.log(
-        `[llm] ${JSON.stringify({
-          agent,
-          model: candidate,
-          inputTokens: u?.prompt_tokens ?? null,
-          outputTokens: u?.completion_tokens ?? null,
-          ms: Date.now() - start,
-        })}`
-      );
-    }
+    meterAndLog(candidate, u?.prompt_tokens, u?.completion_tokens);
+    recordProviderSuccess("openrouter");
 
     if (attemptText.trim()) {
-      text = attemptText;
-      lastError = null;
-      break;
+      return { text: attemptText, model: candidate, via: "openrouter" };
     }
 
     // Empty/blank completion is a failure, not a valid result (a bare "" would
@@ -427,14 +645,31 @@ export async function generate(opts: GenerateOptions): Promise<string> {
     );
   }
 
-  if (!text) {
-    if (candidates.length > 1) {
-      console.warn(`[llm:${agent}] primary + fallback models both failed`);
+  // The gateway is unavailable — go direct. Not attempted for model-level
+  // failures (a 400, an empty completion): those would fail the same way direct.
+  if (gatewayOutage) {
+    for (const attempt of directAttempts(opts, model, maxTokens, hasFile)) {
+      try {
+        const r = await attempt.run();
+        meterAndLog(attempt.slug, r.inputTokens, r.outputTokens);
+        recordProviderSuccess(attempt.provider);
+        if (r.text.trim()) {
+          console.warn(`[llm:${agent}] answered by ${attempt.slug} direct (OpenRouter unavailable)`);
+          return { text: r.text, model: attempt.slug, via: "direct" };
+        }
+        lastError = new Error(`[llm:${agent}] ${attempt.slug} (direct) returned empty content`);
+      } catch (err) {
+        recordProviderFailure(attempt.provider);
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        lastError = new Error(`[llm:${agent}] ${attempt.slug} (direct) request failed: ${msg}`);
+      }
     }
-    // Surface the last failure so each caller's try/catch + the CEO's is_error
-    // tool_result path handle it exactly as before.
-    throw lastError ?? new Error(`[llm:${agent}] request failed: no response`);
   }
 
-  return text;
+  if (candidates.length > 1 || gatewayOutage) {
+    console.warn(`[llm:${agent}] every model attempt failed`);
+  }
+  // Surface the last failure so each caller's try/catch + the CEO's is_error
+  // tool_result path handle it exactly as before.
+  throw lastError ?? new Error(`[llm:${agent}] request failed: no response`);
 }
