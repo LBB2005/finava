@@ -21,6 +21,7 @@ import { runAnalystAgent } from "./sub-agents/analyst-agent";
 import { runHypeAgent } from "./sub-agents/hype-agent";
 import { runFundamentalsAgent } from "./sub-agents/fundamentals-agent";
 import { runScoutAgent } from "./sub-agents/scout-agent";
+import { toUserFacingError } from "@/lib/userFacingError";
 import { checkCache, saveCache, extractTickers, getTickerMemory, saveTickerMemory } from "@/lib/agentMemory";
 import { getUserPreference, buildStylePrompt, updateStyleFromConversation } from "@/lib/userPreference";
 import { getTemplateBlock } from "@/lib/templates.server";
@@ -697,7 +698,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
             content: result,
           };
         } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : "Unknown error";
+          const errorMsg = toUserFacingError(err);
           emit({ type: "agent_error", agent: agentName, error: errorMsg });
           return {
             type: "tool_result" as const,
