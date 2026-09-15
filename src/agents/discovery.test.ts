@@ -119,7 +119,8 @@ describe("runDiscoverySynthesis", () => {
     await runDiscoverySynthesis(req as never, (e) => events.push(e));
     expect(h.critique).toHaveBeenCalled();
     expect(events).toContainEqual(
-      expect.objectContaining({ type: "final_response", content: expect.stringContaining("[revised]") }),
+      // replace: the revision already streamed as deltas; this emit is the whole report.
+      expect.objectContaining({ type: "final_response", content: expect.stringContaining("[revised]"), replace: true }),
     );
   });
 

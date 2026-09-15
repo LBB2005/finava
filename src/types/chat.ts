@@ -1,4 +1,4 @@
-import type { ScoutPick, DiscoverTier, DiscoverLayout, WaveEvidence } from "@/lib/scoutTypes";
+import type { ScoutPick, DiscoverTier, DiscoverLayout, WaveEvidence, DiscoverMessageContent } from "@/lib/scoutTypes";
 import type { Brand } from "@/lib/models";
 import type { ChatContext } from "@/lib/chatContext";
 
@@ -47,6 +47,11 @@ export interface ChatMessage {
   /** Which page this message was asked from (`stock:AAPL`, `portfolio`, …), or
    *  absent when typed in the main /chat area. Drives the citation pill. */
   context?: ChatContext;
+  /** Discovery: the structured result the card renders. `content` holds the
+   *  readable text version the model sees in history. */
+  attachment?: DiscoverMessageContent;
+  /** The user pressed Stop; `content` is the partial answer. Not an error. */
+  stopped?: boolean;
 }
 
 export type AgentName =
@@ -106,7 +111,9 @@ export type AgentEvent =
   | { type: "agent_error"; agent: AgentName; error: string }
   | { type: "ceo_thinking"; content: string }
   | { type: "ceo_compiling" }
-  | { type: "final_response"; content: string }
+  // Streamed as deltas: the client appends each one. `replace: true` marks an
+  // emit that carries the whole report, which resets the text so far.
+  | { type: "final_response"; content: string; replace?: boolean }
   | { type: "skeptic_start" }
   | { type: "skeptic_complete"; critique: string }
   | { type: "followups"; questions: string[] }

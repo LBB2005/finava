@@ -9,7 +9,7 @@ export const POST = withRoute(
   { body: AddMessageSchema },
   async ({ userId, body }, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
-    const { role, content, mode = "simple", agentTrace, durationMs, context } = body;
+    const { role, content, mode = "simple", agentTrace, durationMs, context, followups, critique, attachment, stopped } = body;
 
     // Verify the conversation belongs to this user
     const convRef = db.collection("users").doc(userId).collection("conversations").doc(id);
@@ -27,6 +27,11 @@ export const POST = withRoute(
       agentTrace: agentTrace ? JSON.stringify(agentTrace) : null,
       durationMs: typeof durationMs === "number" ? durationMs : null,
       context: context ?? null,
+      // Stored with the message so a reload shows what the live run showed.
+      ...(followups?.length ? { followups } : {}),
+      ...(critique ? { critique } : {}),
+      ...(attachment ? { attachment } : {}),
+      ...(stopped ? { stopped: true } : {}),
       createdAt: now,
     });
 

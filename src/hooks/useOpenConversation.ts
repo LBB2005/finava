@@ -3,29 +3,12 @@ import { useRouter } from "next/navigation";
 import { mutate } from "swr";
 import { useChatStore } from "@/stores/chatStore";
 import { authFetch } from "@/lib/authFetch";
-import type { ChatMode, AgentStep } from "@/types/chat";
-import type { ChatContext } from "@/lib/chatContext";
 import type { Conversation } from "@/components/layout/ConversationList";
+import { fromStoredMessage } from "@/lib/chat/storedMessage";
+import { chatHref } from "@/lib/chat/conversationUrl";
 
-type ConvMessage = Conversation["messages"][number];
-
-function toStoreMessages(messages: ConvMessage[]) {
-  return messages.map((m) => {
-    let agentTrace: AgentStep[] | undefined;
-    if (m.agentTrace) {
-      try { agentTrace = JSON.parse(m.agentTrace); } catch { /* malformed trace — skip */ }
-    }
-    return {
-      id: m.id,
-      role: m.role as "user" | "assistant",
-      content: m.content,
-      mode: (m.mode as ChatMode) || "agent",
-      createdAt: m.createdAt,
-      agentTrace,
-      durationMs: typeof m.durationMs === "number" ? m.durationMs : undefined,
-      context: (m.context as ChatContext) ?? undefined,
-    };
-  });
+function toStoreMessages(messages: Conversation["messages"]) {
+  return messages.map(fromStoredMessage);
 }
 
 /** Load a stored conversation into the chat store and (by default) open /chat.
@@ -79,6 +62,27 @@ export function useOpenConversation() {
       } catch { /* preview already shown; background refresh is best-effort */ }
     })();
 
-    if (opts?.navigate !== false) router.push("/chat");
+    // Already on /chat, ConversationUrlSync writes ?c= itself; pushing here too
+    // would leave a duplicate history entry.
+    if (opts?.navigate !== false && window.location.pathname !== "/chat") router.push(chatHref(conv.id));
   };
+}
+
+/** View a conversation known only by id (reload, back/forward, a shared /chat?c= link).
+ *  Resolves false when it doesn't exist or can't be loaded. */
+export async function openConversationById(id: string): Promise<boolean> {
+  const { setMessages, setConversationId, setPageContextForConv } = useChatStore.getState();
+  setConversationId(id);
+  try {
+    const res = await authFetch(`/api/conversations/${id}`);
+    if (!res.ok) return false;
+    const full: Conversation = await res.json();
+    if (!useChatStore.getState().streamsByConv[id]?.isStreaming) {
+      setMessages(id, toStoreMessages(full.messages ?? []));
+    }
+    if (full.pageContext) setPageContextForConv(id, full.pageContext);
+    return true;
+  } catch {
+    return false;
+  }
 }

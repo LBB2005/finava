@@ -5,6 +5,7 @@ import { useWatchlists } from "@/hooks/useWatchlists";
 import { useWatchlistStore } from "@/stores/watchlistStore";
 import { contextFromPath } from "@/lib/chatContext";
 import ChatInput from "./ChatInput";
+import { stopConversationStream } from "./ChatEngine";
 
 // One persistent composer for the whole app. Lives in the app shell, outside the
 // route-keyed <main>, so it never unmounts as you move between pages. On /chat it
@@ -54,6 +55,8 @@ export default function GlobalComposer() {
         floating
         onSend={handleSend}
         disabled={isChat && viewedStreaming}
+        streaming={isChat && viewedStreaming}
+        onStop={() => { if (conversationId) stopConversationStream(conversationId); }}
         mode={mode}
         onModeChange={setMode}
         autoFocus={focusOnFreshChat}
