@@ -1,6 +1,6 @@
 "use client";
 
-import { type Brand, BRAND_META, slugToBrand } from "@/lib/models";
+import { type Brand, type RunMeta, BRAND_META, brandRole, slugToBrand } from "@/lib/models";
 
 // Stylized, monochrome brand glyphs (16×16, drawn with currentColor so the brand
 // accent tints them). Distinct silhouettes for at-a-glance recognition; the short
@@ -36,8 +36,11 @@ const GLYPHS: Record<Brand, React.ReactNode> = {
   ),
 };
 
-/** "Powered by Claude · GPT · Gemini …" roster strip, shared by both surfaces. */
-export function PoweredByStrip({ brands, className }: { brands: Brand[]; className?: string }) {
+/**
+ * "Powered by Claude · GPT · Gemini …" roster strip, shared by both surfaces.
+ * Tooltip roles come from `run` (what actually ran); without it, no role claim.
+ */
+export function PoweredByStrip({ brands, run, className }: { brands: Brand[]; run?: RunMeta; className?: string }) {
   if (!brands.length) return null;
   return (
     <div
@@ -51,7 +54,7 @@ export function PoweredByStrip({ brands, className }: { brands: Brand[]; classNa
         Powered by
       </span>
       {brands.map((b) => (
-        <span key={b} style={{ display: "inline-flex", alignItems: "center", gap: 4 }} title={BRAND_META[b].role}>
+        <span key={b} style={{ display: "inline-flex", alignItems: "center", gap: 4 }} title={brandRole(b, run) ?? undefined}>
           <ModelGlyph brand={b} size={12} />
           <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--color-text-secondary)" }}>
             {BRAND_META[b].label}

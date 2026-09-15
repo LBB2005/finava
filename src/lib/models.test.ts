@@ -10,7 +10,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@/lib/usage", () => ({ recordUsage: () => {} }));
 
 import { AGENT_MODELS, LLM_ROUTING_ON } from "@/lib/llm";
-import { slugToBrand, badgeBrands, rosterFromBrands } from "@/lib/models";
+import { slugToBrand, badgeBrands, rosterFromBrands, brandRole, BRAND_META } from "@/lib/models";
 
 describe("calibrated routing (AGENT_MODELS)", () => {
   it("routes the numeric agents to GPT-5.5", () => {
@@ -20,7 +20,7 @@ describe("calibrated routing (AGENT_MODELS)", () => {
     }
   });
 
-  it("routes sentiment to Grok (live social)", () => {
+  it("routes sentiment to Grok", () => {
     expect(AGENT_MODELS.sentiment).toBe("x-ai/grok-4.3");
   });
 
@@ -65,5 +65,29 @@ describe("badge display registry", () => {
       "gemini",
       "grok",
     ]);
+  });
+});
+
+describe("brandRole — describes what actually ran", () => {
+  it("keeps the static map for presentation only (no role claims)", () => {
+    expect(BRAND_META.grok).not.toHaveProperty("role");
+    expect(BRAND_META.grok.accent).toBeTruthy();
+  });
+
+  it("claims X search for Grok only when the X tool returned posts", () => {
+    expect(brandRole("grok", { xSearchPosts: 12 })).toBe("X search");
+    expect(brandRole("grok", { xSearchPosts: 0 })).toBeNull();
+    expect(brandRole("grok")).toBeNull();
+  });
+
+  it("never makes a live/social claim without run metadata", () => {
+    for (const b of ["claude", "openai", "gemini", "grok", "perplexity"] as const) {
+      expect(brandRole(b) ?? "").not.toMatch(/live|social|x search/i);
+    }
+  });
+
+  it("claims live web for Perplexity only when sources came back", () => {
+    expect(brandRole("perplexity", { webSources: 3 })).toBe("Live web");
+    expect(brandRole("perplexity", { webSources: 0 })).toBeNull();
   });
 });
