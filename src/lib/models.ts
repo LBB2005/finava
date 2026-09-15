@@ -18,17 +18,43 @@ export interface BrandMeta {
   short: string;
   /** Brand accent (used for the glyph + pill tint). */
   accent: string;
-  /** One-line identity, shown in tooltips / the "powered by" strip. */
-  role: string;
 }
 
 export const BRAND_META: Record<Brand, BrandMeta> = {
-  claude: { label: "Claude", short: "Claude", accent: "#d97757", role: "Synthesis & judgment" },
-  openai: { label: "GPT-5.5", short: "GPT", accent: "#10a37f", role: "The numbers" },
-  gemini: { label: "Gemini", short: "Gemini", accent: "#4285f4", role: "Reads everything" },
-  grok: { label: "Grok", short: "Grok", accent: "#1a1a1a", role: "Live social" },
-  perplexity: { label: "Perplexity", short: "Perplexity", accent: "#20808d", role: "Live web" },
+  claude: { label: "Claude", short: "Claude", accent: "#d97757" },
+  openai: { label: "GPT-5.5", short: "GPT", accent: "#10a37f" },
+  gemini: { label: "Gemini", short: "Gemini", accent: "#4285f4" },
+  grok: { label: "Grok", short: "Grok", accent: "#1a1a1a" },
+  perplexity: { label: "Perplexity", short: "Perplexity", accent: "#20808d" },
 };
+
+/**
+ * What a run actually did, as reported by the code that ran it. Absent fields
+ * mean "unknown" and earn no claim.
+ */
+export interface RunMeta {
+  /** Real X posts the Grok x_search tool returned (0 = degraded / no posts). */
+  xSearchPosts?: number;
+  /** Web sources a live-search model cited. */
+  webSources?: number;
+}
+
+/**
+ * Role line for a brand's tooltip, derived from run metadata rather than a
+ * static map: a badge must describe what ran, not what the model is capable of.
+ * Returns null when there is nothing true to say (e.g. Grok answered from a
+ * plain completion, so no X search happened).
+ */
+export function brandRole(brand: Brand, run?: RunMeta): string | null {
+  switch (brand) {
+    case "grok":
+      return run?.xSearchPosts != null && run.xSearchPosts > 0 ? "X search" : null;
+    case "perplexity":
+      return run?.webSources != null && run.webSources > 0 ? "Live web" : null;
+    default:
+      return null;
+  }
+}
 
 /** Resolve an OpenRouter model slug to its display brand. */
 export function slugToBrand(slug: string): Brand {

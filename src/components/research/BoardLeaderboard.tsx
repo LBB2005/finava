@@ -1,7 +1,8 @@
 "use client";
 import { memo, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ranked, fmtPct1, fmtMktCap, type HorizonKey, type RankedStock, type Stock } from "@/lib/research";
+import { fmtPct1, fmtMktCap, type HorizonKey, type RankedStock, type Stock } from "@/lib/research";
+import { boardRanking, boardStatusLabel } from "@/lib/verdict";
 import { GradeBadge, ShowMore } from "./primitives";
 
 // Ranked rows are rebuilt as fresh objects on every 30s live-data poll, so a
@@ -47,6 +48,26 @@ const Row = memo(function Row({ s, onOpen }: { s: RankedStock; onOpen: (t: strin
   prev.s.grade === next.s.grade
 );
 
+/** A name whose factor profile is a placeholder: listed, never ranked or scored. */
+function UnrankedRow({ s, onOpen }: { s: Stock; onOpen: (t: string) => void }) {
+  return (
+    <tr className="b-row" onClick={() => onOpen(s.ticker)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(s.ticker); }}>
+      <td className="mono" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>—</td>
+      <td>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span className="tk" style={{ fontSize: "var(--text-sm)" }}>{s.ticker}</span>
+          <span className="b-rowname">{s.name}</span>
+        </span>
+      </td>
+      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-text)" }}>{s.price > 0 ? s.price.toFixed(2) : "—"}</td>
+      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>{s.price > 0 ? fmtPct1(s.chg) : "—"}</td>
+      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>{fmtMktCap(s.marketCap)}</td>
+      <td style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)", fontStyle: "italic" }}>Not enough data</td>
+      <td style={{ textAlign: "center", color: "var(--color-muted)" }}>—</td>
+    </tr>
+  );
+}
+
 /** B1 leaderboard — the horizon-weighted board, collapsed to the top names with
  *  a Show more / Show less control. */
 export default function BoardLeaderboard({
@@ -64,9 +85,15 @@ export default function BoardLeaderboard({
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
-  const rows = useMemo(() => ranked(horizon, universe), [horizon, universe]);
-  const shown = rows.slice(0, expanded ? expandTo : collapsed);
-  const more = Math.min(expandTo, rows.length) - collapsed;
+  // Placeholder (insufficient-data) names are held out of the ranking entirely;
+  // they only appear, unranked, once the ranked names run out.
+  const { ranked: rows, notEnoughData } = useMemo(() => boardRanking(horizon, universe), [horizon, universe]);
+  const limit = expanded ? expandTo : collapsed;
+  const shown = rows.slice(0, limit);
+  const shownUnranked = notEnoughData.slice(0, Math.max(0, limit - shown.length));
+  const total = rows.length + notEnoughData.length;
+  const more = Math.min(expandTo, total) - collapsed;
+  const status = boardStatusLabel(loading);
   const onOpen = useCallback((t: string) => router.push(`/stock/${t}`), [router]);
 
   return (
@@ -76,20 +103,20 @@ export default function BoardLeaderboard({
         <span className="mono b-boardmeta">weighted {horizon.toUpperCase()}</span>
         <span
           className="mono b-live"
-          style={{ color: loading ? "var(--color-muted)" : "var(--color-bull)", display: "inline-flex", alignItems: "center", gap: 5 }}
+          style={{ color: status === "LIVE" ? "var(--color-bull)" : "var(--color-muted)", display: "inline-flex", alignItems: "center", gap: 5 }}
         >
           <span
             aria-hidden="true"
             style={{
               width: 6, height: 6, borderRadius: 999, flexShrink: 0,
-              background: loading ? "transparent" : "currentColor",
-              border: loading ? "1px solid currentColor" : "none",
+              background: status === "LIVE" ? "currentColor" : "transparent",
+              border: status === "LIVE" ? "none" : "1px solid currentColor",
             }}
           />
-          {loading ? "SYNCING" : "LIVE"}
+          {status}
         </span>
       </div>
-      {rows.length === 0 ? (
+      {total === 0 ? (
         <div className="empty-note flex flex-col items-center justify-center" style={{ minHeight: 240 }}>
           No names on the board yet — the leaderboard fills in once the S&amp;P 500 data loads.
         </div>
@@ -108,8 +135,14 @@ export default function BoardLeaderboard({
           </thead>
           <tbody>
             {shown.map((s) => <Row key={s.ticker} s={s} onOpen={onOpen} />)}
+            {shownUnranked.map((s) => <UnrankedRow key={s.ticker} s={s} onOpen={onOpen} />)}
           </tbody>
         </table>
+      )}
+      {notEnoughData.length > 0 && (
+        <p className="mono" style={{ margin: "8px 0 0", fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
+          {notEnoughData.length} {notEnoughData.length === 1 ? "name" : "names"} not ranked · Not enough data
+        </p>
       )}
       {more > 0 && <ShowMore expanded={expanded} onToggle={() => setExpanded((e) => !e)} more={more} />}
     </div>

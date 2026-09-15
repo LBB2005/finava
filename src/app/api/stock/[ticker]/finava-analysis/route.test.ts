@@ -173,16 +173,43 @@ describe("POST /api/stock/[ticker]/finava-analysis", () => {
     expect(analyst.headline).toBe("No data yet");
   });
 
-  it("still ships the deterministic verdict when the narrative model fails", async () => {
+  it("flags a narrative failure as fallback: no model badge, and nothing cached", async () => {
     deps.generate.mockRejectedValueOnce(new Error("provider down"));
 
     const res = await POST(new Request("http://test.local"), ctx("AAPL"));
     const evs = await events(res);
     const verdict = evs.find((e) => e.type === "verdict")!.verdict;
 
+    // The deterministic score still ships…
     expect(evs.filter((e) => e.type === "signal")).toHaveLength(6);
     expect(verdict.score).toBeGreaterThan(0);
-    expect(verdict.take).toContain("Finava scores");
+    // …but it is labelled as factor data only, never as a model's analysis.
+    expect(verdict.fallback).toBe(true);
+    expect(verdict.model).toBeUndefined();
+    expect(verdict.take).toBe("AI analysis unavailable right now — showing factor data only.");
+    expect(verdict.catalysts).toEqual([]);
+    expect(verdict.risks).toEqual([]);
+    // A canned sentence must not be cached under a "Powered by" label.
+    expect(deps.saveVerdict).not.toHaveBeenCalled();
+  });
+
+  it("treats an unusable model response (no take) as a fallback too", async () => {
+    deps.generate.mockResolvedValueOnce("Sorry, I can't help with that.");
+
+    const res = await POST(new Request("http://test.local"), ctx("AAPL"));
+    const verdict = (await events(res)).find((e) => e.type === "verdict")!.verdict;
+
+    expect(verdict.fallback).toBe(true);
+    expect(verdict.model).toBeUndefined();
+    expect(deps.saveVerdict).not.toHaveBeenCalled();
+  });
+
+  it("badges and caches only a real model response", async () => {
+    const res = await POST(new Request("http://test.local"), ctx("AAPL"));
+    const verdict = (await events(res)).find((e) => e.type === "verdict")!.verdict;
+
+    expect(verdict.fallback).toBe(false);
+    expect(verdict.model).toBe("synth-model");
     expect(deps.saveVerdict).toHaveBeenCalledTimes(1);
   });
 

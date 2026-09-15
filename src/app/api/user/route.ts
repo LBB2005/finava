@@ -61,7 +61,6 @@ export async function GET() {
       currentPeriodEnd: (settings?.currentPeriodEnd as string | undefined) ?? null,
       cancelAtPeriodEnd: (settings?.cancelAtPeriodEnd as boolean | undefined) ?? false,
       capabilities: capabilitiesFor(ent.plan),
-      allowDataTraining: (settings?.allowDataTraining as boolean) ?? true,
       locationMetadata: (settings?.locationMetadata as boolean) ?? true,
       allowInvestorDNA: (settings?.allowInvestorDNA as boolean) ?? true,
       notifyWeeklyBriefing: (settings?.notifyWeeklyBriefing as boolean) ?? true,
@@ -88,8 +87,9 @@ export async function PATCH(request: Request) {
     // NOTE: `plan` is deliberately NOT client-writable — it is server-authoritative
     // and only the Stripe webhook (+ trial stamp) may set it. Otherwise a user
     // could self-upgrade to a paid tier with a PATCH.
+    // (No AI-training consent: nothing exports user data for training, so the
+    // control was removed rather than offered as a switch that does nothing.)
     for (const key of [
-      "allowDataTraining",
       "locationMetadata",
       "allowInvestorDNA",
       "notifyWeeklyBriefing",

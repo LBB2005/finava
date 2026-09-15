@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
-import { HORIZONS, overlayLive, ranked, type HorizonKey } from "@/lib/research";
+import { HORIZONS, overlayLive, type HorizonKey } from "@/lib/research";
+import { boardRanking } from "@/lib/verdict";
 import { useLiveBoard } from "@/hooks/useLiveBoard";
 import { useFactorUniverse } from "@/hooks/useFactorUniverse";
 import { useChatStore } from "@/stores/chatStore";
@@ -95,7 +96,7 @@ export default function ResearchPage() {
   const factorsUnavailable = !!factorsError && baseUniverse.length === 0;
   const asOfLabel = asOf ? fmtAsOf(asOf) : factorsUnavailable ? "Unavailable" : "Syncing…";
 
-  const rankedTop = useMemo(() => ranked(horizon, universe).slice(0, 8), [horizon, universe]);
+  const rankedTop = useMemo(() => boardRanking(horizon, universe).ranked.slice(0, 8), [horizon, universe]);
   const feature = rankedTop[0];
 
   // Publish the active lens + top-ranked names as the app-wide page context, so a

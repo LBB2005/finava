@@ -27,7 +27,6 @@ interface UserData {
   currentPeriodEnd?: string | null;
   cancelAtPeriodEnd?: boolean;
   capabilities?: Record<string, boolean>;
-  allowDataTraining: boolean;
   locationMetadata: boolean;
   allowInvestorDNA: boolean;
   notifyWeeklyBriefing?: boolean;
@@ -501,9 +500,8 @@ function ConnectionsSection({ userData }: { userData: UserData | undefined }) {
   return (
     <div>
       <Head title="Connections" description="Brokerages and services linked to your Finava account." />
-      <ConnectionRow logo="AL" color="#ffd400" fg="#0d1626" name="Alpaca" status="Connected · Paper trading" live>
-        <Btn variant="soft">Manage</Btn>
-      </ConnectionRow>
+      {/* No Alpaca row: there is no per-user Alpaca linking (paper trading runs on
+          a server-wide account), so any per-user status here would be invented. */}
       <ConnectionRow
         logo="G"
         color="#fff"
@@ -985,12 +983,6 @@ function PrivacySection({ userData, mutate }: { userData: UserData | undefined; 
   return (
     <div>
       <Head title="Privacy & Data" description="Control how Finava uses and stores your data." />
-      <Row
-        label="Help improve Finava"
-        description="Allow your chats and sessions to improve AI models. You can opt out at any time."
-      >
-        <Toggle checked={userData?.allowDataTraining ?? true} onChange={(v) => patch("allowDataTraining", v)} />
-      </Row>
       <Row label="Location metadata" description="Use coarse location (city/region) to improve market context.">
         <Toggle checked={userData?.locationMetadata ?? true} onChange={(v) => patch("locationMetadata", v)} />
       </Row>
