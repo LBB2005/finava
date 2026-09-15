@@ -28,6 +28,8 @@ import AgentDetailModal from "@/components/agent/AgentDetailModal";
 import { PoweredByStrip } from "@/components/ui/ModelBadge";
 import { rosterFromBrands } from "@/lib/models";
 import { AGENT_LABELS } from "@/types/chat";
+import { extractVerdict } from "@/lib/chat/verdict";
+import { parseDiscoverContent } from "@/lib/chat/discoverText";
 import type { ChatMessage, AgentStep } from "@/types/chat";
 import { ResponseReceipt } from "./ResponseTiming";
 import DiscoverResult from "./DiscoverResult";
@@ -382,6 +384,9 @@ function VerdictBlock({
   });
 
   const isAgentMode = message.mode === "agent" || message.mode === "deep_research";
+  // The card holds the report's actual verdict sentence. No verdict found (or a
+  // stopped run that never reached it): no card, never a fragment.
+  const verdict = isAgentMode ? extractVerdict(message.content) : null;
 
   return (
     <div
@@ -390,16 +395,24 @@ function VerdictBlock({
         padding: "4px 0 8px",
       }}
     >
-      {/* Eyebrow */}
-      <div
-        className="eyebrow-label"
-        style={{
-          color: "var(--color-accent)",
-          marginBottom: 12,
-        }}
-      >
-        {isAgentMode ? "Verdict" : "Response"}
-      </div>
+      {verdict && (
+        <div
+          style={{
+            borderLeft: "2px solid var(--color-accent)",
+            background: "var(--color-accent-light)",
+            borderRadius: "var(--radius-sm)",
+            padding: "10px 14px",
+            marginBottom: 16,
+          }}
+        >
+          <div className="eyebrow-label" style={{ color: "var(--color-accent)", marginBottom: 6 }}>
+            Verdict
+          </div>
+          <div style={{ fontSize: "var(--text-body)", fontWeight: 600, color: "var(--color-text)", lineHeight: 1.5 }}>
+            {verdict}
+          </div>
+        </div>
+      )}
 
       {/* Response body */}
       <Markdown>{message.content}</Markdown>
@@ -432,8 +445,26 @@ function VerdictBlock({
           </span>
         )}
         <ResponseReceipt durationMs={message.durationMs} />
+        {message.stopped && <StoppedTag />}
       </div>
     </div>
+  );
+}
+
+/* ── Stopped tag — the user pressed Stop; the text above is partial ──── */
+function StoppedTag() {
+  return (
+    <span
+      style={{
+        fontSize: "var(--text-meta)",
+        color: "var(--color-muted)",
+        border: "1px solid var(--color-border)",
+        borderRadius: 999,
+        padding: "1px 8px",
+      }}
+    >
+      Stopped
+    </span>
   );
 }
 
@@ -612,12 +643,10 @@ function MessageInner({
     return <PromptBubble message={message} />;
   }
 
-  // Discovery mode: JSON-in-content with a `kind` discriminator (shortlist/wave/final).
+  // Discovery mode: the structured result rides in `attachment` (older messages
+  // kept it as JSON in `content`).
   if (message.mode === "discover") {
-    let dc: DiscoverMessageContent | null = null;
-    try {
-      dc = JSON.parse(message.content) as DiscoverMessageContent;
-    } catch { /* fall through to markdown */ }
+    const dc: DiscoverMessageContent | null = message.attachment ?? parseDiscoverContent(message.content);
     if (dc) {
       return (
         <DiscoverResult
@@ -633,6 +662,7 @@ function MessageInner({
         <FinavaAvatar />
         <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
           <Markdown>{message.content}</Markdown>
+          {message.stopped && <StoppedTag />}
         </div>
       </div>
     );
@@ -653,6 +683,7 @@ function MessageInner({
               {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
             <ResponseReceipt durationMs={message.durationMs} />
+            {message.stopped && <StoppedTag />}
           </div>
           {message.followups && message.followups.length > 0 && onSuggestion && (
             <div style={{ marginTop: 14 }}>

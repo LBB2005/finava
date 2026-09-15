@@ -32,6 +32,9 @@ interface Props {
    *  shadow, and click-through side gutters so page content scrolls behind it.
    *  Used by the global persistent composer. */
   floating?: boolean;
+  /** A run is streaming in the viewed conversation: Send becomes Stop. */
+  streaming?: boolean;
+  onStop?: () => void;
 }
 
 const MODE_CONFIG: Record<ChatMode, { label: string; pill: string; description: string; color: string; icon: React.ReactNode }> = {
@@ -140,7 +143,7 @@ function AttachmentGlyph({ type }: { type: Attachment["type"] }) {
   );
 }
 
-export default function ChatInput({ onSend, disabled, mode, onModeChange, autoFocus = true, floating = false }: Props) {
+export default function ChatInput({ onSend, disabled, mode, onModeChange, autoFocus = true, floating = false, streaming = false, onStop }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -343,7 +346,8 @@ export default function ChatInput({ onSend, disabled, mode, onModeChange, autoFo
               boxShadow: floating
                 ? "0 14px 36px -14px rgba(15,23,42,0.34)"
                 : disabled ? "none" : "0 10px 26px -14px rgba(15,23,42,0.26)",
-              opacity: disabled ? 0.6 : 1,
+              // Not dimmed while streaming: the Stop button must read as live.
+              opacity: disabled && !streaming ? 0.6 : 1,
             }}
           >
             {/* + attach / tickers / templates */}
@@ -425,33 +429,48 @@ export default function ChatInput({ onSend, disabled, mode, onModeChange, autoFo
               style={{ color: "var(--color-text)", maxHeight: 180, padding: "7px 2px", fontFamily: "var(--font-sans)" }}
             />
 
-            <button
-              onClick={submit}
-              disabled={!canSend}
-              className="flex-shrink-0 w-8 h-8 mb-[1px] rounded-full flex items-center justify-center transition-colors duration-150"
-              style={{
-                // Frost send — always reads as a navy puck (mock keeps it solid).
-                // At rest it's a softened accent; ready state is full accent + a soft
-                // accent glow. Disabled (streaming) falls back to a neutral disc.
-                background: disabled
-                  ? "var(--color-surface-2)"
-                  : canSend
-                    ? sendBgColor
-                    : `color-mix(in oklab, ${sendBgColor} 42%, var(--color-surface))`,
-                color: disabled ? "var(--color-muted)" : "var(--color-on-accent)",
-                boxShadow: canSend ? `0 4px 12px -5px color-mix(in oklab, ${sendBgColor} 55%, transparent)` : "none",
-                animation: launching ? "send-launch 360ms ease-out" : "none",
-              }}
-            >
-              {disabled ? (
-                <span className="inline-block rounded-full border-2 border-[var(--color-on-accent)] border-t-transparent"
-                  style={{ width: 13, height: 13, animation: "spin 0.9s linear infinite" }} />
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
-                </svg>
-              )}
-            </button>
+            {streaming && onStop ? (
+              <Tooltip label="Stop generating" className="flex-shrink-0">
+                <button
+                  onClick={onStop}
+                  aria-label="Stop generating"
+                  className="std-focus w-8 h-8 mb-[1px] rounded-full flex items-center justify-center transition-colors duration-150"
+                  style={{ background: "var(--color-text)", color: "var(--color-bg)" }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                    <rect width="10" height="10" rx="2" fill="currentColor" />
+                  </svg>
+                </button>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={submit}
+                disabled={!canSend}
+                className="flex-shrink-0 w-8 h-8 mb-[1px] rounded-full flex items-center justify-center transition-colors duration-150"
+                style={{
+                  // Frost send — always reads as a navy puck (mock keeps it solid).
+                  // At rest it's a softened accent; ready state is full accent + a soft
+                  // accent glow. Disabled (streaming) falls back to a neutral disc.
+                  background: disabled
+                    ? "var(--color-surface-2)"
+                    : canSend
+                      ? sendBgColor
+                      : `color-mix(in oklab, ${sendBgColor} 42%, var(--color-surface))`,
+                  color: disabled ? "var(--color-muted)" : "var(--color-on-accent)",
+                  boxShadow: canSend ? `0 4px 12px -5px color-mix(in oklab, ${sendBgColor} 55%, transparent)` : "none",
+                  animation: launching ? "send-launch 360ms ease-out" : "none",
+                }}
+              >
+                {disabled ? (
+                  <span className="inline-block rounded-full border-2 border-[var(--color-on-accent)] border-t-transparent"
+                    style={{ width: 13, height: 13, animation: "spin 0.9s linear infinite" }} />
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
+                  </svg>
+                )}
+              </button>
+            )}
           </div>
 
           {/* "+" Popover — Attach · Pin Tickers · Templates (mode now lives in the pill) */}

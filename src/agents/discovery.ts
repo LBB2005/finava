@@ -311,5 +311,5 @@ Write the final ranked report now.`;
 
   let final = revised.finalResponse;
   if (revised.truncated) final += "\n\n_⚠️ This response reached the length limit and may be cut off._";
-  emit({ type: "final_response", content: final });
+  emit({ type: "final_response", content: final, replace: true });
 }

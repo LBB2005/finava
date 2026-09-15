@@ -123,6 +123,28 @@ describe("POST /api/conversations/[id]/messages", () => {
     }));
   });
 
+  it("persists follow-up chips, the Second Opinion, the Discover attachment and the stopped flag", async () => {
+    await POST(new Request("http://localhost/api/conversations/conv_1/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        role: "assistant",
+        content: "Partial report",
+        mode: "agent",
+        followups: ["What about margins?"],
+        critique: "**Skeptic Review:** thin data",
+        attachment: '{"kind":"final","report":"x"}',
+        stopped: true,
+      }),
+    }), { params: Promise.resolve({ id: "conv_1" }) });
+
+    expect(deps.messageAdd).toHaveBeenCalledWith(expect.objectContaining({
+      followups: ["What about margins?"],
+      critique: "**Skeptic Review:** thin data",
+      attachment: '{"kind":"final","report":"x"}',
+      stopped: true,
+    }));
+  });
+
   it("returns the shared not_found shape when the conversation does not exist", async () => {
     deps.convGet.mockResolvedValueOnce({ exists: false });
 

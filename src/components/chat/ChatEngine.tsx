@@ -2,17 +2,21 @@
 import { useEffect, useRef } from "react";
 import { mutate } from "swr";
 import { authFetch } from "@/lib/authFetch";
-import { apiErrorMessage } from "@/lib/apiErrorMessage";
 import { useChatStore, type SendRequest } from "@/stores/chatStore";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
 import { useToast } from "@/hooks/useToast";
 import { buildPortfolioContext } from "./ChatContainer";
 import type { Conversation } from "@/components/layout/ConversationList";
-import type { ChatMessage, ChatMode, AgentEvent, AgentStep } from "@/types/chat";
+import type { ChatMessage, ChatMode, AgentEvent } from "@/types/chat";
 import type { ChatContext } from "@/lib/chatContext";
 import type { PageContext } from "@/lib/pageContext";
 import { planWaves, mergeWaveEvidence, mergeWaves } from "@/lib/discoveryRun";
+import { applyFinalResponse, readSseData } from "@/lib/chat/stream";
+import { agentBody, classifyBody, discoverScoutBody, simpleChatBody, streamAgent, streamSimple } from "@/lib/chat/requests";
+import { discoverToMarkdown } from "@/lib/chat/discoverText";
+import { RunRegistry, stoppedMessage } from "@/lib/chat/runControl";
+import { toStoredMessage } from "@/lib/chat/storedMessage";
 import {
   emptyEvidence,
   type ScoutPick,
@@ -22,12 +26,48 @@ import {
   type DiscoverLayout,
 } from "@/lib/scoutTypes";
 
-// One AbortController per in-flight conversation stream, so a single chat can be
-// cancelled (e.g. on delete) without disturbing the others.
-const streamAborters = new Map<string, AbortController>();
+// One AbortController per in-flight conversation run, so a single chat can be
+// stopped or cancelled without disturbing the others.
+const runs = new RunRegistry();
+
+// Which lane is producing the current run's answer, so Stop can label the
+// partial message with the right mode.
+const laneMode = new Map<string, ChatMode>();
+
+const store = () => useChatStore.getState();
+
+/** Cancel a conversation's run outright (e.g. the chat was deleted). */
 export function abortConversationStream(convId: string) {
-  streamAborters.get(convId)?.abort();
-  streamAborters.delete(convId);
+  runs.cancel(convId);
+}
+
+async function persistMessage(convId: string, msg: ChatMessage): Promise<void> {
+  await authFetch(`/api/conversations/${convId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(toStoredMessage(msg)),
+  });
+}
+
+/**
+ * The user pressed Stop. Keeps whatever had streamed as a "Stopped" message and
+ * unlocks the composer immediately; the aborted run unwinds quietly later.
+ */
+export function stopConversationStream(convId: string) {
+  const st = store();
+  const slice = st.slice(convId);
+  if (!runs.stop(convId)) return;
+  const durationMs = slice.streamStartedAt != null ? Date.now() - slice.streamStartedAt : undefined;
+  const msg = stoppedMessage(slice, laneMode.get(convId) ?? "simple", durationMs);
+  laneMode.delete(convId);
+  st.addMessage(convId, msg);
+  st.setStreaming(convId, false);
+  st.clearStreamingContent(convId);
+  st.setCeoThinking(convId, "");
+  st.setPendingCritique(convId, "");
+  st.setPendingFollowups(convId, []);
+  st.setDiscoverProgress(convId, null);
+  persistMessage(convId, msg).catch((e) => console.warn("[stop] saveMessage failed:", e));
 }
 
 // Auto mode: when the router asks a clarifying question, we stash the original
@@ -55,7 +95,7 @@ export default function ChatEngine() {
   const pendingMessage = useChatStore((s) => s.pendingMessage);
 
   // ── store action shorthands (all keyed by convId) ──
-  const s = () => useChatStore.getState();
+  const s = store;
 
   // A hard usage-cap returns HTTP 429 from the AI routes. Surface it as a clear
   // toast that links to the usage page. Returns true when it was a limit hit.
@@ -77,6 +117,14 @@ export default function ChatEngine() {
     const isActive = ownerConvId == null || ownerConvId === activeConvId;
     if (!isActive) return;
     toast.error(message, { action: { label: "Retry", onClick: retry } });
+  }
+
+  /** Release the run's hold on the conversation. A stopped or replaced run is a no-op. */
+  function endRun(convId: string, ctrl: AbortController | undefined) {
+    if (!runs.finish(convId, ctrl)) return;
+    laneMode.delete(convId);
+    s().setStreaming(convId, false);
+    s().clearStreamingContent(convId);
   }
 
   // Drop an optimistic row into the sidebar list cache synchronously, so the
@@ -110,20 +158,10 @@ export default function ChatEngine() {
     });
   }
 
-  async function saveMessage(
-    convId: string,
-    role: "user" | "assistant",
-    content: string,
-    mode: ChatMode,
-    agentTrace?: AgentStep[],
-    durationMs?: number,
-    context?: ChatContext
-  ) {
-    await authFetch(`/api/conversations/${convId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role, content, mode, agentTrace, durationMs, context }),
-    });
+  /** Add an assistant/user message to the store and persist it. */
+  async function commitMessage(convId: string, msg: ChatMessage) {
+    s().addMessage(convId, msg);
+    await persistMessage(convId, msg).catch((e) => console.warn(`[${msg.mode}] saveMessage failed:`, e));
   }
 
   /** Elapsed ms since this conversation's stream began, for the response receipt. */
@@ -133,142 +171,83 @@ export default function ChatEngine() {
   }
 
   async function runSimpleChat(text: string, portfolioContext: string, convId: string, mode: ChatMode, history: ChatMessage[], templateId?: string, pageContext?: PageContext | null) {
-    const apiMessages = [
-      ...history.filter((m) => m.mode === "simple" || m.mode === "auto"),
-      { role: "user" as const, content: text, mode: "simple" as ChatMode },
-    ].map((m) => ({ role: m.role, content: m.content }));
-
+    const ctrl = runs.get(convId);
+    laneMode.set(convId, "simple");
     try {
-      const res = await authFetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages, portfolioContext, templateId, pageContext: pageContext ?? undefined }),
-        signal: streamAborters.get(convId)?.signal,
-      });
-
-      if (await handleUsageLimit(res)) return;
-      if (!res.ok || !res.body) throw new Error("Stream failed");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = "";
-      let sseBuffer = "";
-
-      function processLine(line: string) {
-        if (!line.startsWith("data: ")) return;
-        const data = line.slice(6);
-        if (data === "[DONE]") return;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.text) { s().appendStreamChunk(convId, parsed.text); fullContent += parsed.text; }
-          if (parsed.followups) s().setPendingFollowups(convId, parsed.followups);
-        } catch { /* ignore */ }
-      }
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        sseBuffer += decoder.decode(value, { stream: true });
-        const lines = sseBuffer.split("\n");
-        sseBuffer = lines.pop() ?? "";
-        for (const line of lines) processLine(line);
-      }
-      if (sseBuffer) processLine(sseBuffer);
+      const fullContent = await streamSimple(
+        authFetch,
+        simpleChatBody({ prior: history, text, portfolioContext, templateId, pageContext }),
+        {
+          signal: ctrl?.signal,
+          onResponse: handleUsageLimit,
+          onText: (t) => s().appendStreamChunk(convId, t),
+          onFollowups: (q) => s().setPendingFollowups(convId, q),
+        }
+      );
+      if (fullContent == null || !runs.isCurrent(convId, ctrl)) return;
 
       const followups = s().slice(convId).pendingFollowups;
-      const durationMs = streamDuration(convId);
-      s().addMessage(convId, {
+      s().setPendingFollowups(convId, []);
+      await commitMessage(convId, {
         id: crypto.randomUUID(),
         role: "assistant",
         content: fullContent,
-        mode: "simple",
+        mode,
         createdAt: new Date().toISOString(),
         followups: followups.length ? followups : undefined,
-        durationMs,
+        durationMs: streamDuration(convId),
       });
-      s().setPendingFollowups(convId, []);
-      await saveMessage(convId, "assistant", fullContent, mode, undefined, durationMs);
     } finally {
-      s().setStreaming(convId, false);
-      s().clearStreamingContent(convId);
-      streamAborters.delete(convId);
+      endRun(convId, ctrl);
     }
   }
 
-  async function runAgentMode(text: string, portfolioContext: string, convId: string, mode: ChatMode, deepResearch = false, conversationHistory: { role: "user" | "assistant"; content: string }[] = [], templateId?: string, pageContext?: PageContext | null) {
+  async function runAgentMode(text: string, portfolioContext: string, convId: string, mode: ChatMode, deepResearch = false, history: ChatMessage[] = [], templateId?: string, pageContext?: PageContext | null) {
+    const ctrl = runs.get(convId);
+    const answerMode: ChatMode = deepResearch ? "deep_research" : "agent";
+    laneMode.set(convId, answerMode);
     s().setAgentSteps(convId, []);
     s().setCeoThinking(convId, "");
 
-    const retry = () => { void runAgentMode(text, portfolioContext, convId, mode, deepResearch, conversationHistory, templateId, pageContext); };
+    const retry = () => { void runAgentMode(text, portfolioContext, convId, mode, deepResearch, history, templateId, pageContext); };
 
     try {
-      const res = await authFetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userPrompt: text,
+      const finalContent = await streamAgent(
+        authFetch,
+        agentBody({
+          prior: history,
+          text,
           portfolioContext,
           deepResearch,
-          conversationHistory,
           holdings: ctxRef.current.holdings.map((h) => ({ ticker: h.ticker, shares: h.shares })),
           templateId,
-          pageContext: pageContext ?? undefined,
+          pageContext,
         }),
-        signal: streamAborters.get(convId)?.signal,
-      });
+        {
+          signal: ctrl?.signal,
+          onResponse: handleUsageLimit,
+          onEvent: (event) => handleAgentEvent(event, convId, { convId, retry }),
+        }
+      );
 
-      if (await handleUsageLimit(res)) return;
-      if (!res.ok || !res.body) throw new Error("Agent stream failed");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let finalContent = "";
-      let sseBuffer = "";
-
-      function processLine(line: string) {
-        if (!line.startsWith("data: ")) return;
-        try {
-          const event = JSON.parse(line.slice(6)) as AgentEvent;
-          handleAgentEvent(event, convId, { convId, retry });
-          if (event.type === "final_response") finalContent = event.content;
-        } catch { /* ignore */ }
-      }
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        sseBuffer += decoder.decode(value, { stream: true });
-        const lines = sseBuffer.split("\n");
-        sseBuffer = lines.pop() ?? "";
-        for (const line of lines) processLine(line);
-      }
-      if (sseBuffer) processLine(sseBuffer);
-
-      if (finalContent) {
+      if (finalContent && runs.isCurrent(convId, ctrl)) {
         const sl = s().slice(convId);
-        const completedSteps = sl.agentSteps;
-        const critique = sl.pendingCritique;
-        const followups = sl.pendingFollowups;
-        const durationMs = streamDuration(convId);
-        s().addMessage(convId, {
+        s().setPendingCritique(convId, "");
+        s().setPendingFollowups(convId, []);
+        await commitMessage(convId, {
           id: crypto.randomUUID(),
           role: "assistant",
           content: finalContent,
-          mode: "agent",
+          mode: answerMode,
           createdAt: new Date().toISOString(),
-          agentTrace: completedSteps,
-          critique: critique || undefined,
-          followups: followups.length ? followups : undefined,
-          durationMs,
+          agentTrace: sl.agentSteps,
+          critique: sl.pendingCritique || undefined,
+          followups: sl.pendingFollowups.length ? sl.pendingFollowups : undefined,
+          durationMs: streamDuration(convId),
         });
-        s().setPendingCritique(convId, "");
-        s().setPendingFollowups(convId, []);
-        await saveMessage(convId, "assistant", finalContent, mode, completedSteps, durationMs);
       }
     } finally {
-      s().setStreaming(convId, false);
-      s().clearStreamingContent(convId);
-      streamAborters.delete(convId);
+      endRun(convId, ctrl);
     }
   }
 
@@ -277,15 +256,16 @@ export default function ChatEngine() {
   async function postAgentStream(
     body: object,
     onEvent: (e: AgentEvent) => void,
-    convId: string,
+    parent: AbortController | undefined,
     timeoutMs?: number
   ) {
+    // A stopped run must not start its next phase.
+    if (parent?.signal.aborted) return;
     const controller = new AbortController();
     const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
-    // Cancel this wave if the whole conversation stream is aborted.
-    const parent = streamAborters.get(convId)?.signal;
+    // Cancel this wave if the whole conversation run is stopped.
     const onParentAbort = () => controller.abort();
-    parent?.addEventListener("abort", onParentAbort);
+    parent?.signal.addEventListener("abort", onParentAbort);
     try {
       const res = await authFetch("/api/agent", {
         method: "POST",
@@ -294,43 +274,30 @@ export default function ChatEngine() {
         signal: controller.signal,
       });
       if (!res.ok || !res.body) throw new Error("Discovery stream failed");
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      const handle = (line: string) => {
-        if (!line.startsWith("data: ")) return;
-        try { onEvent(JSON.parse(line.slice(6)) as AgentEvent); } catch { /* ignore */ }
-      };
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const l of lines) handle(l);
-      }
-      if (buf) handle(buf);
+      await readSseData(res.body, (data) => {
+        try { onEvent(JSON.parse(data) as AgentEvent); } catch { /* ignore */ }
+      });
     } catch (e) {
       if ((e as Error).name !== "AbortError") throw e;
       // Soft abort — caller proceeds with whatever evidence arrived.
     } finally {
       if (timer) clearTimeout(timer);
-      parent?.removeEventListener("abort", onParentAbort);
+      parent?.signal.removeEventListener("abort", onParentAbort);
     }
   }
 
-  async function pushDiscover(content: string, convId: string, extra?: Partial<ChatMessage>) {
-    s().addMessage(convId, {
+  // Discover results are stored as readable text (what the model sees in
+  // history) with the structured payload alongside for the card.
+  async function pushDiscover(dc: DiscoverMessageContent, convId: string, extra?: Partial<ChatMessage>) {
+    await commitMessage(convId, {
       id: crypto.randomUUID(),
       role: "assistant",
-      content,
+      content: discoverToMarkdown(dc),
+      attachment: dc,
       mode: "discover",
       createdAt: new Date().toISOString(),
       ...extra,
     });
-    await saveMessage(convId, "assistant", content, "discover").catch((e) =>
-      console.warn("[discover] saveMessage failed:", e)
-    );
   }
 
   async function runDiscoverMode(
@@ -338,11 +305,15 @@ export default function ChatEngine() {
     portfolioContext: string,
     convId: string,
     tier: "quick" | "deep",
-    seed?: { picks: ScoutPick[]; query: string; evidence: DiscoverEvidence; startWave: number }
+    seed?: { picks: ScoutPick[]; query: string; evidence: DiscoverEvidence; startWave: number },
+    history: ChatMessage[] = []
   ) {
+    const ctrl = runs.get(convId);
+    laneMode.set(convId, "discover");
+    const live = () => runs.isCurrent(convId, ctrl);
     s().setAgentSteps(convId, []);
     s().setCeoThinking(convId, "");
-    const retry = () => { void runDiscoverMode(text, portfolioContext, convId, tier, seed); };
+    const retry = () => { void runDiscoverMode(text, portfolioContext, convId, tier, seed, history); };
     try {
       let picks: ScoutPick[] = seed?.picks ?? [];
       let query = seed?.query ?? text;
@@ -357,7 +328,7 @@ export default function ChatEngine() {
         let scoutPicks: ScoutPick[] = [];
         let layout: DiscoverLayout | undefined;
         await postAgentStream(
-          { discover: true, tier, userPrompt: text, portfolioContext },
+          discoverScoutBody({ prior: history, text, portfolioContext, tier }),
           (event) => {
             handleAgentEvent(event, convId, { convId, retry });
             if (event.type === "scout_complete" || event.type === "deep_shortlist") {
@@ -366,30 +337,23 @@ export default function ChatEngine() {
               layout = event.layout;
             }
             if (event.type === "discover_clarify") clarify = { question: event.question, chips: event.chips };
-            if (event.type === "final_response") framing = event.content;
+            if (event.type === "final_response") framing = applyFinalResponse(framing, event);
           },
-          convId
+          ctrl
         );
+        if (!live()) return;
 
         if (clarify) {
           const c = clarify as { question: string; chips: string[] };
-          await pushDiscover(
-            JSON.stringify({ kind: "final", report: framing || c.question } as DiscoverMessageContent),
-            convId,
-            { followups: c.chips }
-          );
+          await pushDiscover({ kind: "final", report: framing || c.question }, convId, { followups: c.chips });
           return;
         }
         picks = scoutPicks;
         if (!picks.length) {
-          if (framing) await pushDiscover(JSON.stringify({ kind: "final", report: framing } as DiscoverMessageContent), convId);
+          if (framing) await pushDiscover({ kind: "final", report: framing }, convId);
           return;
         }
-        await pushDiscover(
-          JSON.stringify({ kind: "shortlist", tier, query, framing, picks, layout } as DiscoverMessageContent),
-          convId,
-          { scoutPicks: picks, tier }
-        );
+        await pushDiscover({ kind: "shortlist", tier, query, framing, picks, layout }, convId, { scoutPicks: picks, tier });
 
         if (tier === "quick") return;
       }
@@ -408,16 +372,14 @@ export default function ChatEngine() {
             handleAgentEvent(event, convId, { convId, retry });
             if (event.type === "wave_result") waveEvidence = event.wave;
           },
-          convId,
+          ctrl,
           240_000
         );
+        if (!live()) return;
         if (waveEvidence) {
           const we = waveEvidence as WaveEvidence;
           evidence = mergeWaveEvidence(evidence, we);
-          await pushDiscover(
-            JSON.stringify({ kind: "wave", wave: we, totalWaves } as DiscoverMessageContent),
-            convId
-          );
+          await pushDiscover({ kind: "wave", wave: we, totalWaves }, convId);
         }
       }
       s().setDiscoverProgress(convId, null);
@@ -430,16 +392,14 @@ export default function ChatEngine() {
         { wave: { synthesize: true, query, picks, evidence } },
         (event) => {
           handleAgentEvent(event, convId, { convId, retry });
-          if (event.type === "final_response") report = event.content;
+          if (event.type === "final_response") report = applyFinalResponse(report, event);
         },
-        convId
+        ctrl
       );
-      if (report) await pushDiscover(JSON.stringify({ kind: "final", report } as DiscoverMessageContent), convId);
+      if (report && live()) await pushDiscover({ kind: "final", report }, convId);
     } finally {
-      s().setStreaming(convId, false);
-      s().clearStreamingContent(convId);
-      s().setDiscoverProgress(convId, null);
-      streamAborters.delete(convId);
+      if (runs.isCurrent(convId, ctrl)) s().setDiscoverProgress(convId, null);
+      endRun(convId, ctrl);
     }
   }
 
@@ -483,6 +443,7 @@ export default function ChatEngine() {
         st.setCeoThinking(convId, "Compiling all reports…");
         break;
       case "final_response":
+        if (event.replace) st.clearStreamingContent(convId);
         st.appendStreamChunk(convId, event.content);
         break;
       case "skeptic_start": {
@@ -520,16 +481,15 @@ export default function ChatEngine() {
     if (s().slice(convId).isStreaming) return;
     s().setStreaming(convId, true);
     s().clearStreamingContent(convId);
-    streamAborters.set(convId, new AbortController());
+    const ctrl = runs.start(convId);
     try {
       const { holdings, cashBalance, quoteMap } = ctxRef.current;
       const portfolioContext = buildPortfolioContext(holdings, cashBalance, quoteMap);
-      await runDiscoverMode(query, portfolioContext, convId, "deep");
+      await runDiscoverMode(query, portfolioContext, convId, "deep", undefined, s().messagesOf(convId));
     } catch (err) {
+      if (runs.wasStopped(ctrl)) return;
       console.error("[discover deeper] error:", err);
-      s().setStreaming(convId, false);
-      s().clearStreamingContent(convId);
-      streamAborters.delete(convId);
+      endRun(convId, ctrl);
       notifyChatError(convId, "Couldn't run the deeper discovery. Please retry.", () => { void deepen(convId, query); });
     }
   }
@@ -546,6 +506,7 @@ export default function ChatEngine() {
     templateId?: string,
     pageContext?: PageContext | null
   ) {
+    const ctrl = runs.get(convId);
     const retry = () => { void runAuto(text, portfolioContext, convId, prior, templateId, pageContext); };
     try {
       // Clarify continuation: if we asked a question last turn, this message is
@@ -569,13 +530,8 @@ export default function ChatEngine() {
         const res = await authFetch("/api/classify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userPrompt: combined,
-            history: prior.slice(-6).map((m) => ({ role: m.role, content: m.content })),
-            portfolioContext,
-            pageContext: pageContext ?? undefined,
-          }),
-          signal: streamAborters.get(convId)?.signal,
+          body: JSON.stringify(classifyBody({ prior, userPrompt: combined, portfolioContext, pageContext })),
+          signal: ctrl?.signal,
         });
         if (await handleUsageLimit(res)) return;
         if (res.ok) {
@@ -589,13 +545,17 @@ export default function ChatEngine() {
         }
       } catch { /* fall through to simple */ }
 
+      // Stopped while routing: don't start a lane.
+      if (!runs.isCurrent(convId, ctrl)) return;
+
       // Clarify: post the question as a plain assistant message with tappable
       // chips (reuses the followup-chip UI) and stop. The reply re-enters here
       // and hits the pending branch above.
       if (needsClarify && clarifyChips.length) {
         pendingClarify.set(convId, { originalPrompt: text });
         s().setCeoThinking(convId, "");
-        s().addMessage(convId, {
+        endRun(convId, ctrl);
+        await commitMessage(convId, {
           id: crypto.randomUUID(),
           role: "assistant",
           content: clarifyQuestion,
@@ -603,32 +563,23 @@ export default function ChatEngine() {
           createdAt: new Date().toISOString(),
           followups: clarifyChips,
         });
-        s().setStreaming(convId, false);
-        s().clearStreamingContent(convId);
-        streamAborters.delete(convId);
-        await saveMessage(convId, "assistant", clarifyQuestion, "simple").catch((e) =>
-          console.warn("[auto] saveMessage failed:", e)
-        );
         return;
       }
 
       s().setCeoThinking(convId, "");
       if (intent === "discover") {
-        await runDiscoverMode(combined, portfolioContext, convId, "quick");
+        await runDiscoverMode(combined, portfolioContext, convId, "quick", undefined, prior);
       } else if (intent === "agent") {
-        const agentHistory = prior
-          .filter((m) => m.mode === "agent" || m.mode === "deep_research" || m.mode === "auto")
-          .map((m) => ({ role: m.role, content: m.content }));
-        await runAgentMode(combined, portfolioContext, convId, "agent", false, agentHistory, templateId, pageContext);
+        await runAgentMode(combined, portfolioContext, convId, "agent", false, prior, templateId, pageContext);
       } else {
         await runSimpleChat(combined, portfolioContext, convId, "simple", prior, templateId, pageContext);
       }
     } catch (err) {
+      if (runs.wasStopped(ctrl)) return;
       console.error("[auto] error:", err);
-      s().setStreaming(convId, false);
-      s().clearStreamingContent(convId);
-      streamAborters.delete(convId);
       notifyChatError(convId, "Couldn't process your message. Please retry.", retry);
+    } finally {
+      endRun(convId, ctrl);
     }
   }
 
@@ -652,6 +603,7 @@ export default function ChatEngine() {
     // into the model payload AND persisted so the NEXT follow-up keeps it too.
     const pageContext = req.pageContext ?? (convId ? s().pageContextByConv[convId] ?? null : null);
 
+    let ctrl: AbortController | undefined;
     try {
       // New chat: render everything optimistically (id, sidebar row, streaming
       // state) before any network call, then persist in the background.
@@ -661,16 +613,18 @@ export default function ChatEngine() {
         insertOptimisticConversation(convId, context, text, mode);
       }
       if (pageContext) s().setPageContextForConv(convId, pageContext);
-      streamAborters.set(convId, new AbortController());
+      ctrl = runs.start(convId);
+      laneMode.set(convId, mode === "auto" ? "simple" : mode);
 
-      s().addMessage(convId, {
+      const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
         content: text,
         mode,
         createdAt: new Date().toISOString(),
         context,
-      });
+      };
+      s().addMessage(convId, userMsg);
       s().setStreaming(convId, true);
       s().clearStreamingContent(convId);
 
@@ -682,31 +636,27 @@ export default function ChatEngine() {
       const { holdings, cashBalance, quoteMap } = ctxRef.current;
       const portfolioContext = buildPortfolioContext(holdings, cashBalance, quoteMap);
 
-      saveMessage(convId!, "user", text, mode, undefined, undefined, context).catch((e) => console.warn("[send] saveMessage failed:", e));
+      persistMessage(convId, userMsg).catch((e) => console.warn("[send] saveMessage failed:", e));
 
-      const agentHistory = prior
-        .filter((m) => m.mode === "agent" || m.mode === "deep_research" || m.mode === "auto")
-        .map((m) => ({ role: m.role, content: m.content }));
+      if (!runs.isCurrent(convId, ctrl)) return; // stopped before the lane started
 
+      // Every lane gets the same transcript (see buildHistory).
       if (mode === "auto") {
         await runAuto(text, portfolioContext, convId, prior, templateId, pageContext);
       } else if (mode === "simple") {
         await runSimpleChat(text, portfolioContext, convId, mode, prior, templateId, pageContext);
       } else if (mode === "discover") {
-        await runDiscoverMode(text, portfolioContext, convId, "quick");
+        await runDiscoverMode(text, portfolioContext, convId, "quick", undefined, prior);
       } else if (mode === "deep_research") {
-        await runAgentMode(text, portfolioContext, convId, mode, true, agentHistory, templateId, pageContext);
+        await runAgentMode(text, portfolioContext, convId, mode, true, prior, templateId, pageContext);
       } else {
-        await runAgentMode(text, portfolioContext, convId, mode, false, agentHistory, templateId, pageContext);
+        await runAgentMode(text, portfolioContext, convId, mode, false, prior, templateId, pageContext);
       }
     } catch (err) {
+      if (runs.wasStopped(ctrl)) return;
       console.error("[send] top-level error:", err);
       const failedId = convId;
-      if (failedId) {
-        s().setStreaming(failedId, false);
-        s().clearStreamingContent(failedId);
-        streamAborters.delete(failedId);
-      }
+      if (failedId) endRun(failedId, ctrl);
       notifyChatError(failedId, "Couldn't send your message. Check your connection and retry.", () =>
         s().enqueueSend({ convId: failedId, text, mode, context, pageContext, kind: "send" })
       );
@@ -758,41 +708,33 @@ export default function ChatEngine() {
     const discoverMsgs = messages.filter((m) => m.mode === "discover");
     if (!discoverMsgs.length) return;
 
-    let last: DiscoverMessageContent | null = null;
-    try { last = JSON.parse(discoverMsgs[discoverMsgs.length - 1].content) as DiscoverMessageContent; } catch { return; }
+    const lastMsg = discoverMsgs[discoverMsgs.length - 1];
+    // A run the user stopped is finished, not interrupted.
+    if (lastMsg.stopped) return;
+    const last = lastMsg.attachment;
     if (!last) return;
     if (last.kind === "final") return;
     if (last.kind === "shortlist" && last.tier === "quick") return;
 
     let shortlistIdx = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].mode !== "discover") continue;
-      try {
-        const c = JSON.parse(messages[i].content) as DiscoverMessageContent;
-        if (c.kind === "shortlist" && c.tier === "deep") { shortlistIdx = i; break; }
-      } catch { /* ignore */ }
+      const c = messages[i].mode === "discover" ? messages[i].attachment : undefined;
+      if (c?.kind === "shortlist" && c.tier === "deep") { shortlistIdx = i; break; }
     }
     if (shortlistIdx < 0) return;
 
-    let picks: ScoutPick[] = [];
-    let query = "";
-    try {
-      const c = JSON.parse(messages[shortlistIdx].content) as DiscoverMessageContent;
-      if (c.kind === "shortlist") { picks = c.picks; query = c.query; }
-    } catch { return; }
-    if (!picks.length) return;
+    const shortlist = messages[shortlistIdx].attachment;
+    if (shortlist?.kind !== "shortlist" || !shortlist.picks.length) return;
+    const { picks, query } = shortlist;
 
     const doneWaveEvidence: WaveEvidence[] = [];
     let doneWaves = 0;
     for (let i = shortlistIdx + 1; i < messages.length; i++) {
-      if (messages[i].mode !== "discover") continue;
-      try {
-        const c = JSON.parse(messages[i].content) as DiscoverMessageContent;
-        if (c.kind === "wave") {
-          doneWaveEvidence.push(c.wave);
-          doneWaves = Math.max(doneWaves, c.wave.waveIndex + 1);
-        }
-      } catch { /* ignore */ }
+      const c = messages[i].mode === "discover" ? messages[i].attachment : undefined;
+      if (c?.kind === "wave") {
+        doneWaveEvidence.push(c.wave);
+        doneWaves = Math.max(doneWaves, c.wave.waveIndex + 1);
+      }
     }
     const evidence = mergeWaves(doneWaveEvidence);
 
@@ -804,13 +746,13 @@ export default function ChatEngine() {
     const resumeSeed = { picks, query, evidence, startWave: doneWaves };
     const runResume = async () => {
       s().setStreaming(resumeConvId, true);
-      streamAborters.set(resumeConvId, new AbortController());
+      const ctrl = runs.start(resumeConvId);
       try {
         await runDiscoverMode(query, "", resumeConvId, "deep", resumeSeed);
       } catch (e) {
+        if (runs.wasStopped(ctrl)) return;
         console.error("[discover resume] error:", e);
-        s().setStreaming(resumeConvId, false);
-        streamAborters.delete(resumeConvId);
+        endRun(resumeConvId, ctrl);
         notifyChatError(resumeConvId, "Couldn't resume your discovery run. Please retry.", () => { void runResume(); });
       }
     };
