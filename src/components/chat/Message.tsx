@@ -35,6 +35,7 @@ import { ResponseReceipt } from "./ResponseTiming";
 import DiscoverResult from "./DiscoverResult";
 import type { DiscoverMessageContent } from "@/lib/scoutTypes";
 import { contextPill, type ChatContext } from "@/lib/chatContext";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 /* ── Agent focus blurbs (mirrors MessageList) ────────────────────────── */
 const AGENT_FOCUS: Record<string, string> = {
@@ -269,6 +270,8 @@ function AgentRibbon({ steps }: { steps: AgentStep[] }) {
                 ? "Skeptic Review"
                 : (AGENT_LABELS[step.agent as keyof typeof AGENT_LABELS] ?? step.agent);
               const focus = AGENT_FOCUS[step.agent] ?? "";
+              // Saved messages from before errors were sanitized at the source still carry raw vendor text.
+              const shownStep = step.error ? { ...step, error: toUserFacingError(step.error) } : step;
 
               return (
                 <div
@@ -323,7 +326,7 @@ function AgentRibbon({ steps }: { steps: AgentStep[] }) {
                     )}
                     {step.error && (
                       <div style={{ fontSize: "var(--text-sm)", lineHeight: 1.55, color: "var(--color-bear)" }}>
-                        {step.error}
+                        {shownStep.error}
                       </div>
                     )}
                   </div>
@@ -344,7 +347,7 @@ function AgentRibbon({ steps }: { steps: AgentStep[] }) {
                     )}
                     {(step.result || step.error) && (
                       <button
-                        onClick={() => setDetailStep(step)}
+                        onClick={() => setDetailStep(shownStep)}
                         style={{
                           fontSize: "var(--text-micro)",
                           fontWeight: 600,

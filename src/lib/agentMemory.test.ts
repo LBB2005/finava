@@ -110,6 +110,7 @@ import {
   checkCache,
   extractTickers,
   getTickerMemory,
+  isCacheableResult,
   saveCache,
   saveTickerMemory,
 } from "./agentMemory";
@@ -171,6 +172,48 @@ describe("agent result cache", () => {
 
     deps.cacheGet.mockRejectedValueOnce(new Error("firestore down"));
     await expect(checkCache("run_news_agent", { ticker: "AAPL" })).resolves.toBeNull();
+  });
+});
+
+describe("never cache failures", () => {
+  // A swallowed provider failure used to be cached for 4–48h and served to every
+  // user as if it were the analysis. Only a real, non-empty result may be written.
+  it.each([
+    ["empty", ""],
+    ["whitespace", "   \n "],
+    ["an Error: string from the wave runner", "Error: [llm:news] request failed (status 402)"],
+    ["the news agent's no-data line", "NEWS DATA UNAVAILABLE for AAPL (last 7 days): Finnhub returned no articles and web research was unavailable."],
+    ["the hype agent's fetch failure", "HYPE SCORE: N/A\n\nError fetching hype data: Perplexity 401"],
+    ["a missing key", "HYPE SCORE: N/A\n\nPerplexity API key not configured. Add PERPLEXITY_API_KEY to .env.local"],
+    ["the sentiment search failure", "Perplexity search unavailable: Perplexity 429: rate limited"],
+    ["the fundamentals retrieval failure", "Unable to retrieve multi-year fundamental data for XYZ. The company may not file with SEC EDGAR or data may be unavailable."],
+    ["a raw vendor billing error", "402 Insufficient credits. Add more using https://openrouter.ai/settings/credits"],
+  ])("does not write %s", async (_label, result) => {
+    await saveCache("run_news_agent", { ticker: "AAPL" }, result);
+    expect(deps.cacheSet).not.toHaveBeenCalled();
+    expect(isCacheableResult(result)).toBe(false);
+  });
+
+  it("still writes a real result that mentions an Unavailable metric", async () => {
+    // DATA_ACCURACY_RULE tells agents to write "Unavailable" for a missing field,
+    // so that word alone must not block an otherwise-good result.
+    const good = "## Valuation\n| Metric | Value |\n| Forward P/E | Unavailable |\n| P/S | 12.4 |";
+    await saveCache("run_dcf_agent", { ticker: "AAPL" }, good);
+    expect(deps.cacheSet).toHaveBeenCalledOnce();
+  });
+
+  it("does not cache when the provider fetch itself failed (handler rejected)", async () => {
+    // The call-site contract (ceo.ts / discovery.ts / briefing): saveCache only
+    // runs after the handler resolves. Model that here end to end.
+    const failingFetch = vi.fn(async () => {
+      throw new Error("fetch failed");
+    });
+    const run = async () => {
+      const result = await failingFetch();
+      await saveCache("run_news_agent", { ticker: "AAPL" }, result);
+    };
+    await expect(run()).rejects.toThrow("fetch failed");
+    expect(deps.cacheSet).not.toHaveBeenCalled();
   });
 });
 

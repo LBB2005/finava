@@ -3,6 +3,7 @@
   "buildCommand": "npm run vercel-build",
   "outputDirectory": ".next",
   "crons": [
-    { "path": "/api/cron/reconcile-subscriptions", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/reconcile-subscriptions", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/openrouter-balance", "schedule": "0 7 * * *" }
   ]
 }

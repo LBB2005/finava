@@ -165,7 +165,14 @@ describe("runCeoAgent orchestration", () => {
     expect(types).toContain("crew_planned");
     // Risk succeeded → agent_complete; news threw → agent_error (the others kept running).
     expect(events).toContainEqual(expect.objectContaining({ type: "agent_complete", agent: "run_risk_agent" }));
-    expect(events).toContainEqual(expect.objectContaining({ type: "agent_error", agent: "run_news_agent" }));
+    // …with user-facing copy, never the raw vendor error.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "agent_error",
+        agent: "run_news_agent",
+        error: "An AI provider was unavailable for this step.",
+      }),
+    );
     expect(runRiskAgent).toHaveBeenCalled();
     // Final report reaches the user.
     expect(events).toContainEqual(expect.objectContaining({ type: "final_response", content: expect.stringContaining("Final report body") }));

@@ -153,8 +153,35 @@ export async function checkCache(
   }
 }
 
+// Failure shapes the sub-agents return instead of throwing. Each was observed
+// being cached and then served to every user for the full TTL. Kept specific:
+// the word "Unavailable" alone is legitimate (DATA_ACCURACY_RULE asks agents to
+// print it for a missing metric), so it must not block a good result.
+const FAILURE_MARKERS: RegExp[] = [
+  /^\s*Error:/, // wave runner / CEO is_error text
+  /\bDATA UNAVAILABLE\b/, // news-agent: no Finnhub articles AND no web research
+  /\bError fetching\b/i, // hype-agent
+  /\bAPI key not configured\b/i, // hype / sentiment without a key
+  /\bsearch unavailable:/i, // sentiment-agent Perplexity failure
+  /\bUnable to retrieve\b/i, // fundamentals-agent EDGAR failure
+  /\bInsufficient credits\b/i, // raw OpenRouter billing error
+  /\brequest failed \(status \d{3}\)/i, // raw llm.ts error text
+];
+
+/**
+ * Whether an agent result is a real, successful output worth sharing across
+ * users for hours. Empty output and known failure shapes are not.
+ */
+export function isCacheableResult(result: string): boolean {
+  if (!result || !result.trim()) return false;
+  return !FAILURE_MARKERS.some((re) => re.test(result));
+}
+
 /**
  * Saves an agent result to the cache with the appropriate TTL.
+ *
+ * Refuses to write a failure (see isCacheableResult): a swallowed provider error
+ * cached here would be served to every user until the TTL expired.
  * Uses upsert so re-runs within TTL refresh the entry.
  *
  * `expiresAt` is stored as a Firestore Timestamp so the native TTL policy can
@@ -165,6 +192,10 @@ export async function saveCache(
   input: unknown,
   result: string
 ): Promise<void> {
+  if (!isCacheableResult(result)) {
+    console.warn(`[agentMemory] not caching ${agentName}: empty or failed result`);
+    return;
+  }
   try {
     const key = buildCacheKey(agentName, input);
     const ttl = AGENT_TTL_MS[agentName] ?? DEFAULT_TTL_MS;

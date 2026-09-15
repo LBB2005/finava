@@ -15,6 +15,9 @@ import { ranked, type RankedStock } from "@/lib/research";
 import { coerceFilter, applyScreen, type ScreenFilter } from "@/lib/screen";
 import type { AgentEvent } from "@/types/chat";
 import type { ConvictionTier, DiscoverLayout, DiscoverTier, ScoutPick } from "@/lib/scoutTypes";
+import { SCOUT_UNAVAILABLE_FILTERED_LABEL, SCOUT_UNAVAILABLE_LABEL } from "./scout-fallback";
+
+export { SCOUT_UNAVAILABLE_FILTERED_LABEL, SCOUT_UNAVAILABLE_LABEL };
 
 type EventEmitter = (event: AgentEvent) => void;
 
@@ -241,33 +244,55 @@ Output ONLY the JSON below — no preamble, no markdown, no trailing commentary:
     picks = [];
   }
 
-  // Fallback: if the LLM produced nothing usable, take the top of the pool so the
-  // funnel never dead-ends (rare — empty completions throw upstream).
+  // Fallback: if the LLM produced nothing usable, show the highest overall factor
+  // scores in the pool so the funnel never dead-ends — and say exactly that.
+  let fallbackLabel: string | null = null;
   if (picks.length === 0) {
-    picks = pool.slice(0, n).map((s, i) => ({
-      ticker: s.ticker,
-      name: s.name,
-      sector: s.sector,
-      score: s.score,
-      grade: s.grade,
-      fitRank: i + 1,
-      f: s.f,
-      reason: "Top factor fit for your request.",
-      conviction: convictionFromScore(s.score),
-      marketCap: s.marketCap,
-      pe: s.pe,
-      price: s.price,
-    }));
+    fallbackLabel = pool === yearRanked ? SCOUT_UNAVAILABLE_LABEL : SCOUT_UNAVAILABLE_FILTERED_LABEL;
+    interpretation = fallbackLabel;
+    picks = [...pool]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, n)
+      .map((s, i) => ({
+        ticker: s.ticker,
+        name: s.name,
+        sector: s.sector,
+        score: s.score,
+        grade: s.grade,
+        fitRank: i + 1,
+        f: s.f,
+        reason: fallbackLabel!,
+        conviction: convictionFromScore(s.score),
+        marketCap: s.marketCap,
+        pe: s.pe,
+        price: s.price,
+      }));
   }
 
   // 5) Emit the structured event + return the model-facing instruction string.
   if (tier === "deep") {
     emit({ type: "deep_shortlist", query, interpretation, picks, layout });
     const tickerList = picks.map((p) => p.ticker).join(", ");
+    if (fallbackLabel) {
+      return `${fallbackLabel}. The shortlist emitted to the client is: ${tickerList}; the client will run the analyst crew on them. Write ONE sentence telling the user plainly that the discovery scout was unavailable, so these are simply today's highest factor scores rather than names picked for their request. Name no ticker outside that list. Then STOP — do not call any tools.`;
+    }
     return `Shortlist of ${picks.length} names emitted to the client, which will now run the full analyst crew on them in waves and rank them. The shortlist is: ${tickerList}. Write ONE sentence telling the user you're deep-diving these ${picks.length} names — you may name 2–3 tickers but ONLY from that shortlist (NEVER a ticker that isn't in it). Then STOP — do not call any tools.`;
   }
 
   emit({ type: "scout_complete", tier: "quick", query, interpretation, picks, layout });
+  if (fallbackLabel) {
+    const list = picks
+      .map((p) => `${p.fitRank}. ${p.ticker} (${p.name}, ${p.sector}) — Finava Score ${p.score} (${p.grade})`)
+      .join("\n");
+    return `${fallbackLabel}.
+The discovery scout could not rank the universe for "${query}", so the client is showing these ${picks.length} names ordered by overall factor score only:
+${list}
+
+Say this plainly in your first sentence: the scout was unavailable, and these are not picks for the user's request. Then, in 1 line each, say what their factor scores show — do NOT claim any of them fits the request, and do NOT call them recommendations.
+- Do NOT mention any ticker that is not in the list above.
+- Do NOT reference the user's portfolio, holdings, or available cash.
+Suggest trying the request again shortly. Do not call any tools.`;
+  }
   const lines = picks
     .map(
       (p) =>

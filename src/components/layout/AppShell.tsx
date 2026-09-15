@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Sidebar from "./Sidebar";
+import DegradedBanner from "./DegradedBanner";
 import GlobalComposer from "@/components/chat/GlobalComposer";
 import ChatEngine from "@/components/chat/ChatEngine";
 import { PlaidConnectProvider } from "@/components/portfolio/PlaidConnectProvider";
@@ -105,6 +106,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Content column — relative so the persistent composer can float over it,
           aligned to the content area (right of the resizable sidebar) via layout. */}
       <div className="flex-1 flex flex-col min-h-0 relative">
+        <DegradedBanner />
         {/* Main content — keyed by route so it re-mounts and re-runs the subtle
             route-fade on each navigation (disabled under prefers-reduced-motion). */}
         <main key={pathname} className="flex-1 flex flex-col min-h-0 overflow-hidden route-fade">{children}</main>

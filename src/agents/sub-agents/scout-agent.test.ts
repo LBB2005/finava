@@ -270,17 +270,72 @@ describe("runScoutAgent — hard screen filter", () => {
 });
 
 describe("runScoutAgent — fallback / guard branches", () => {
-  it("falls back to the top of the pool when scoutSelect throws", async () => {
+  it("falls back to the highest factor scores when scoutSelect throws, labelled honestly", async () => {
+    generate.mockImplementation(async (o: { agent: string }) => {
+      if (o.agent === "screenParse") return JSON.stringify({ filter: {} });
+      throw new Error("402 Insufficient credits");
+    });
+    const { emit, events } = collect();
+    const { runScoutAgent, SCOUT_UNAVAILABLE_LABEL } = await import("./scout-agent");
+    await runScoutAgent({ query: "value tech names", tier: "quick", limit: 3 }, emit);
+    const ev = events.find((e) => e.type === "scout_complete") as {
+      picks: Array<{ ticker: string; reason: string }>;
+      interpretation: string;
+    };
+    // Highest overall score first (ABC 80, DEF 60, JKL 50) — not pool order — so
+    // the label's claim is literally true.
+    expect(ev.picks.map((p) => p.ticker)).toEqual(["ABC", "DEF", "JKL"]);
+    expect(SCOUT_UNAVAILABLE_LABEL).toBe(
+      "Scout unavailable — showing today's highest overall factor scores, not a match for your request",
+    );
+    for (const pick of ev.picks) expect(pick.reason).toBe(SCOUT_UNAVAILABLE_LABEL);
+    expect(ev.interpretation).toBe(SCOUT_UNAVAILABLE_LABEL);
+    expect(JSON.stringify(events)).not.toMatch(/Top factor fit|402|credits/);
+  });
+
+  it("tells the narrator exactly that the picks are a fallback, not a selection", async () => {
+    generate.mockImplementation(async (o: { agent: string }) => {
+      if (o.agent === "screenParse") return JSON.stringify({ filter: {} });
+      throw new Error("LLM down");
+    });
+    const { emit } = collect();
+    const { runScoutAgent, SCOUT_UNAVAILABLE_LABEL } = await import("./scout-agent");
+    const out = await runScoutAgent({ query: "value tech names", tier: "quick", limit: 2 }, emit);
+
+    expect(out).not.toMatch(/selected EXACTLY/);
+    expect(out).not.toMatch(/fit:/);
+    expect(out).toContain(`${SCOUT_UNAVAILABLE_LABEL}.`);
+    expect(out).toContain("Say this plainly");
+    expect(out).toContain("1. ABC");
+    expect(out).toContain("2. DEF");
+  });
+
+  it("labels a deep-tier fallback shortlist the same way", async () => {
     generate.mockImplementation(async (o: { agent: string }) => {
       if (o.agent === "screenParse") return JSON.stringify({ filter: {} });
       throw new Error("LLM down");
     });
     const { emit, events } = collect();
-    const { runScoutAgent } = await import("./scout-agent");
-    await runScoutAgent({ query: "value tech names", tier: "quick", limit: 3 }, emit);
+    const { runScoutAgent, SCOUT_UNAVAILABLE_LABEL } = await import("./scout-agent");
+    const out = await runScoutAgent({ query: "quality compounders in tech", tier: "deep", limit: 2 }, emit);
+    const ev = events.find((e) => e.type === "deep_shortlist") as { picks: Array<{ reason: string }> };
+    expect(ev.picks[0].reason).toBe(SCOUT_UNAVAILABLE_LABEL);
+    expect(out).toContain(SCOUT_UNAVAILABLE_LABEL);
+  });
+
+  it("says so when the fallback honoured the user's hard limits", async () => {
+    coerceFilter.mockReturnValue({ sectors: ["Healthcare"] });
+    applyScreen.mockReturnValue([POOL[3], POOL[0]]); // survivors, unsorted
+    generate.mockImplementation(async (o: { agent: string }) => {
+      if (o.agent === "screenParse") return JSON.stringify({ filter: { sectors: ["Healthcare"] } });
+      throw new Error("LLM down");
+    });
+    const { emit, events } = collect();
+    const { runScoutAgent, SCOUT_UNAVAILABLE_FILTERED_LABEL } = await import("./scout-agent");
+    await runScoutAgent({ query: "healthcare names", tier: "quick", limit: 2 }, emit);
     const ev = events.find((e) => e.type === "scout_complete") as { picks: Array<{ ticker: string; reason: string }> };
-    expect(ev.picks.map((p) => p.ticker)).toEqual(["ABC", "DEF", "GHI"]);
-    expect(ev.picks[0].reason).toBe("Top factor fit for your request.");
+    expect(ev.picks.map((p) => p.ticker)).toEqual(["ABC", "JKL"]);
+    expect(ev.picks[0].reason).toBe(SCOUT_UNAVAILABLE_FILTERED_LABEL);
   });
 
   it("falls back when the LLM returns unparseable JSON", async () => {

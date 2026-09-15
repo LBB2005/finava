@@ -17,6 +17,7 @@ const h = vi.hoisted(() => {
     critique: vi.fn(async (p: { draft: string }) => ({ finalResponse: `${p.draft} [revised]`, truncated: false })),
     streamFinal: { value: null as unknown },
     streamThrows: { value: false },
+    streamArgs: [] as Array<{ messages: Array<{ content: string }> }>,
   };
 });
 
@@ -31,7 +32,7 @@ vi.mock("@/lib/anthropic", () => ({
   MODEL: "test-model",
   anthropic: {
     messages: {
-      stream: () => ({
+      stream: (args: { messages: Array<{ content: string }> }) => (h.streamArgs.push(args), {
         finalMessage: () => {
           if (h.streamThrows.value) return Promise.reject(new Error("synthesis upstream down"));
           return Promise.resolve(h.streamFinal.value);
@@ -90,7 +91,7 @@ describe("runDiscoveryWave", () => {
 
   it("isolates a throwing agent into an Error string without sinking the wave", async () => {
     h.dispatch.run_dcf_agent = async () => {
-      throw new Error("dcf boom");
+      throw new Error("[llm:dcf] openai/gpt-5.5 request failed (status 402): 402 Insufficient credits");
     };
     const { runDiscoveryWave } = await import("./discovery");
     const events: AgentEvent[] = [];
@@ -99,7 +100,9 @@ describe("runDiscoveryWave", () => {
       (e) => events.push(e),
     );
     const result = events.find((e) => e.type === "wave_result") as { wave: { valuation: Record<string, Record<string, string>> } };
-    expect(result.wave.valuation.AAA.run_dcf_agent).toMatch(/^Error: dcf boom/);
+    // Still an "Error:" string (so it is never cached and the synthesizer sees a
+    // failure), but with no vendor detail — wave_result reaches the client.
+    expect(result.wave.valuation.AAA.run_dcf_agent).toBe("Error: An AI provider was unavailable for this step.");
   });
 });
 
@@ -163,11 +166,36 @@ describe("runDiscoverySynthesis", () => {
     }
   });
 
+  it("tells the synthesizer when the shortlist is a scout-unavailable fallback", async () => {
+    h.streamFinal.value = { content: [{ type: "text", text: "Ranked draft" }], stop_reason: "end_turn" };
+    const { SCOUT_UNAVAILABLE_LABEL } = await import("./sub-agents/scout-fallback");
+    const { runDiscoverySynthesis } = await import("./discovery");
+    const fallbackReq = {
+      ...req,
+      picks: [{ ...req.picks[0], reason: SCOUT_UNAVAILABLE_LABEL }],
+    };
+    h.streamArgs.length = 0;
+    await runDiscoverySynthesis(fallbackReq as never, () => {});
+    const prompt = h.streamArgs[0].messages[0].content;
+    expect(prompt).toContain("The discovery scout was unavailable");
+    expect(prompt).not.toContain("in the scout's initial fit order");
+  });
+
+  it("does not add the fallback note for a real scout shortlist", async () => {
+    h.streamFinal.value = { content: [{ type: "text", text: "Ranked draft" }], stop_reason: "end_turn" };
+    const { runDiscoverySynthesis } = await import("./discovery");
+    h.streamArgs.length = 0;
+    await runDiscoverySynthesis(req as never, () => {});
+    expect(h.streamArgs[0].messages[0].content).not.toContain("scout was unavailable");
+  });
+
   it("emits an error event when the synthesis call throws", async () => {
     h.streamThrows.value = true;
     const { runDiscoverySynthesis } = await import("./discovery");
     const events: AgentEvent[] = [];
     await runDiscoverySynthesis(req as never, (e) => events.push(e));
-    expect(events).toContainEqual(expect.objectContaining({ type: "error" }));
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "error", message: "An AI provider was unavailable for this step." }),
+    );
   });
 });
