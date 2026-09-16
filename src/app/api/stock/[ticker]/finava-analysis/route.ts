@@ -96,7 +96,7 @@ export async function POST(
         const facts = await getTickerFacts(symbol, { refreshDerived: true });
         const scored = facts.score.value;
         if (!scored) {
-          send({ type: "error", message: `Not enough data to compute the Finava Score for ${symbol}.` });
+          send({ type: "error", message: `Couldn't compute the Finava Score for ${symbol}: ${facts.score.note ?? "not enough data"}.`.replace(/\.\.$/, ".") });
           return;
         }
         const price = facts.price.value;

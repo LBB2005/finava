@@ -54,9 +54,19 @@ function plusDays(day: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+const capitalize = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 const computing = new Map<string, Promise<Derived>>();
+
+/** Sources the score and DCF are built from. If one is failing (a 429, a timeout),
+ *  computing now would cache a degraded score for 24 h, so we wait instead. */
+const SCORING_INPUTS: { name: SourceName; label: string }[] = [
+  { name: "quote", label: "price" },
+  { name: "metric", label: "fundamentals" },
+  { name: "edgar", label: "filings" },
+];
 
 async function computeDerived(
   t: string,
@@ -132,6 +142,7 @@ export async function getTickerFacts(raw: string, opts: GetTickerFactsOptions = 
       return await race(load(), deadline);
     } catch (err) {
       errors[name] = err instanceof DeadlineError ? "timeout" : "error";
+      console.warn(`[facts] ${t} ${name} ${errors[name]}:`, err instanceof Error ? err.message : err);
       return null;
     }
   };
@@ -163,7 +174,8 @@ export async function getTickerFacts(raw: string, opts: GetTickerFactsOptions = 
   const fast = buildFastFacts(t, { quote, metric: metricLoaded, edgar, earnings, target, errors });
 
   let derived: Derived = cached?.value ?? { score: null, dcf: null };
-  if (!opts.cachedOnly && (!derived.score || !derived.dcf)) {
+  const failingInputs = SCORING_INPUTS.filter((s) => errors[s.name]).map((s) => s.label);
+  if (!opts.cachedOnly && failingInputs.length === 0 && (!derived.score || !derived.dcf)) {
     const have = derived;
     let job = computing.get(t);
     if (!job) {
@@ -175,7 +187,13 @@ export async function getTickerFacts(raw: string, opts: GetTickerFactsOptions = 
   }
 
   const asOf = now().toISOString();
-  const pendingNote = opts.cachedOnly ? "Not scored yet" : errors.derived === "timeout" ? "Not retrieved in time" : "Couldn't compute right now";
+  const pendingNote = opts.cachedOnly
+    ? "Not scored yet"
+    : failingInputs.length
+      ? `${capitalize(failingInputs.join(", "))} unavailable right now. Try again shortly.`
+      : errors.derived === "timeout"
+        ? "Not retrieved in time"
+        : "Couldn't compute right now";
   return {
     ticker: t,
     ...fast,

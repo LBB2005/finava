@@ -115,6 +115,32 @@ describe("getTickerFacts", () => {
     expect(f.revenueTTM.note).toBe("Not retrieved in time");
   });
 
+  it("never computes or caches a score while a scoring input source is failing", async () => {
+    deps.getCompanyFacts.mockRejectedValue(new Error("EDGAR 429"));
+    const f = await getTickerFacts("MSFT", { now });
+    expect(deps.assembleScoreInputs).not.toHaveBeenCalled();
+    expect(f.score.value).toBeNull();
+    expect(f.score.note).toBe("Filings unavailable right now. Try again shortly.");
+    expect(f.dcf.value).toBeNull();
+    expect(fs.current!.docs.has("factsCache/MSFT")).toBe(false);
+  });
+
+  it("still serves a cached score while a source is failing", async () => {
+    await getTickerFacts("MSFT", { now });
+    clearFactsMemo();
+    deps.getCompanyFacts.mockRejectedValue(new Error("EDGAR 429"));
+    const f = await getTickerFacts("MSFT", { now });
+    expect(f.score.value).not.toBeNull();
+    expect(deps.assembleScoreInputs).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failing Street target (not a score input) does not block scoring", async () => {
+    deps.getPriceTarget.mockRejectedValue(new Error("Finnhub 403"));
+    const f = await getTickerFacts("AAPL", { now });
+    expect(f.score.value).not.toBeNull();
+    expect(f.dropped).toEqual(["target"]);
+  });
+
   it("a symbol without SEC filings gets a noted DCF and still a score", async () => {
     deps.getCikByTicker.mockResolvedValue(null);
     const f = await getTickerFacts("SPY", { now });

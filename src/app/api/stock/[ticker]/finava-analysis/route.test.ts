@@ -216,7 +216,13 @@ describe("POST /api/stock/[ticker]/finava-analysis", () => {
     deps.getTickerFacts.mockResolvedValueOnce(tickerFactsFixture("AAPL", { score: missing("Finava Score v2 (15 factors)", "No factor data available for this symbol") }));
     const evs = await events(await POST(new Request("http://test.local"), ctx("AAPL")));
     expect(evs.filter((e) => e.type === "signal")).toHaveLength(0);
-    expect(evs).toContainEqual({ type: "error", message: "Not enough data to compute the Finava Score for AAPL." });
+    expect(evs).toContainEqual({ type: "error", message: "Couldn't compute the Finava Score for AAPL: No factor data available for this symbol." });
+  });
+
+  it("passes a transient-failure note through instead of claiming there is no data", async () => {
+    deps.getTickerFacts.mockResolvedValueOnce(tickerFactsFixture("AAPL", { score: missing("Finava Score v2 (15 factors)", "Filings unavailable right now. Try again shortly.") }));
+    const evs = await events(await POST(new Request("http://test.local"), ctx("AAPL")));
+    expect(evs).toContainEqual({ type: "error", message: "Couldn't compute the Finava Score for AAPL: Filings unavailable right now. Try again shortly." });
   });
 
   it("asks facts for a fresh score on a user-requested run", async () => {
