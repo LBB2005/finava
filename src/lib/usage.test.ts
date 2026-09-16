@@ -176,6 +176,12 @@ describe("withUsageContext", () => {
     const seen = withUsageContext("u_ctx", () => usageStore.getStore()?.requestId, "req_9");
     expect(seen).toBe("req_9");
   });
+
+  it("labels the run's lane, defaulting to the cheapest one", async () => {
+    const { withUsageContext, currentLane } = await import("./usage");
+    expect(withUsageContext("u_ctx", () => currentLane(), "r1", "deep")).toBe("deep");
+    expect(withUsageContext("u_ctx", () => currentLane())).toBe("fast");
+  });
 });
 
 describe("recordUsage — the run-credit choke point", () => {
@@ -186,6 +192,20 @@ describe("recordUsage — the run-credit choke point", () => {
       await recordUsage({ agent: "b", model: "perplexity/sonar", flatCredits: 60 });
       expect(currentRunCredits()).toBe(100);
     });
+  });
+
+  it("attributes each call to the run, so one run's cost can be broken down", async () => {
+    const { recordUsage, withUsageContext, usageStore } = await import("./usage");
+    const calls = await withUsageContext("u_run", async () => {
+      // A crew turn (tokens) and a flat-priced paid-data call land in one ledger.
+      await recordUsage({ agent: "ceo", model: "claude-sonnet-4-6", inputTokens: 1000, outputTokens: 1000 });
+      await recordUsage({ agent: "news", model: "perplexity/sonar", flatCredits: 40 });
+      return usageStore.getStore()!.calls;
+    });
+    expect(calls).toEqual([
+      { agent: "ceo", model: "claude-sonnet-4-6", credits: 18, inputTokens: 1000, outputTokens: 1000 },
+      { agent: "news", model: "perplexity/sonar", credits: 40, inputTokens: 0, outputTokens: 0 },
+    ]);
   });
 
   it("infers the userId from the ambient context when the caller omits it", async () => {

@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { makeFirestoreMock } from "@/test/mocks/firestore";
+import { PLANS } from "./plans";
 
 const fs = makeFirestoreMock();
 vi.mock("@/lib/firebase-admin", () => ({ db: fs.db }));
 
-beforeEach(() => {
+beforeEach(async () => {
   fs.store.clear();
   vi.stubEnv("ADMIN_UIDS", "");
+  // Tester-plan assignments are memoized per UID; start every test cold.
+  const { forgetTesterPlan } = await import("./entitlements");
+  forgetTesterPlan();
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -19,12 +23,54 @@ describe("resolvePlan", () => {
     expect(ent.degraded).toBe(false);
   });
 
-  it("grants Quant to an admin UID without reading Firestore", async () => {
+  it("grants Quant to an admin UID with no settings doc", async () => {
     vi.stubEnv("ADMIN_UIDS", "admin-1, admin-2");
     const { resolvePlan } = await import("./entitlements");
     const ent = await resolvePlan("admin-2");
     expect(ent.plan).toBe("Quant");
     expect(ent.source).toBe("admin");
+  });
+
+  it("puts an allowlisted tester on the plan an admin assigned them", async () => {
+    vi.stubEnv("ADMIN_UIDS", "tester-1");
+    fs.store.set("userSettings/tester-1", { betaPlan: "Analyst" });
+    const { resolvePlan } = await import("./entitlements");
+    const ent = await resolvePlan("tester-1");
+    // Not "admin": the whole point is that they now live inside a real plan's
+    // allowances and per-run caps, which the admin source bypasses.
+    expect(ent.plan).toBe("Analyst");
+    expect(ent.source).toBe("beta_plan");
+    expect(ent.config.monthly).toBe(PLANS.Analyst.monthly);
+  });
+
+  it("ignores a junk betaPlan value and keeps full admin access", async () => {
+    vi.stubEnv("ADMIN_UIDS", "tester-1");
+    fs.store.set("userSettings/tester-1", { betaPlan: "Platinum" });
+    const { resolvePlan } = await import("./entitlements");
+    expect((await resolvePlan("tester-1")).source).toBe("admin");
+  });
+
+  it("hands an admin their access back when the assignment is cleared", async () => {
+    vi.stubEnv("ADMIN_UIDS", "tester-1");
+    fs.store.set("userSettings/tester-1", { betaPlan: "Pro" });
+    const { resolvePlan, forgetTesterPlan } = await import("./entitlements");
+    expect((await resolvePlan("tester-1")).plan).toBe("Pro");
+
+    fs.store.set("userSettings/tester-1", { betaPlan: null });
+    forgetTesterPlan("tester-1");
+    expect((await resolvePlan("tester-1")).source).toBe("admin");
+  });
+
+  it("keeps an admin's access when their settings can't be read", async () => {
+    vi.stubEnv("ADMIN_UIDS", "tester-1");
+    const boom = vi.spyOn(fs.db, "collection").mockImplementation(() => {
+      throw new Error("firestore down");
+    });
+    const { resolvePlan } = await import("./entitlements");
+    const ent = await resolvePlan("tester-1");
+    boom.mockRestore();
+    expect(ent.source).toBe("admin");
+    expect(ent.degraded).toBe(false);
   });
 
   it("grants Quant to the dev-bypass user outside production", async () => {

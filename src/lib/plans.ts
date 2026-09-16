@@ -17,6 +17,17 @@
 // ── Tiers ─────────────────────────────────────────────────────────────────────
 export type PlanName = "Free" | "Analyst" | "Pro" | "Quant";
 
+/**
+ * The four ways a run can spend money. Cost per run differs by an order of
+ * magnitude between them (one Haiku answer vs. a 15-agent deep crew), so a
+ * single per-run cap either strangles the cheap lane or fails to bound the
+ * expensive one. Measured p90s per lane live in
+ * `docs/pricing/run-cost-2026-09.md`.
+ */
+export type RunLane = "fast" | "full" | "deep" | "discover";
+
+export const RUN_LANES: RunLane[] = ["fast", "full", "deep", "discover"];
+
 /** Low → high. Used for "what's the cheapest plan that unlocks X" scans. */
 export const PLAN_ORDER: PlanName[] = ["Free", "Analyst", "Pro", "Quant"];
 
@@ -45,7 +56,14 @@ export interface PlanConfig {
 
   // ── Deep Research (the one explicitly-counted expensive op) ──
   deepResearchPerMonth: number; // Infinity = fair-use unlimited
-  deepResearchPerRunCap: number; // credits a single run may consume (soft guard)
+
+  /**
+   * Credits a SINGLE run may consume, per lane. A run that crosses its cap stops
+   * and ships what it has with a plain-English note — it is never a silent abort.
+   * Set at ~1.5x each lane's measured p90 (see docs/pricing/run-cost-2026-09.md),
+   * so a normal run never sees a cap and only a runaway does.
+   */
+  perRunCap: Record<RunLane, number>;
 
   // ── Capability flags ──
   capabilities: Record<Capability, boolean>;
@@ -64,6 +82,39 @@ export interface PlanConfig {
   };
 }
 
+// ── Credit value ──────────────────────────────────────────────────────────────
+/**
+ * What one displayed credit is worth in model spend. 1 credit = a tenth of a
+ * cent, which keeps the numbers readable (a ~2k-in / 1k-out Sonnet chat ≈ 21
+ * credits). Lives here with the rest of the pricing data: allowances, per-run
+ * caps and marketing copy all convert through it, and `usage.ts` re-exports it
+ * for the metering call-sites.
+ */
+export const CREDIT_USD = 0.001;
+
+/** Credits → USD, rounded to a hundredth of a cent. */
+export function creditsToUsd(credits: number): number {
+  return Math.round(credits * CREDIT_USD * 10_000) / 10_000;
+}
+
+// ── Per-run caps (shared by every tier) ───────────────────────────────────────
+/**
+ * A run costs what it costs — the same question asked by a Free user and a Quant
+ * user does the same work. So the per-run ceiling is a RUNAWAY guard, not a tier
+ * differentiator: every plan gets the same lane caps, and what actually separates
+ * the tiers is how many runs their monthly credit allowance buys.
+ *
+ * Numbers are ~1.5x the measured p90 of each lane (see the measurement in
+ * `docs/pricing/run-cost-2026-09.md`, and `scripts/measure-run-cost.ts` to re-run
+ * it). PLACEHOLDER until that measurement lands.
+ */
+export const PER_RUN_CAP: Record<RunLane, number> = {
+  fast: 60, // MEASURE
+  full: 900, // MEASURE
+  deep: 2500, // MEASURE
+  discover: 600, // MEASURE
+};
+
 // ── The plan table ────────────────────────────────────────────────────────────
 export const PLANS: Record<PlanName, PlanConfig> = {
   Free: {
@@ -73,7 +124,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     weekly: 200, // TUNE
     monthly: 400, // TUNE — ~ a thin conversion taste
     deepResearchPerMonth: 2, // TUNE — "2 crew runs to feel the wow"
-    deepResearchPerRunCap: 300, // TUNE — ~$0.30
+    perRunCap: PER_RUN_CAP,
     capabilities: {
       plaidLinking: false,
       weeklyBriefings: false,
@@ -88,7 +139,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     weekly: 1500, // TUNE
     monthly: 4000, // TUNE
     deepResearchPerMonth: 30, // TUNE — "30 / month (5 / day)"
-    deepResearchPerRunCap: 300, // TUNE
+    perRunCap: PER_RUN_CAP,
     capabilities: {
       plaidLinking: true,
       weeklyBriefings: true,
@@ -107,7 +158,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     weekly: 5000, // TUNE
     monthly: 15000, // TUNE
     deepResearchPerMonth: Infinity, // fair-use (backstopped by daily/weekly credits)
-    deepResearchPerRunCap: 300, // TUNE
+    perRunCap: PER_RUN_CAP,
     capabilities: {
       plaidLinking: true,
       weeklyBriefings: true,
@@ -126,7 +177,7 @@ export const PLANS: Record<PlanName, PlanConfig> = {
     weekly: 12000, // TUNE
     monthly: 40000, // TUNE
     deepResearchPerMonth: Infinity,
-    deepResearchPerRunCap: 300, // TUNE
+    perRunCap: PER_RUN_CAP,
     capabilities: {
       plaidLinking: true,
       weeklyBriefings: true,
@@ -185,6 +236,18 @@ export function planForPriceId(
     }
   }
   return null;
+}
+
+/**
+ * The per-run credit ceiling for one lane on one plan. Falls back to the shared
+ * table when a plan config predates per-lane caps (a stale cached entitlement, or
+ * a test fixture), so the backstop can never be disabled by a missing field.
+ */
+export function perRunCapFor(
+  config: Pick<PlanConfig, "perRunCap"> | undefined | null,
+  lane: RunLane
+): number {
+  return config?.perRunCap?.[lane] ?? PER_RUN_CAP[lane];
 }
 
 /** The cheapest plan (in PLAN_ORDER) that grants `capability`, or null if none. */
