@@ -7,37 +7,19 @@ import { checkUsageLimit, usageStore, makeRunContext } from "@/lib/usage";
 import { userRateLimit } from "@/lib/rateLimit";
 import { promptClockLine } from "@/lib/promptClock";
 import { recordProviderFailure } from "@/lib/providerHealth";
+import { ROUTER_SYSTEM_PROMPT, resolveIntent, type ResolvedIntent } from "@/lib/chat/intent";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-type Intent = "simple" | "agent" | "discover";
-
-interface ClassifyResult {
-  intent: Intent;
-  needsClarify: boolean;
-  clarifyQuestion?: string;
-  clarifyChips?: string[];
+/**
+ * The router's answer. `intent` is the lane Auto will actually run — see
+ * `@/lib/chat/intent` for the rules that hold the model to it.
+ */
+interface ClassifyResult extends ResolvedIntent {
   /** Set only when the router model call failed and this is the default route. */
   degraded?: true;
 }
-
-const SYSTEM = `You are the router for Finava, an AI stock-research chat. Classify the user's latest message into ONE intent and decide whether a single clarifying question is needed BEFORE answering.
-
-Intents:
-- "agent": the user names one or more specific stocks/tickers, or asks to analyze / value / get a verdict on a named company, or asks about THEIR portfolio (e.g. "full analysis of NVDA", "is TSLA a buy?", "review my holdings", "how risky is my portfolio?"). This deploys a multi-agent research crew.
-- "discover": the user wants to FIND/SCREEN/DISCOVER stocks WITHOUT naming specific tickers (e.g. "find cheap energy stocks", "best AI plays right now", "which stocks have low debt and high growth?", "ideas for dividend income").
-- "simple": greetings, definitions, quick factual or conceptual questions, and conversational follow-ups (e.g. "what's a P/E ratio?", "thanks", "explain what you just said", "how does the market work?"). Default here when unsure.
-
-needsClarify — set TRUE only when ALL hold:
-- the request is open-ended discovery or advice ("what should I buy?", "what's good right now?"), AND
-- answering it well genuinely requires a user preference not stated (time horizon, sector focus, or risk tolerance).
-Bias HARD toward false. Specific questions, named tickers, definitions, and anything already containing a sector/style/size/valuation cue do NOT need clarification.
-
-When needsClarify is true, write ONE short friendly clarifyQuestion and 3-4 short tappable clarifyChips (e.g. "Growth & momentum", "Value & income", "Quality compounders", "A specific sector").
-
-Respond with ONLY a JSON object, no prose:
-{"intent":"simple|agent|discover","needsClarify":boolean,"clarifyQuestion":"...","clarifyChips":["...","..."]}`;
 
 function parseJson(raw: string): Record<string, unknown> | null {
   const fenced = raw.replace(/```(?:json)?/gi, "");
@@ -50,34 +32,17 @@ function parseJson(raw: string): Record<string, unknown> | null {
   }
 }
 
-function coerce(parsed: Record<string, unknown> | null): ClassifyResult {
-  const intentRaw = String(parsed?.intent ?? "simple");
-  const intent: Intent =
-    intentRaw === "agent" || intentRaw === "discover" ? intentRaw : "simple";
-  const needsClarify = parsed?.needsClarify === true;
-  const result: ClassifyResult = { intent, needsClarify };
-  if (needsClarify) {
-    const q = parsed?.clarifyQuestion;
-    if (typeof q === "string" && q.trim()) result.clarifyQuestion = q.trim();
-    const chips = parsed?.clarifyChips;
-    if (Array.isArray(chips)) {
-      const clean = chips.map(String).filter(Boolean).slice(0, 4);
-      if (clean.length) result.clarifyChips = clean;
-    }
-    // A clarify with no question/chips is useless — degrade to a plain route.
-    if (!result.clarifyQuestion || !result.clarifyChips) {
-      return { intent, needsClarify: false };
-    }
-  }
-  return result;
-}
-
 export async function POST(req: Request) {
   const res = await withAuthRaw({ body: ClassifyRequestSchema })(req);
   if (res instanceof NextResponse) return res;
 
   const { userId, body } = res;
-  const { userPrompt, history, portfolioContext, pageContext } = body;
+  const { userPrompt, history, portfolioContext, pageContext, allowClarify } = body;
+
+  // The deterministic half of the decision, independent of the model. Computed
+  // up front so an explicit "full analysis of NVDA" still reaches the crew when
+  // the router itself is down.
+  const intentCtx = { userPrompt, pageContext, portfolioContext, allowClarify };
 
   // Generous throttle — fires once per Auto-mode send, but it's a tiny call.
   const throttled = await userRateLimit(userId, "classify", { capacity: 15, refillPerSec: 1 });
@@ -87,7 +52,9 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   // Default route — used on any model/parse failure so Auto never dead-ends.
-  const fallback: ClassifyResult = { intent: "simple", needsClarify: false };
+  // Resolved through the same rules as a live answer, so the fast lane is the
+  // floor and an explicit crew request is still honoured.
+  const fallback: ClassifyResult = resolveIntent(null, intentCtx);
 
   const result = await usageStore.run(makeRunContext(userId), async () => {
     try {
@@ -111,11 +78,11 @@ export async function POST(req: Request) {
 
       const raw = await generate({
         agent: "chatRouter",
-        system: SYSTEM,
+        system: ROUTER_SYSTEM_PROMPT,
         prompt,
         maxTokens: 200,
       });
-      return coerce(parseJson(raw));
+      return resolveIntent(parseJson(raw), intentCtx) as ClassifyResult;
     } catch (err) {
       // Never silent: on 13 Sep an empty OpenRouter balance turned every Auto
       // send into plain chat with nothing in the logs and nothing on screen.

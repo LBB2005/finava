@@ -26,6 +26,9 @@ export const ChatRequestSchema = z.object({
   /** Snapshot of the stock/research page the message was composed on, so the
    *  model scopes its answer to that ticker and resolves vague references. */
   pageContext: PageContextSchema.optional(),
+  /** The conversation this turn belongs to, so the fast lane can reuse the
+   *  previous turn's fetched data for a reformat follow-up (see turnData). */
+  conversationId: z.string().max(200).optional(),
 });
 
 export type ChatRequestBody = z.infer<typeof ChatRequestSchema>;
@@ -53,6 +56,8 @@ export const ClassifyRequestSchema = z.object({
   /** Page the message was composed on. Lets the router resolve vague references
    *  ("is this a buy?") to the viewed ticker instead of asking "which stock?". */
   pageContext: PageContextSchema.optional(),
+  /** False on the turn right after a clarifying question, so we never ask twice. */
+  allowClarify: z.boolean().optional(),
 });
 
 export type ClassifyRequestBody = z.infer<typeof ClassifyRequestSchema>;

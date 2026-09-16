@@ -2,7 +2,12 @@ import type { ScoutPick, DiscoverTier, DiscoverLayout, WaveEvidence, DiscoverMes
 import type { Brand } from "@/lib/models";
 import type { ChatContext } from "@/lib/chatContext";
 
-export type ChatMode = "auto" | "simple" | "agent" | "deep_research" | "discover";
+/**
+ * Which lane produced a message. "fast" is W2-1's grounded default lane —
+ * live data + one model call, seconds not minutes. "simple" is retained for
+ * the manual Quick mode and for messages written before the fast lane existed.
+ */
+export type ChatMode = "auto" | "fast" | "simple" | "agent" | "deep_research" | "discover";
 
 export { AGENT_COUNT } from "@/agents/tools/index";
 
