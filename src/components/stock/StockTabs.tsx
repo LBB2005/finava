@@ -6,7 +6,8 @@ import { useQuotes } from "@/hooks/useQuotes";
 import { useNewsImages } from "@/hooks/useNewsImages";
 import { useFinava } from "@/hooks/useFinava";
 import { useVerdictCache } from "@/hooks/useVerdictCache";
-import { FACTORS, factorColor, type FactorScores } from "@/lib/research";
+import { factorColor } from "@/lib/research";
+import { useTickerFacts } from "@/hooks/useTickerFacts";
 import type {
   StockProfile,
   KeyStats,
@@ -216,12 +217,6 @@ interface FinancialsResponse {
     cashflow: { operatingCF: number | null; capex: number | null; fcf: number | null; buybacks: number | null; fcfMargin: number | null };
   };
 }
-interface ScoreResponse {
-  ticker: string;
-  f: FactorScores;
-  score: number;
-  grade: string;
-}
 
 const publicJson = (url: string) =>
   fetch(url).then((r) => {
@@ -359,9 +354,8 @@ export function OverviewTab({
   const { analysis, status } = useFinava(ticker);
   const verdict = analysis.verdict;
 
-  const score = useSWR<ScoreResponse>(`/api/stock/${encodeURIComponent(ticker)}/score`, publicJson, {
-    revalidateOnFocus: false, shouldRetryOnError: false, dedupingInterval: 300_000,
-  });
+  // Pillar bars are the canonical score's six pillars (the same engine as the rail and Finava tab).
+  const facts = useTickerFacts(ticker);
   const fin = useSWR<FinancialsResponse>(`/api/stock/${encodeURIComponent(ticker)}/financials`, publicJson, {
     revalidateOnFocus: false, shouldRetryOnError: false, dedupingInterval: 300_000,
   });
@@ -411,12 +405,18 @@ export function OverviewTab({
             </div>
           )}
 
-          {score.data && (
+          {facts.data?.score.value && (
             <div style={{ marginTop: 20 }}>
               <Rule>Score pillars</Rule>
-              {FACTORS.map((f) => (
-                <PillarRow key={f.key} label={f.label} value={score.data!.f[f.key]} />
-              ))}
+              {facts.data.score.value.pillars.map((p) =>
+                p.score == null ? (
+                  <div key={p.key} className="mono" style={{ display: "flex", gap: 10, padding: "4px 0", fontSize: "var(--text-meta)", color: "var(--color-muted)" }}>
+                    <span style={{ width: 86, flexShrink: 0 }}>{p.label}</span>No data
+                  </div>
+                ) : (
+                  <PillarRow key={p.key} label={p.label} value={p.score} />
+                )
+              )}
             </div>
           )}
 

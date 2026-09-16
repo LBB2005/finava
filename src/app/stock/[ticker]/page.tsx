@@ -3,6 +3,8 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useStockBundle } from "@/hooks/useStock";
 import { useQuotes } from "@/hooks/useQuotes";
+import { useTickerFacts } from "@/hooks/useTickerFacts";
+import { factTitle } from "@/lib/facts/format";
 import { useChatStore } from "@/stores/chatStore";
 import { buildStockSnapshot } from "@/lib/pageContext";
 import { useToast } from "@/hooks/useToast";
@@ -51,6 +53,7 @@ function StockPageInner() {
 
   const { bundle, error, isLoading, mutate } = useStockBundle(ticker || null);
   const { quoteMap } = useQuotes(ticker ? [ticker] : []);
+  const facts = useTickerFacts(ticker || null);
   const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get("tab")) ?? "Overview");
 
   // ?run=1 deep link (rail "Generate", notifications): start a metered run once
@@ -222,7 +225,7 @@ function StockPageInner() {
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
           <span className="ticker-chip">{ticker}</span>
           {livePrice != null && (
-            <span className="serif" style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-text)" }}>
+            <span className="serif" title={facts.data ? factTitle(facts.data.price) : undefined} style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-text)" }}>
               ${livePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           )}
