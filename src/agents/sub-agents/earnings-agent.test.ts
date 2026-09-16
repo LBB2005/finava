@@ -72,3 +72,73 @@ describe("runEarningsAgent", () => {
     expect(generate).toHaveBeenCalled();
   });
 });
+
+describe("pickNextEarnings", () => {
+  it("takes the nearest future date, not whichever row Finnhub lists first", async () => {
+    const { pickNextEarnings } = await import("./earnings-agent");
+    // The COST case from the readout: the calendar carries both the September
+    // report and the December one, and the agent announced 9 Dec.
+    const rows = [
+      { symbol: "COST", date: "2026-12-09", epsEstimate: 4.5, quarter: 1, year: 2027 },
+      { symbol: "COST", date: "2026-09-24", epsEstimate: 6.1, quarter: 4, year: 2026 },
+    ];
+    expect(pickNextEarnings(rows, "2026-09-15")).toMatchObject({
+      date: "2026-09-24",
+      epsEstimate: 6.1, // the consensus for THAT quarter, not December's
+      quarter: 4,
+      year: 2026,
+      status: "upcoming",
+      estimated: true,
+    });
+  });
+
+  it("falls back to the most recent past report when nothing is scheduled", async () => {
+    const { pickNextEarnings } = await import("./earnings-agent");
+    const rows = [
+      { symbol: "AAPL", date: "2026-05-01", epsActual: 1.5, epsEstimate: 1.4, quarter: 2, year: 2026 },
+      { symbol: "AAPL", date: "2026-08-01", epsActual: 1.7, epsEstimate: 1.6, quarter: 3, year: 2026 },
+    ];
+    expect(pickNextEarnings(rows, "2026-09-15")).toMatchObject({
+      date: "2026-08-01",
+      status: "last-reported",
+      epsActual: 1.7,
+      estimated: false,
+    });
+  });
+
+  it("counts a report due today as upcoming", async () => {
+    const { pickNextEarnings } = await import("./earnings-agent");
+    const rows = [{ symbol: "AAPL", date: "2026-09-15", epsEstimate: 1.8, quarter: 4, year: 2026 }];
+    expect(pickNextEarnings(rows, "2026-09-15")?.status).toBe("upcoming");
+  });
+
+  it("is null when the calendar is empty or undated", async () => {
+    const { pickNextEarnings } = await import("./earnings-agent");
+    expect(pickNextEarnings([], "2026-09-15")).toBeNull();
+    expect(pickNextEarnings([{ symbol: "AAPL" }], "2026-09-15")).toBeNull();
+  });
+});
+
+describe("runEarningsAgent — earnings date honesty", () => {
+  it("labels a scheduled date as expected, with the matching quarter's consensus", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-15T15:00:00Z"));
+    getEarningsCalendar.mockResolvedValue({
+      earningsCalendar: [
+        { symbol: "COST", date: "2026-12-09", epsEstimate: 4.5, quarter: 1, year: 2027 },
+        { symbol: "COST", date: "2026-09-24", epsEstimate: 6.1, quarter: 4, year: 2026 },
+      ],
+    });
+    try {
+      const { runEarningsAgent } = await import("./earnings-agent");
+      await runEarningsAgent({ tickers: ["COST"] });
+      const p = lastPrompt().prompt;
+      expect(p).toContain("2026-09-24");
+      expect(p).not.toContain("2026-12-09");
+      expect(p).toContain('"epsEstimateForThatQuarter": 6.1');
+      expect(p).toContain('"dateIsEstimated": true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -212,7 +212,7 @@ interface FinancialsResponse {
   fcfIsProxy: boolean;
   ttm: {
     income: { revenue: number | null; grossProfit: number | null; operatingIncome: number | null; netIncome: number | null; epsDiluted: number | null };
-    balance: { cash: number | null; totalDebt: number | null; netCash: number | null; totalAssets: number | null; bookValuePerShare: number | null; asOf: string | null };
+    balance: { cash: number | null; cashAndShortTermInvestments: number | null; totalDebt: number | null; netCash: number | null; totalAssets: number | null; bookValuePerShare: number | null; asOf: string | null };
     cashflow: { operatingCF: number | null; capex: number | null; fcf: number | null; buybacks: number | null; fcfMargin: number | null };
   };
 }
@@ -571,7 +571,8 @@ export function OverviewTab({
               <StatementCol
                 title={`Balance sheet${ttm.balance.asOf ? ` · ${ttm.balance.asOf}` : ""}`}
                 lines={[
-                  ["Cash & ST inv.", money(ttm.balance.cash)],
+                  // The label says short-term investments are included, so show the figure that includes them.
+                  ["Cash & ST inv.", money(ttm.balance.cashAndShortTermInvestments ?? ttm.balance.cash)],
                   ["Total debt", money(ttm.balance.totalDebt)],
                   ["Net cash", money(ttm.balance.netCash), ttm.balance.netCash != null ? (ttm.balance.netCash >= 0 ? "var(--color-bull)" : "var(--color-bear)") : undefined],
                   ["Total assets", money(ttm.balance.totalAssets)],

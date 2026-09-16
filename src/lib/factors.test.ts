@@ -60,13 +60,23 @@ const POLY: Record<string, unknown> = {
   CCC: { results: [] }, // forces EDGAR fallback
   DDD: { results: [] }, // no fallback either → neutral
 };
+// Reference data: the CURRENT share count and the feed's own cap. AAA/BBB match
+// their filings; EEE has split since its last 10-K (filing 10 → current 230).
+const DETAILS: Record<string, { share_class_shares_outstanding?: number; market_cap?: number }> = {
+  AAA: { share_class_shares_outstanding: 10, market_cap: 1000 },
+  BBB: { share_class_shares_outstanding: 10, market_cap: 2000 },
+  EEE: { share_class_shares_outstanding: 230, market_cap: 23_000 },
+};
 vi.mock("@/lib/polygon", () => ({
   getAnnualFinancials: vi.fn(async (t: string) => POLY[t] ?? { results: [] }),
+  getTickerDetails: vi.fn(async (t: string) => ({ results: DETAILS[t] ?? {} })),
 }));
 
 // EDGAR fallback: only CCC has a CIK + facts.
 const edgarUnit = (val: number, year: number) => ({ form: "10-K", end: `${year}-12-31`, val, frame: `CY${year}` });
 vi.mock("@/lib/edgar", () => ({
+  // CCC has no Polygon reference data; its cover-page count comes from EDGAR.
+  extractCurrentSharesOutstanding: vi.fn(() => ({ shares: 6, asOf: "2026-06-30" })),
   getCikByTicker: vi.fn(async (t: string) => (t === "CCC" ? "0000123" : null)),
   getCompanyFacts: vi.fn(async () => ({
     facts: {
@@ -143,13 +153,20 @@ describe("computeFactorUniverse", () => {
     expect(aaa.f.analyst).toBeGreaterThan(bbb.f.analyst);
   });
 
-  it("derives marketCap and TTM P/E from price × diluted shares", async () => {
+  it("derives marketCap and TTM P/E from price × CURRENT shares", async () => {
     const { computeFactorUniverse } = await import("./factors");
     const { stocks } = await computeFactorUniverse();
     const aaa = stocks.find((s) => s.ticker === "AAA")!;
-    expect(aaa.marketCap).toBe(100 * 10); // price 100 × 10 shares
+    expect(aaa.marketCap).toBe(100 * 10); // price 100 × 10 current shares
     expect(aaa.pe).toBeCloseTo(1000 / 30, 6); // cap / net income
     expect(aaa.live).toBe(true);
+  });
+
+  it("uses the cover-page share count when the reference feed has nothing (CCC)", async () => {
+    const { computeFactorUniverse } = await import("./factors");
+    const { stocks } = await computeFactorUniverse();
+    const ccc = stocks.find((s) => s.ticker === "CCC")!;
+    expect(ccc.marketCap).toBe(50 * 6); // price × EDGAR cover-page shares
   });
 
   it("falls back to EDGAR when Polygon has no filing", async () => {
@@ -218,5 +235,47 @@ describe("computeFactorUniverse", () => {
       vi.mocked(getAnnualFinancials).mockImplementation(polyImpl);
       vi.mocked(getRecommendationTrends).mockImplementation(recImpl);
     }
+  });
+});
+
+describe("resolveMarketCap (split safety)", () => {
+  it("uses the current share count, not the pre-split weighted average on the last 10-K", async () => {
+    const { resolveMarketCap } = await import("./factors");
+    // Booking Holdings after its split: the FY2025 10-K reports 32,639,000
+    // weighted average diluted shares; the cover page of the next 10-Q reports
+    // 751,380,500. At ~$175.33 the filing figure gives a $5.7B cap and a P/E of
+    // about 1 — the readout's BKNG bug.
+    const cap = resolveMarketCap({
+      price: 175.33,
+      currentShares: 751_380_500,
+      filingShares: 32_639_000,
+      feedCap: 131_754_570_675,
+    });
+    expect(cap).toBeGreaterThan(125e9);
+    expect(cap! / 5_404_000_000).toBeGreaterThan(20); // P/E is sane, not ~1
+  });
+
+  it("prefers the feed's cap when our own is off by more than 3x", async () => {
+    const { resolveMarketCap } = await import("./factors");
+    // A stale/unadjusted share count slipped through: trust the feed instead.
+    expect(
+      resolveMarketCap({ price: 175.33, currentShares: 32_639_000, filingShares: null, feedCap: 131_754_570_675 })
+    ).toBe(131_754_570_675);
+  });
+
+  it("returns Unavailable rather than mixing filing shares with today's price", async () => {
+    const { resolveMarketCap } = await import("./factors");
+    expect(resolveMarketCap({ price: 175.33, currentShares: null, filingShares: 32_639_000, feedCap: null })).toBeNull();
+  });
+
+  it("falls back to the feed's cap when we have no share count", async () => {
+    const { resolveMarketCap } = await import("./factors");
+    expect(resolveMarketCap({ price: 175.33, currentShares: null, filingShares: null, feedCap: 131_754_570_675 }))
+      .toBe(131_754_570_675);
+  });
+
+  it("is null without a price", async () => {
+    const { resolveMarketCap } = await import("./factors");
+    expect(resolveMarketCap({ price: null, currentShares: 751_380_500, filingShares: null, feedCap: null })).toBeNull();
   });
 });

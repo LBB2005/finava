@@ -106,15 +106,198 @@ export async function getLatest10KText(cik: string, maxChars = 60_000): Promise<
   }
 }
 
-// Extract most-recent single value for a GAAP key
+
+// ── Reading raw XBRL facts ────────────────────────────────────────────────────
+// SEC's calendar "frames" (CY2024Q3) only exist for periods that line up with a
+// calendar quarter, so an off-calendar filer (AAPL: FY ends late Sep, MSFT: Jun,
+// COST: 52/53 weeks to Aug/Sep) silently loses its fiscal Q4 — and with it every
+// TTM total. Everything below therefore works from the period dates each fact
+// carries, and ignores frames entirely.
+
+/** Periodic reports only. A DEF 14A or 8-K figure is not a filed statement line. */
+const FILING_FORM = /^10-[KQ](\/A)?$/;
+
+/** Quarter length in days: 12 weeks (84) to a 17-week retail quarter (119), with slack. */
+const Q_MIN_DAYS = 60;
+const Q_MAX_DAYS = 125;
+const FY_MIN_DAYS = 330;
+const FY_MAX_DAYS = 400;
+
+interface DurationFact { start: string; end: string; val: number; form: string; filed: string }
+interface InstantFact { end: string; val: number; form: string; filed: string }
+
+/** The day after `end` — a derived quarter starts where the previous one stopped. */
+function dayAfter(end: string): string {
+  const d = new Date(`${end}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(start: string, end: string): number {
+  return Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function pickLatestAnnual(us: any, key: string): number | null {
-  const units = us[key]?.units?.USD ?? us[key]?.units?.shares ?? [];
-  const annual = units.filter(
-    (u: { form: string; frame?: string }) =>
-      u.form === "10-K" && (!u.frame || /^CY\d{4}$/.test(u.frame) || u.frame.endsWith("I"))
-  );
-  return annual.at(-1)?.val ?? null;
+function rawUnits(us: any, key: string): any[] {
+  const units = us?.[key]?.units;
+  if (!units) return [];
+  return units.USD ?? units.shares ?? units["USD/shares"] ?? [];
+}
+
+/** Latest filing wins for a given period (restatements and amendments). */
+function dedupeByPeriod<T extends { end: string; filed?: string }>(facts: T[], keyOf: (f: T) => string): T[] {
+  const byPeriod = new Map<string, T>();
+  for (const f of facts) {
+    const key = keyOf(f);
+    const prev = byPeriod.get(key);
+    if (!prev || (f.filed ?? "") > (prev.filed ?? "")) byPeriod.set(key, f);
+  }
+  return [...byPeriod.values()];
+}
+
+/**
+ * Duration facts for a concept, merged across `keys`. Issuers switch tags (Apple:
+ * Revenues → RevenueFromContractWithCustomer…) and use sector-specific ones (JPM
+ * reports total net revenue as RevenuesNetOfInterestExpense and left `Revenues`
+ * behind in 2014), so the tag with the freshest data leads and the others only
+ * back-fill periods it doesn't cover.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function durationFacts(us: any, keys: string[]): DurationFact[] {
+  const perKey: DurationFact[][] = [];
+  for (const key of keys) {
+    const facts = rawUnits(us, key)
+      .filter((u) => u?.start && u?.end && typeof u.val === "number" && FILING_FORM.test(u.form ?? ""))
+      .map((u) => ({ start: u.start, end: u.end, val: u.val, form: u.form, filed: u.filed ?? "" }));
+    const deduped = dedupeByPeriod(facts, (f) => `${f.start}|${f.end}`);
+    if (deduped.length) perKey.push(deduped);
+  }
+  const freshest = (list: DurationFact[]) => list.reduce((a, f) => (f.end > a ? f.end : a), "");
+  perKey.sort((a, b) => freshest(b).localeCompare(freshest(a)));
+
+  const merged = new Map<string, DurationFact>();
+  for (const list of perKey) {
+    for (const f of list) {
+      const key = `${f.start}|${f.end}`;
+      if (!merged.has(key)) merged.set(key, f);
+    }
+  }
+  return [...merged.values()].sort((a, b) => a.end.localeCompare(b.end));
+}
+
+/** Instant (balance-sheet) facts for a concept, merged across `keys` as above. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function instantFacts(src: any, keys: string[]): InstantFact[] {
+  const out: InstantFact[] = [];
+  for (const key of keys) {
+    for (const u of rawUnits(src, key)) {
+      if (u?.start || !u?.end || typeof u.val !== "number") continue;
+      if (!FILING_FORM.test(u.form ?? "")) continue;
+      out.push({ end: u.end, val: u.val, form: u.form, filed: u.filed ?? "" });
+    }
+  }
+  return dedupeByPeriod(out, (f) => f.end).sort((a, b) => a.end.localeCompare(b.end));
+}
+
+/**
+ * Discrete fiscal quarters from raw duration facts.
+ *
+ * A 10-Q tags its own three-month column, so those are taken as filed. Fiscal Q4
+ * is never filed on its own (the 10-K reports the year), and cash-flow concepts
+ * are filed year-to-date throughout, so any period that continues an earlier one
+ * from the same start date is de-cumulated: quarter = YTD(this) − YTD(previous).
+ */
+function quartersFromFacts(facts: DurationFact[]): QuarterlyMetric[] {
+  const byEnd = new Map<string, QuarterlyMetric>();
+  const add = (start: string, end: string, value: number) => {
+    if (byEnd.has(end)) return;
+    const d = new Date(end);
+    byEnd.set(end, {
+      year: d.getUTCFullYear(),
+      quarter: (Math.ceil((d.getUTCMonth() + 1) / 3) as 1 | 2 | 3 | 4),
+      value,
+      start,
+      end,
+    });
+  };
+
+  for (const f of facts) {
+    const span = daysBetween(f.start, f.end);
+    if (span >= Q_MIN_DAYS && span <= Q_MAX_DAYS) add(f.start, f.end, f.val);
+  }
+
+  const byStart = new Map<string, DurationFact[]>();
+  for (const f of facts) {
+    const list = byStart.get(f.start);
+    if (list) list.push(f);
+    else byStart.set(f.start, [f]);
+  }
+  for (const list of byStart.values()) {
+    const ladder = [...list].sort((a, b) => a.end.localeCompare(b.end));
+    for (let i = 1; i < ladder.length; i++) {
+      const prev = ladder[i - 1];
+      const cur = ladder[i];
+      const gap = daysBetween(prev.end, cur.end);
+      if (gap < Q_MIN_DAYS || gap > Q_MAX_DAYS) continue;
+      add(dayAfter(prev.end), cur.end, cur.val - prev.val);
+    }
+  }
+
+  // Issuers that tag only discrete quarters (no year-to-date column) still never
+  // file a fiscal Q4 on its own: it is the year minus the three quarters inside it.
+  for (const fy of facts) {
+    const span = daysBetween(fy.start, fy.end);
+    if (span < FY_MIN_DAYS || span > FY_MAX_DAYS) continue;
+    if (byEnd.has(fy.end)) continue;
+    const inside = [...byEnd.values()].filter((q) => q.start >= fy.start && q.end < fy.end);
+    if (inside.length !== 3) continue;
+    add(dayAfter(inside[inside.length - 1].end), fy.end, fy.val - inside.reduce((a, q) => a + q.value, 0));
+  }
+
+  return [...byEnd.values()].sort((a, b) => a.end.localeCompare(b.end));
+}
+
+/**
+ * Trailing twelve months: the last four quarters by end date. Null unless they
+ * are genuinely consecutive and cover about a year — a gap means we would be
+ * adding up the wrong window, and a wrong total is worse than "Unavailable".
+ */
+export interface TtmTotal { value: number; from: string; to: string }
+export function ttmFromQuarters(series: QuarterlyMetric[]): TtmTotal | null {
+  if (series.length < 4) return null;
+  const last4 = series.slice(-4);
+  for (let i = 1; i < last4.length; i++) {
+    const gap = daysBetween(last4[i - 1].end, last4[i].end);
+    if (gap < Q_MIN_DAYS || gap > Q_MAX_DAYS) return null;
+  }
+  const span = daysBetween(last4[0].start, last4[3].end);
+  if (span < FY_MIN_DAYS || span > FY_MAX_DAYS) return null;
+  return {
+    value: last4.reduce((a, m) => a + m.value, 0),
+    from: last4[0].start,
+    to: last4[3].end,
+  };
+}
+
+// Most recent annual value for a GAAP key: the fiscal year that ENDED last, not
+// whatever happens to sit at the end of the array (companyfacts is filing-ordered,
+// so a long-history filer can have an old restatement last).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pickLatestAnnual(us: any, keys: string[]): number | null {
+  const annual = annualFacts(us, keys);
+  if (annual.length) return annual.at(-1)!.val;
+  // Balance-sheet concepts have no duration — take the latest year-end instant.
+  const instants = instantFacts(us, keys).filter((f) => f.form.startsWith("10-K"));
+  return instants.at(-1)?.val ?? null;
+}
+
+/** Full-year duration facts (a fiscal year as filed in the 10-K). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function annualFacts(us: any, keys: string[]): DurationFact[] {
+  return durationFacts(us, keys).filter((f) => {
+    const span = daysBetween(f.start, f.end);
+    return span >= FY_MIN_DAYS && span <= FY_MAX_DAYS;
+  });
 }
 
 // Extract key financial metrics from company facts (single period — used by DCF agent)
@@ -122,19 +305,24 @@ function pickLatestAnnual(us: any, key: string): number | null {
 export function extractFinancialMetrics(facts: any) {
   const us = facts?.facts?.["us-gaap"] ?? {};
   return {
-    revenue: pickLatestAnnual(us, "Revenues") ?? pickLatestAnnual(us, "RevenueFromContractWithCustomerExcludingAssessedTax"),
-    netIncome: pickLatestAnnual(us, "NetIncomeLoss"),
-    totalAssets: pickLatestAnnual(us, "Assets"),
-    totalDebt: pickLatestAnnual(us, "LongTermDebt"),
-    cash:
-      pickLatestAnnual(us, "CashAndCashEquivalentsAtCarryingValue") ??
-      pickLatestAnnual(us, "CashCashEquivalentsAndShortTermInvestments"),
-    operatingCashFlow: pickLatestAnnual(us, "NetCashProvidedByUsedInOperatingActivities"),
+    revenue: pickLatestAnnual(us, REVENUE_TAGS),
+    netIncome: pickLatestAnnual(us, NET_INCOME_TAGS),
+    totalAssets: pickLatestAnnual(us, ["Assets"]),
+    totalDebt: pickLatestAnnual(us, DEBT_TAGS),
+    cash: pickLatestAnnual(us, CASH_TAGS),
+    // Cash plus current marketable securities. Separate field so `cash` keeps
+    // its narrow meaning for callers that already depend on it.
+    cashAndShortTermInvestments: (() => {
+      const cash = pickLatestAnnual(us, CASH_TAGS);
+      const sti = pickLatestAnnual(us, SHORT_TERM_INVESTMENT_TAGS);
+      return cash == null ? null : cash + (sti ?? 0);
+    })(),
+    operatingCashFlow: pickLatestAnnual(us, ["NetCashProvidedByUsedInOperatingActivities"]),
     // Capex is reported as a positive outflow under PaymentsToAcquire…; subtract it
     // from operating cash flow to get free cash flow. Absent for many filers — the
     // DCF route falls back to operating cash flow and flags it as a proxy.
-    capex: pickLatestAnnual(us, "PaymentsToAcquirePropertyPlantAndEquipment"),
-    sharesOutstanding: pickLatestAnnual(us, "CommonStockSharesOutstanding"),
+    capex: pickLatestAnnual(us, ["PaymentsToAcquirePropertyPlantAndEquipment"]),
+    sharesOutstanding: pickLatestAnnual(us, ["CommonStockSharesOutstanding"]),
   };
 }
 
@@ -156,37 +344,16 @@ export interface YearlyMetric {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractAnnualSeries(us: any, ...keys: string[]): YearlyMetric[] {
-  const perKey: YearlyMetric[][] = [];
-  for (const key of keys) {
-    const units = us[key]?.units?.USD ?? us[key]?.units?.shares ?? [];
-    // Exclude quarterly-period frames (e.g. "CY2024Q4") — 10-Ks include supplemental
-    // quarterly figures under the same form type, which corrupts annual time series.
-    // Keep: no frame, pure calendar-year frames ("CY2024"), and instantaneous snapshots ("CY2024Q4I").
-    const annual: { end: string; val: number; form: string; filed: string; frame?: string }[] = units.filter(
-      (u: { form: string; frame?: string }) =>
-        u.form === "10-K" && (!u.frame || /^CY\d{4}$/.test(u.frame) || u.frame.endsWith("I"))
-    );
-    if (!annual.length) continue;
-
-    // Deduplicate by fiscal year (use end date year), keep latest filing per year
-    const byYear = new Map<number, number>();
-    for (const entry of annual) {
-      const year = new Date(entry.end).getFullYear();
-      byYear.set(year, entry.val); // later entries overwrite earlier ones
-    }
-    perKey.push(Array.from(byYear, ([year, value]) => ({ year, value })));
-  }
-  if (perKey.length === 0) return [];
-
-  // Freshest-ending concept first, so it wins on overlapping years; others back-fill.
-  perKey.sort((a, b) => Math.max(...b.map((d) => d.year)) - Math.max(...a.map((d) => d.year)));
-  const merged = new Map<number, number>();
-  for (const series of perKey) {
-    for (const { year, value } of series) {
-      if (!merged.has(year)) merged.set(year, value);
+  const byYear = new Map<number, number>();
+  const annual = annualFacts(us, keys);
+  for (const f of annual) byYear.set(new Date(f.end).getUTCFullYear(), f.val);
+  if (byYear.size === 0) {
+    // Balance-sheet concepts: one instant per fiscal year end.
+    for (const f of instantFacts(us, keys).filter((x) => x.form.startsWith("10-K"))) {
+      byYear.set(new Date(f.end).getUTCFullYear(), f.val);
     }
   }
-  return Array.from(merged, ([year, value]) => ({ year, value })).sort((a, b) => a.year - b.year);
+  return Array.from(byYear, ([year, value]) => ({ year, value })).sort((a, b) => a.year - b.year);
 }
 
 export interface FundamentalTimeSeries {
@@ -209,88 +376,53 @@ export function extractFundamentalTimeSeries(facts: any, years = 5): Fundamental
   const trim = (arr: YearlyMetric[]) => arr.slice(-years);
 
   return {
-    revenue: trim(extractAnnualSeries(us, "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax")),
-    netIncome: trim(extractAnnualSeries(us, "NetIncomeLoss")),
+    revenue: trim(extractAnnualSeries(us, ...REVENUE_TAGS)),
+    netIncome: trim(extractAnnualSeries(us, ...NET_INCOME_TAGS)),
     operatingIncome: trim(extractAnnualSeries(us, "OperatingIncomeLoss")),
     rAndD: trim(extractAnnualSeries(us, "ResearchAndDevelopmentExpense")),
     operatingCashFlow: trim(extractAnnualSeries(us, "NetCashProvidedByUsedInOperatingActivities")),
-    totalDebt: trim(extractAnnualSeries(us, "LongTermDebt", "LongTermDebtNoncurrent")),
-    cash: trim(extractAnnualSeries(us, "CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsAndShortTermInvestments")),
+    totalDebt: trim(extractAnnualSeries(us, ...DEBT_TAGS)),
+    cash: trim(extractAnnualSeries(us, ...CASH_TAGS)),
   };
 }
 
 // ── Quarterly time series (stock page v2 financials) ──────────────────────────
 
 export interface QuarterlyMetric {
+  /** Calendar year/quarter the period ENDS in — an off-calendar fiscal quarter
+   *  is labelled by its end date (Apple's fiscal Q4 ends in calendar Q3). */
   year: number;
   quarter: 1 | 2 | 3 | 4;
   value: number;
+  /** The fiscal period actually covered, as filed. */
+  start: string;
+  end: string;
 }
 
-function qOrd(m: { year: number; quarter: number }): number {
-  return m.year * 4 + (m.quarter - 1);
-}
+// Concept lists, most-common tag first. Banks and insurers report a different
+// revenue line (JPM: RevenuesNetOfInterestExpense) and some issuers only tag net
+// income attributable to common shareholders (BKNG), so a single tag per concept
+// silently reads as "no data" or, worse, as a decade-old figure.
+const REVENUE_TAGS = [
+  "Revenues",
+  "RevenueFromContractWithCustomerExcludingAssessedTax",
+  "RevenueFromContractWithCustomerIncludingAssessedTax",
+  "RevenuesNetOfInterestExpense",
+];
+const NET_INCOME_TAGS = ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic", "ProfitLoss"];
+const CASH_TAGS = ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsAndShortTermInvestments"];
+const SHORT_TERM_INVESTMENT_TAGS = [
+  "ShortTermInvestments",
+  "MarketableSecuritiesCurrent",
+  "AvailableForSaleSecuritiesDebtSecuritiesCurrent",
+  "OtherShortTermInvestments",
+];
+const DEBT_TAGS = ["LongTermDebt", "LongTermDebtNoncurrent"];
 
-/**
- * Extract a discrete quarterly series for a duration concept using SEC's
- * calendar-quarter frames ("CY2024Q1" …). SEC computes these de-YTD'd values
- * across filings, so they're clean discrete quarters regardless of form type.
- * Q4 usually has NO quarterly frame (companies report the full year in the
- * 10-K), so it is derived as FY − (Q1+Q2+Q3) whenever the annual frame and all
- * three quarters exist. Multiple `keys` merge like extractAnnualSeries: the
- * concept with the freshest data wins, earlier-ending concepts back-fill.
- */
+/** Discrete quarterly series for a concept, merged across `keys`. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractQuarterlySeries(us: any, ...keys: string[]): QuarterlyMetric[] {
-  const perKey: Array<{ quarters: Map<number, QuarterlyMetric>; annual: Map<number, number> }> = [];
-  for (const key of keys) {
-    const units = us[key]?.units?.USD ?? [];
-    const quarters = new Map<number, QuarterlyMetric>();
-    const annual = new Map<number, number>();
-    for (const u of units as Array<{ frame?: string; val: number }>) {
-      if (!u.frame || typeof u.val !== "number") continue;
-      const q = /^CY(\d{4})Q([1-4])$/.exec(u.frame);
-      if (q) {
-        const m = { year: +q[1], quarter: +q[2] as 1 | 2 | 3 | 4, value: u.val };
-        quarters.set(qOrd(m), m);
-        continue;
-      }
-      const y = /^CY(\d{4})$/.exec(u.frame);
-      if (y) annual.set(+y[1], u.val);
-    }
-    if (quarters.size > 0 || annual.size > 0) perKey.push({ quarters, annual });
-  }
-  if (perKey.length === 0) return [];
-
-  // Merge across tags BEFORE deriving Q4 — tag-switch issuers (e.g. Revenues →
-  // RevenueFromContract…) can have a year's Q1-Q3 under one tag and the annual
-  // total under the other. Freshest-ending concept wins overlaps; others back-fill.
-  const freshness = (e: (typeof perKey)[number]) =>
-    Math.max(
-      ...[...e.quarters.keys()].concat([...e.annual.keys()].map((y) => qOrd({ year: y, quarter: 4 })))
-    );
-  perKey.sort((a, b) => freshness(b) - freshness(a));
-
-  const merged = new Map<number, QuarterlyMetric>();
-  const mergedAnnual = new Map<number, number>();
-  for (const { quarters, annual } of perKey) {
-    for (const m of quarters.values()) if (!merged.has(qOrd(m))) merged.set(qOrd(m), m);
-    for (const [year, val] of annual) if (!mergedAnnual.has(year)) mergedAnnual.set(year, val);
-  }
-
-  // Derive missing Q4s from the annual total (Q4 rarely gets its own frame).
-  for (const [year, fy] of mergedAnnual) {
-    const ord4 = qOrd({ year, quarter: 4 });
-    if (merged.has(ord4)) continue;
-    const q1 = merged.get(qOrd({ year, quarter: 1 }))?.value;
-    const q2 = merged.get(qOrd({ year, quarter: 2 }))?.value;
-    const q3 = merged.get(qOrd({ year, quarter: 3 }))?.value;
-    if (q1 != null && q2 != null && q3 != null) {
-      merged.set(ord4, { year, quarter: 4, value: fy - q1 - q2 - q3 });
-    }
-  }
-
-  return Array.from(merged.values()).sort((a, b) => qOrd(a) - qOrd(b));
+  return quartersFromFacts(durationFacts(us, keys));
 }
 
 export interface QuarterlyFundamentals {
@@ -316,13 +448,13 @@ export function extractQuarterlyFundamentals(facts: any, quarters = 12): Quarter
   const trim = (arr: QuarterlyMetric[]) => arr.slice(-quarters);
   return {
     revenue: trim(
-      extractQuarterlySeries(us, "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax")
+      extractQuarterlySeries(us, ...REVENUE_TAGS)
     ),
     grossProfit: trim(extractQuarterlySeries(us, "GrossProfit")),
     costOfRevenue: trim(
       extractQuarterlySeries(us, "CostOfRevenue", "CostOfGoodsAndServicesSold")
     ),
-    netIncome: trim(extractQuarterlySeries(us, "NetIncomeLoss")),
+    netIncome: trim(extractQuarterlySeries(us, ...NET_INCOME_TAGS)),
     operatingIncome: trim(extractQuarterlySeries(us, "OperatingIncomeLoss")),
     operatingCashFlow: trim(
       extractQuarterlySeries(us, "NetCashProvidedByUsedInOperatingActivities")
@@ -334,66 +466,91 @@ export function extractQuarterlyFundamentals(facts: any, quarters = 12): Quarter
 
 export interface BalanceSnapshot {
   cash: number | null;
+  /** Cash + current marketable securities — what "the cash pile" usually means.
+   *  Kept separate from `cash` so neither is silently redefined. */
+  cashAndShortTermInvestments: number | null;
   totalDebt: number | null;
   totalAssets: number | null;
   equity: number | null;
   sharesOutstanding: number | null;
-  asOf: string | null; // end date of the freshest instant fact used
+  asOf: string | null; // balance-sheet date of the freshest fact used
 }
 
+/** A balance figure this far behind the freshest one is a leftover tag, not the
+ *  current balance sheet (JPM last tagged LongTermDebt in 2014). */
+const STALE_INSTANT_DAYS = 400;
+
 /**
- * Latest instantaneous balance-sheet snapshot from quarterly instant frames
- * ("CY2025Q2I"), i.e. as fresh as the most recent 10-Q — unlike
- * extractFinancialMetrics, which is annual-only and can lag by a year.
+ * Latest balance sheet, read from the period dates rather than SEC's calendar
+ * frames, so off-calendar filers aren't skipped. Any concept the issuer stopped
+ * tagging is returned as null: "Unavailable" beats a decade-old number.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function extractBalanceSnapshot(facts: any): BalanceSnapshot {
   const us = facts?.facts?.["us-gaap"] ?? {};
   const dei = facts?.facts?.dei ?? {};
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const latestInstant = (src: any, ...keys: string[]): { val: number; end: string } | null => {
-    let best: { val: number; end: string } | null = null;
-    for (const key of keys) {
-      const units = src[key]?.units?.USD ?? src[key]?.units?.shares ?? [];
-      for (const u of units as Array<{ frame?: string; val: number; end?: string }>) {
-        if (!u.frame || !/^CY\d{4}Q[1-4]I$/.test(u.frame)) continue;
-        if (typeof u.val !== "number" || !u.end) continue;
-        if (!best || u.end > best.end) best = { val: u.val, end: u.end };
-      }
-    }
-    return best;
-  };
+  const latest = (src: unknown, keys: string[]): InstantFact | null =>
+    instantFacts(src, keys).at(-1) ?? null;
 
-  const cash = latestInstant(
-    us,
-    "CashCashEquivalentsAndShortTermInvestments",
-    "CashAndCashEquivalentsAtCarryingValue"
-  );
-  const debt = latestInstant(us, "LongTermDebt", "LongTermDebtNoncurrent");
-  const assets = latestInstant(us, "Assets");
-  const equity = latestInstant(
-    us,
+  const cash = latest(us, CASH_TAGS);
+  const shortTermInvestments = latest(us, SHORT_TERM_INVESTMENT_TAGS);
+  const debt = latest(us, DEBT_TAGS);
+  const assets = latest(us, ["Assets"]);
+  const equity = latest(us, [
     "StockholdersEquity",
-    "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"
-  );
+    "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+  ]);
   const shares =
-    latestInstant(us, "CommonStockSharesOutstanding") ??
-    latestInstant(dei, "EntityCommonStockSharesOutstanding");
+    latest(us, ["CommonStockSharesOutstanding"]) ?? latest(dei, ["EntityCommonStockSharesOutstanding"]);
 
-  const dates = [cash, debt, assets, equity, shares]
+  // The balance-sheet date, from balance-sheet facts only. The cover-page share
+  // count is dated later (filing day) and would misdate the whole snapshot.
+  const asOf = [cash, shortTermInvestments, debt, assets, equity]
     .map((x) => x?.end)
     .filter((x): x is string => !!x)
-    .sort();
+    .sort()
+    .at(-1) ?? null;
+
+  const fresh = (f: InstantFact | null): number | null =>
+    f && asOf && daysBetween(f.end, asOf) <= STALE_INSTANT_DAYS ? f.val : null;
+
+  const cashVal = fresh(cash);
+  const stiVal = fresh(shortTermInvestments);
 
   return {
-    cash: cash?.val ?? null,
-    totalDebt: debt?.val ?? null,
-    totalAssets: assets?.val ?? null,
-    equity: equity?.val ?? null,
-    sharesOutstanding: shares?.val ?? null,
-    asOf: dates.at(-1) ?? null,
+    cash: cashVal,
+    // The combined tag already includes short-term investments; only add a
+    // separate securities line when cash is the narrow concept.
+    cashAndShortTermInvestments:
+      cashVal == null
+        ? null
+        : cash?.end === shortTermInvestments?.end && stiVal != null
+          ? cashVal + stiVal
+          : cashVal,
+    totalDebt: fresh(debt),
+    totalAssets: fresh(assets),
+    equity: fresh(equity),
+    sharesOutstanding: fresh(shares),
+    asOf,
   };
+}
+
+/**
+ * Shares outstanding as of the latest filing's cover page (dei), which is a
+ * current count — unlike the weighted average in an annual income statement,
+ * which is stated in PRE-SPLIT shares until the next 10-K. Multiplying that
+ * stale count by today's price is how a post-split issuer ends up with a market
+ * cap (and P/E) off by the split factor.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function extractCurrentSharesOutstanding(facts: any): { shares: number; asOf: string } | null {
+  const dei = facts?.facts?.dei ?? {};
+  const us = facts?.facts?.["us-gaap"] ?? {};
+  const best =
+    instantFacts(dei, ["EntityCommonStockSharesOutstanding"]).at(-1) ??
+    instantFacts(us, ["CommonStockSharesOutstanding"]).at(-1);
+  return best ? { shares: best.val, asOf: best.end } : null;
 }
 
 // ── EDGAR full-text search for Form 4 filings ─────────────────────────────────
