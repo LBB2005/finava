@@ -38,6 +38,7 @@ export interface ScoreFact {
   pillars: PillarScore[];                 // from finavaScore.ts, factors included
   confidence: "Low" | "Moderate" | "High";
   coverage: number;
+  peerPremiumPct: number | null;          // P/E & P/S premium vs peers, for the verdict card
   version: string;
 }
 
@@ -60,11 +61,13 @@ export interface TickerFacts {
   streetTarget: Fact<number>;
   score: Fact<ScoreFact>;
   dcf: Fact<DcfFact>;
+  dropped: string[];                      // sources that failed or missed the deadline
 }
 
+// Score only. List rows keep their existing live price feeds: batching 50 quotes
+// through Finnhub per poll would burst its 60/min limit.
 export interface TickerFactsSlim {
   ticker: string;
-  price: Fact<number>; change1d: Fact<number>;
   score: Fact<Pick<ScoreFact, "total" | "grade" | "version">>;
 }
 
@@ -86,7 +89,7 @@ export interface PortfolioFacts {
 }
 ```
 
-Constructors `fact(value, meta)` and `missing(source, note, asOf?)` are the only way to build a Fact. `missing` requires a note, so a null value always explains itself.
+Constructors `fact(value, meta)` and `missing(source, note, asOf?)` are the only way to build a Fact. `missing` requires a note, so a null value always explains itself. `fact` takes an optional `missingNote` that applies only if the value turns out to be missing, so a present value never carries a "why it's missing" note.
 
 ### What gets derived in code (once, here)
 
@@ -99,8 +102,9 @@ Constructors `fact(value, meta)` and `missing(source, note, asOf?)` are the only
 ## 2. Loaders
 
 - `getTickerFacts(ticker, { maxAgeSec?, cachedOnly? }): Promise<TickerFacts>` in `facts/ticker.ts`. It fans out to the existing libs (finnhub, edgar, stockData, finavaInputs, finavaScore, dcf). Each source is failure-isolated: one source failing nulls only its own fields, each with a note. `cachedOnly` never runs the expensive score/DCF assembly.
-- `getTickerFactsSlim(tickers, { cachedOnly: true })` does batch reads from the cache only.
-- `getPortfolioFacts(userId)` in `facts/portfolio.ts` reads holdings the same way the portfolio API does today, prices them from slim facts, and computes weights.
+- `getTickerFactsSlim(tickers)` does batch reads from the score cache only and never calls a market-data vendor.
+- `getTickerQuoteFacts(ticker)` returns price, day change and the cached score, which is all a holdings row needs.
+- `getPortfolioFacts(userId)` in `facts/portfolio.ts` reads holdings the same way the portfolio API does today, prices them with `getTickerQuoteFacts`, and computes weights with `computePortfolio` (the same arithmetic chat already quotes).
 - `edgar.ts` and `factors.ts` are called, not changed. Any bug fix there gets flagged in the PR.
 
 ## 3. Cache (`facts/cache.ts`)
@@ -119,7 +123,7 @@ Constructors `fact(value, meta)` and `missing(source, note, asOf?)` are the only
 ## 4. Transport
 
 - `GET /api/facts/[ticker]` returns full `TickerFacts` and computes on a miss. It's public and rate-limited like the current score route.
-- `GET /api/facts?tickers=A,B,C` returns `TickerFactsSlim[]`, cache only, capped at 50 tickers.
+- `GET /api/facts?tickers=A,B,C` returns `{ facts: TickerFactsSlim[] }`, cache only, capped at 50 tickers.
 - `src/hooks/useTickerFacts.ts` and `useTickerFactsSlim(tickers)` wrap them in SWR.
 - `/api/stock/[ticker]/score` keeps its path but reads `facts.score` and returns `{ ticker, score, grade, pillars, asOf, version }`. It returns 404 only when the ticker isn't found. A null score comes back as `score: null` with the note.
 - `/api/stock/[ticker]/dcf` keeps `{ ticker, inputs }`, sourced from `facts.dcf.value.inputs`.
@@ -140,7 +144,7 @@ Constructors `fact(value, meta)` and `missing(source, note, asOf?)` are the only
 | Portfolio rows | `scoreForTicker()` | slim `facts.score` (a one-line call-site change; W3-3 owns the file) |
 | `quickContext.ts` | its own Finnhub fan-out + composite | formats `getTickerFacts` (under its 2.5 s budget, with `cachedOnly` for score). Exports are unchanged |
 
-`compositeScore.ts` is renamed to a rank helper (`factorRank`). Its doc comment gets replaced with the rule: only `facts.score` may be called a score or carry a grade. Other universe consumers (DNA lens, live routes, scout agent, `verdict.ts`) keep using the universe for ranking and aren't changed.
+`compositeScore.ts` is deleted once the watchlist and portfolio move off it. A separate `factorRank` helper would have no caller, so none is built; ranking stays on `composite()` / `ranked()` in `research.ts`. The rule going forward: only `facts.score` may be called a score or carry a grade. Other universe consumers (DNA lens, live routes, scout agent, `verdict.ts`) keep using the universe for ranking and aren't changed.
 
 ## 6. Errors and honesty
 
@@ -153,8 +157,8 @@ Constructors `fact(value, meta)` and `missing(source, note, asOf?)` are the only
 - `types.test.ts`: `fact` / `missing` invariants.
 - `ticker.test.ts`: with mocked libs and fixtures, every field has a non-empty source and asOf; each source failing on its own nulls exactly its own fields with notes; derived P/E, EV/EBITDA, marketCap and DCF math; `cachedOnly` never calls the score assembly.
 - `cache.test.ts`: TTL boundaries (open vs closed market), version mismatch counts as a miss, failures aren't written, in-flight dedupe.
-- `portfolio.test.ts`: weights sum to about 1, cash counts toward the total, an unpriced holding gets null weight + note and `weightsSum` < 1.
-- `consistency.test.ts`: for 5 fixture tickers, the score, DCF fair value and price from `/api/facts/[ticker]`, `/api/stock/[ticker]/score`, `/dcf`, the slim batch, `getPortfolioFacts` and `quickContext` are identical.
+- `portfolio.test.ts`: weights sum to 1 with cash; an unpriced holding gets a null weight with a note and is left out of `totalValue`, whose note names it.
+- `consistency.test.ts`: for 5 fixture tickers, the score, DCF fair value and price from `/api/facts/[ticker]`, `/api/stock/[ticker]/score`, `/dcf`, the slim batch, `getPortfolioFacts` and `quickContext` are identical. The score is assembled once per ticker however many surfaces read it.
 - Route tests are updated for the new score/dcf response shapes.
 
 ## Out of scope
