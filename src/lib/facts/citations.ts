@@ -75,6 +75,8 @@ function fit(kind: FactEntry["kind"], p: ParsedNumber): 0 | 1 | 2 {
 function pickToken(region: string, kind: FactEntry["kind"]): { match: RegExpMatchArray; parsed: ParsedNumber } | null {
   let loose: { match: RegExpMatchArray; parsed: ParsedNumber } | null = null;
   for (const match of [...region.matchAll(NUMBER)].reverse()) {
+    // A denominator ("62 / 100", "out of 100") is a scale, not the figure.
+    if (/(\/|\bout of)\s*$/i.test(region.slice(0, match.index))) continue;
     const parsed = parseNumberToken(match[0]);
     if (!parsed) continue;
     const f = fit(kind, parsed);

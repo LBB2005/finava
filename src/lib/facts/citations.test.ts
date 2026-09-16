@@ -130,6 +130,17 @@ describe("choosing which number a citation is about", () => {
     expect(verifyCitations("A P/E of 35.2x over 12 months [F:AAPL.pe].", INDEX).mismatches).toEqual([]);
   });
 
+  // Seen live on a PFE crew report: "62 / 100 (C+)" became "62 / 62 (C+)".
+  it("never reads a denominator as the cited number", () => {
+    const idx = indexFacts([entry({ id: "PFE.score", kind: "count", value: 62, text: "62" })]);
+    for (const written of ["62 / 100 (C+)", "62/100", "62 out of 100"]) {
+      const r = verifyCitations(`Score ${written} [F:PFE.score].`, idx);
+      expect(r.text).toBe(`Score ${written}.`);
+      expect(r.mismatches).toEqual([]);
+    }
+    expect(verifyCitations("Score 71 / 100 [F:PFE.score].", idx).text).toBe("Score 62 / 100.");
+  });
+
   it("leaves the text alone when no number of the right form is near", () => {
     const r = verifyCitations("Up over 3 quarters [F:AAPL.pctFrom52wHigh].", INDEX);
     expect(r.text).toBe("Up over 3 quarters.");
