@@ -23,91 +23,79 @@ interface RecentPurchase {
   isNewPosition: boolean;
   filedAt: string;
   periodOfReport: string;
+  /** Date the trade happened, from the filing (not the filing date). */
+  transactionDate: string | null;
 }
 
+/** Form 4 transaction codes we name explicitly; anything else is "other". */
+const CODE_LABELS: Record<string, string> = {
+  P: "open-market purchase",
+  S: "open-market sale",
+  A: "grant or award",
+  M: "option exercise",
+  F: "shares withheld for tax",
+};
+
+interface Form4Transaction {
+  code: string;
+  acquired: boolean;
+  shares: number;
+  price: number;
+  ownedAfter: number;
+  /** Transaction date from the filing. Null when the filing omits it. */
+  date: string | null;
+  insiderName: string;
+  title?: string;
+}
+
+const tagValue = (xml: string, tag: string): string | undefined =>
+  xml.match(new RegExp(`<${tag}>\\s*<value>([^<]+)</value>`))?.[1]?.trim();
+
 /**
- * Parse an EDGAR Form 4 filing XML to extract purchase transactions.
- * Returns null if no qualifying purchases found.
+ * Fetch and parse one Form 4 by its accession number.
+ *
+ * Addressed straight at the filing's own directory listing. The previous version
+ * searched browse-edgar for the owner's most recent Form 4 and regex-matched an
+ * `.xml` link out of the Atom feed — EDGAR's feed links to the index page, not
+ * the XML, so the match failed and no purchase was ever reported.
  */
-async function parseForm4Purchases(
+async function fetchForm4Transactions(
   accessionNo: string,
   cik: string,
-  filedAt: string,
-  periodOfReport: string,
-  entityName: string,
-  ticker: string
-): Promise<RecentPurchase[]> {
+  entityName: string
+): Promise<Form4Transaction[]> {
   if (!accessionNo || !cik) return [];
 
   try {
-    const formattedCik = cik.padStart(10, "0");
-
-    // Try to get the filing index to find the actual XML
-    const indexUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${formattedCik}&type=4&dateb=&owner=include&count=5&search_text=&output=atom`;
-    const indexRes = await fetch(indexUrl, {
-      headers: { "User-Agent": USER_AGENT },
-    });
-
+    const bare = accessionNo.replace(/-/g, "");
+    const dir = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik, 10)}/${bare}`;
+    const indexRes = await fetch(`${dir}/index.json`, { headers: { "User-Agent": USER_AGENT } });
     if (!indexRes.ok) return [];
-    const indexText = await indexRes.text();
+    const index = (await indexRes.json()) as { directory?: { item?: Array<{ name?: string }> } };
+    const doc = (index.directory?.item ?? [])
+      .map((i) => i.name ?? "")
+      // The data file, not EDGAR's rendered xslF345X0*/ wrapper or the index.
+      .find((name) => name.endsWith(".xml") && !name.includes("/") && !name.endsWith("-index.xml"));
+    if (!doc) return [];
 
-    // Extract the first filing URL from Atom feed
-    const linkMatch = indexText.match(/<link[^>]+href="(https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/[^"]+\.xml)"/i);
-    if (!linkMatch) return [];
-
-    const xmlUrl = linkMatch[1];
-    const xmlRes = await fetch(xmlUrl, { headers: { "User-Agent": USER_AGENT } });
+    const xmlRes = await fetch(`${dir}/${doc}`, { headers: { "User-Agent": USER_AGENT } });
     if (!xmlRes.ok) return [];
     const xml = await xmlRes.text();
 
-    // Parse non-derivative transactions
-    const results: RecentPurchase[] = [];
+    const insiderName = xml.match(/<rptOwnerName>([^<]+)<\/rptOwnerName>/)?.[1]?.trim() ?? entityName;
+    const title = xml.match(/<officerTitle>([^<]+)<\/officerTitle>/)?.[1]?.trim();
 
-    // Extract reporter name + title
-    const nameMatch = xml.match(/<rptOwnerName>([^<]+)<\/rptOwnerName>/);
-    const titleMatch = xml.match(/<officerTitle>([^<]+)<\/officerTitle>/);
-    const insiderName = nameMatch?.[1]?.trim() ?? entityName;
-    const title = titleMatch?.[1]?.trim();
-
-    // Find all nonDerivativeTransaction blocks
-    const txBlocks = xml.match(/<nonDerivativeTransaction>[\s\S]*?<\/nonDerivativeTransaction>/g) ?? [];
-
-    for (const block of txBlocks) {
-      const typeMatch = block.match(/<transactionCode>([^<]+)<\/transactionCode>/);
-      const adMatch = block.match(/<transactionAcquiredDisposedCode>\s*<value>([^<]+)<\/value>/);
-      const sharesMatch = block.match(/<transactionShares>\s*<value>([^<]+)<\/value>/);
-      const priceMatch = block.match(/<transactionPricePerShare>\s*<value>([^<]+)<\/value>/);
-      const ownedMatch = block.match(/<sharesOwnedFollowingTransaction>\s*<value>([^<]+)<\/value>/);
-
-      const txType = typeMatch?.[1]?.trim();
-      const adCode = adMatch?.[1]?.trim();
-      const shares = parseFloat(sharesMatch?.[1] ?? "0");
-      const price = parseFloat(priceMatch?.[1] ?? "0");
-      const ownedAfter = parseFloat(ownedMatch?.[1] ?? "0");
-
-      // Only purchases (P) with acquired code (A) where value > $100K
-      if (txType !== "P" && adCode !== "A") continue;
-      if (!shares || !price) continue;
-      const totalValue = shares * price;
-      if (totalValue < 100_000) continue;
-
-      // Approximate "new position" = shares acquired ≥ 80% of total shares held after
-      const isNewPosition = ownedAfter > 0 && shares / ownedAfter >= 0.8;
-
-      results.push({
-        ticker,
-        insiderName,
-        title,
-        shares,
-        price,
-        totalValue,
-        isNewPosition,
-        filedAt,
-        periodOfReport,
-      });
-    }
-
-    return results;
+    const blocks = xml.match(/<nonDerivativeTransaction>[\s\S]*?<\/nonDerivativeTransaction>/g) ?? [];
+    return blocks.map((block) => ({
+      code: block.match(/<transactionCode>([^<]+)<\/transactionCode>/)?.[1]?.trim() ?? "",
+      acquired: tagValue(block, "transactionAcquiredDisposedCode") === "A",
+      shares: parseFloat(tagValue(block, "transactionShares") ?? "0"),
+      price: parseFloat(tagValue(block, "transactionPricePerShare") ?? "0"),
+      ownedAfter: parseFloat(tagValue(block, "sharesOwnedFollowingTransaction") ?? "0"),
+      date: tagValue(block, "transactionDate") ?? null,
+      insiderName,
+      title,
+    }));
   } catch {
     return [];
   }
@@ -118,8 +106,11 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
 
   const sections: string[] = [];
 
-  // ── A. EDGAR Form 4 recent purchases (last 48h, >$100K) ──────────────────
+  // ── A. EDGAR Form 4 recent filings ────────────────────────────────────────
   const recentPurchases: RecentPurchase[] = [];
+  // Acquisitions that are NOT open-market buys (option exercises, grants, tax
+  // withholding). Reported separately so an exercise is never read as conviction.
+  const otherActivity = new Map<string, number>();
   // Tickers whose EDGAR lookup itself failed (network/HTTP), as opposed to
   // returning zero filings. We must not report a failed lookup as "no activity."
   const edgarFailed: string[] = [];
@@ -134,13 +125,41 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
         return;
       }
       const parsedResults = await Promise.allSettled(
-        filings.map((f) =>
-          parseForm4Purchases(f.accessionNo, f.cik, f.filedAt, f.periodOfReport, f.entityName, ticker)
-        )
+        filings.map(async (f) => ({
+          filing: f,
+          transactions: await fetchForm4Transactions(f.accessionNo, f.cik, f.entityName),
+        }))
       );
       for (const r of parsedResults) {
-        if (r.status === "fulfilled") {
-          recentPurchases.push(...r.value);
+        if (r.status !== "fulfilled") continue;
+        const { filing, transactions } = r.value;
+        for (const tx of transactions) {
+          if (!tx.shares) continue;
+          // An open-market purchase is code P AND an acquisition. Anything else
+          // acquired (M, A, F) is activity, not a bought-with-own-money signal.
+          if (tx.code !== "P" || !tx.acquired) {
+            if (tx.acquired) {
+              const label = CODE_LABELS[tx.code] ?? `other (code ${tx.code || "?"})`;
+              otherActivity.set(label, (otherActivity.get(label) ?? 0) + 1);
+            }
+            continue;
+          }
+          if (!tx.price) continue;
+          const totalValue = tx.shares * tx.price;
+          if (totalValue < 100_000) continue;
+          recentPurchases.push({
+            ticker,
+            insiderName: tx.insiderName,
+            title: tx.title,
+            shares: tx.shares,
+            price: tx.price,
+            totalValue,
+            // Shares acquired ≥ 80% of the stake held afterwards.
+            isNewPosition: tx.ownedAfter > 0 && tx.shares / tx.ownedAfter >= 0.8,
+            filedAt: filing.filedAt,
+            periodOfReport: filing.periodOfReport,
+            transactionDate: tx.date,
+          });
         }
       }
     })
@@ -149,6 +168,12 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
   // Sort by total value descending
   recentPurchases.sort((a, b) => b.totalValue - a.totalValue);
 
+  const otherNote = otherActivity.size
+    ? `\n\nAlso filed (acquisitions that are NOT open-market purchases): ${[...otherActivity]
+        .map(([label, n]) => `${n} ${label}${n > 1 ? "s" : ""}`)
+        .join(", ")}.`
+    : "";
+
   if (recentPurchases.length > 0) {
     const lines = recentPurchases.map((p, i) => {
       const val = p.totalValue >= 1e6
@@ -156,9 +181,10 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
         : `$${Math.round(p.totalValue).toLocaleString()}`;
       const position = p.isNewPosition ? " [NEW POSITION]" : " [ADDITION]";
       const titlePart = p.title ? ` (${p.title})` : "";
-      return `${i + 1}. ${p.insiderName}${titlePart} — BOUGHT ${p.shares.toLocaleString()} shares @ $${p.price.toFixed(2)} = ${val}${position}\n   Filed: ${p.filedAt} | Period: ${p.periodOfReport}`;
+      const when = p.transactionDate ? `Transacted: ${p.transactionDate}` : "Transaction date not stated";
+      return `${i + 1}. ${p.insiderName}${titlePart} — BOUGHT ${p.shares.toLocaleString()} shares @ $${p.price.toFixed(2)} = ${val}${position}\n   ${when} | Filed: ${p.filedAt} | Period: ${p.periodOfReport}`;
     });
-    sections.push(`## RECENT FORM 4 FILINGS — Purchases >$100K (last 3 days)\n\n${lines.join("\n\n")}`);
+    sections.push(`## RECENT FORM 4 FILINGS — Purchases >$100K (last 3 days)\n\n${lines.join("\n\n")}${otherNote}`);
   } else if (edgarFailed.length === tickers.length) {
     // Every lookup failed — we have NO information, not a "no activity" signal.
     sections.push(
@@ -169,7 +195,7 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
       ? ` (Note: the EDGAR lookup failed for ${edgarFailed.join(", ")}, so those are UNKNOWN rather than confirmed-empty.)`
       : "";
     sections.push(
-      `## RECENT FORM 4 FILINGS (last 3 days)\n\nNo qualifying insider purchases (>$100K) found for ${tickers.join(", ")} in the last 3 days. This could mean no transactions occurred, or filings are delayed (Form 4 must be filed within 2 business days of transaction).${failNote}`
+      `## RECENT FORM 4 FILINGS (last 3 days)\n\nNo qualifying insider purchases (>$100K) found for ${tickers.join(", ")} in the last 3 days. This could mean no transactions occurred, or filings are delayed (Form 4 must be filed within 2 business days of transaction).${failNote}${otherNote}`
     );
   }
 
@@ -190,28 +216,37 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
           share: t.share,
         }));
 
-        const purchases = transactions.filter((t: { transactionCode: string }) => t.transactionCode === "P");
-        const sales = transactions.filter((t: { transactionCode: string }) => t.transactionCode === "S");
-        const totalBuyValue = purchases.reduce(
-          (sum: number, t: { change: number; transactionPrice: number }) =>
-            sum + Math.abs(t.change ?? 0) * (t.transactionPrice ?? 0),
-          0
-        );
-        const totalSellValue = sales.reduce(
-          (sum: number, t: { change: number; transactionPrice: number }) =>
-            sum + Math.abs(t.change ?? 0) * (t.transactionPrice ?? 0),
-          0
-        );
+        // Label the window with the dates the rows actually carry. Calling an
+        // undated slice of 20 rows "the last 90 days" is a claim the data does
+        // not support; undated rows are excluded from the window and counted.
+        const dated = transactions.filter((t: { transactionDate?: string }) => !!t.transactionDate);
+        const dates = dated.map((t: { transactionDate: string }) => t.transactionDate).sort();
+        const undatedRowsExcluded = transactions.length - dated.length;
+
+        const purchases = dated.filter((t: { transactionCode: string }) => t.transactionCode === "P");
+        const sales = dated.filter((t: { transactionCode: string }) => t.transactionCode === "S");
+        const value = (rows: Array<{ change?: number; transactionPrice?: number }>) =>
+          rows.reduce((sum, t) => sum + Math.abs(t.change ?? 0) * (t.transactionPrice ?? 0), 0);
+        const fmt = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString()}`);
 
         finnhubData[ticker] = {
-          last90Days: {
+          window: dates.length
+            ? { from: dates[0], to: dates[dates.length - 1], transactions: dates.length }
+            : "Finnhub returned no transaction dates for this ticker, so the period these rows cover is unknown.",
+          undatedRowsExcluded,
+          activity: {
             purchases: purchases.length,
             sales: sales.length,
-            totalBuyValue: totalBuyValue >= 1e6 ? `$${(totalBuyValue / 1e6).toFixed(1)}M` : `$${Math.round(totalBuyValue).toLocaleString()}`,
-            totalSellValue: totalSellValue >= 1e6 ? `$${(totalSellValue / 1e6).toFixed(1)}M` : `$${Math.round(totalSellValue).toLocaleString()}`,
-            ratio: sales.length > 0 ? `${(purchases.length / sales.length).toFixed(1)}x buy/sell` : purchases.length > 0 ? "All purchases" : "No transactions",
+            totalBuyValue: fmt(value(purchases)),
+            totalSellValue: fmt(value(sales)),
+            ratio:
+              sales.length > 0
+                ? `${(purchases.length / sales.length).toFixed(1)}x buy/sell`
+                : purchases.length > 0
+                  ? "All purchases"
+                  : "No transactions",
           },
-          notable: transactions.slice(0, 8),
+          notable: dated.slice(0, 8),
         };
       } catch {
         finnhubData[ticker] = { error: "Could not fetch Finnhub insider data" };
@@ -220,7 +255,7 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
   );
 
   sections.push(
-    `## FINNHUB — 90-Day Insider Transaction History\n\n${JSON.stringify(finnhubData, null, 2)}`
+    `## FINNHUB — Insider Transaction History (window stated per ticker)\n\n${JSON.stringify(finnhubData, null, 2)}`
   );
 
   const combinedData = sections.join("\n\n---\n\n");

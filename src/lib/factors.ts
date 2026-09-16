@@ -22,7 +22,7 @@
    failure-isolated: a down source nulls a metric, never 500s the board.
    ============================================================ */
 
-import { getAnnualFinancials } from "@/lib/polygon";
+import { getAnnualFinancials, getTickerDetails } from "@/lib/polygon";
 import {
   getAlpacaSnapshots,
   getAlpacaCloseHistory,
@@ -30,7 +30,7 @@ import {
   type DailyClose,
 } from "@/lib/alpaca";
 import { getRecommendationTrends } from "@/lib/finnhub";
-import { getCikByTicker, getCompanyFacts } from "@/lib/edgar";
+import { getCikByTicker, getCompanyFacts, extractCurrentSharesOutstanding } from "@/lib/edgar";
 import { ALL_CONSTITUENTS } from "@/lib/extraUniverse";
 import type { FactorScores, Stock } from "@/lib/research";
 import type { SourceStatus } from "@/lib/fetchRetry";
@@ -77,13 +77,17 @@ interface Fundamentals {
   currentLiabilities: number | null;
   longTermDebt: number | null;
   operatingCashFlow: number | null;
+  /** Weighted average diluted shares for the LAST FISCAL YEAR. Stated in the
+   *  shares of that year — pre-split after a split. Never multiply by today's price. */
   dilutedShares: number | null;
+  /** Shares outstanding as of the latest filing's cover page: a current count. */
+  currentShares: number | null;
 }
 
 const EMPTY_FUND: Fundamentals = {
   revenue: [], eps: [], netIncome: null, grossProfit: null, operatingIncome: null,
   equity: null, assets: null, currentAssets: null, currentLiabilities: null,
-  longTermDebt: null, operatingCashFlow: null, dilutedShares: null,
+  longTermDebt: null, operatingCashFlow: null, dilutedShares: null, currentShares: null,
 };
 
 // ── Polygon parser ──────────────────────────────────────────────────────────
@@ -119,6 +123,7 @@ function parsePolygon(data: any): Fundamentals | null {
     longTermDebt: fval(bal, "long_term_debt"),
     operatingCashFlow: fval(cf, "net_cash_flow_from_operating_activities"),
     dilutedShares: fval(incL, "diluted_average_shares") ?? fval(incL, "basic_average_shares"),
+    currentShares: null, // Polygon financials are per fiscal year; see fetchCapInputs
   };
 }
 
@@ -162,6 +167,7 @@ function parseEdgar(facts: any): Fundamentals | null {
     longTermDebt: first(edgarAnnual(us, "LongTermDebtNoncurrent", "LongTermDebt")),
     operatingCashFlow: first(edgarAnnual(us, "NetCashProvidedByUsedInOperatingActivities")),
     dilutedShares: first(edgarAnnual(us, "WeightedAverageNumberOfDilutedSharesOutstanding")),
+    currentShares: extractCurrentSharesOutstanding(facts)?.shares ?? null,
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -192,6 +198,59 @@ async function fetchFundamentals(ticker: string): Promise<FundamentalsResult> {
     // cik == null: SEC's ticker file loaded and this ticker isn't in it → no filings.
   } catch { reached = false; /* couldn't reach EDGAR */ }
   return { status: reached ? "unavailable" : "failed", data: null };
+}
+
+// ── market capitalisation ────────────────────────────────────────────────────
+/** A computed cap this far from the feed's means our share count is wrong. */
+const CAP_DISAGREEMENT = 3;
+
+export interface MarketCapInputs {
+  price: number | null;
+  /** Current shares outstanding (cover page / feed) — split-adjusted by definition. */
+  currentShares: number | null;
+  /** Weighted average shares from the last annual filing. Kept only to be ignored. */
+  filingShares: number | null;
+  /** The data feed's own market cap, when it has one. */
+  feedCap: number | null;
+}
+
+/**
+ * Market cap from a CURRENT share count and the current price.
+ *
+ * Multiplying the last 10-K's weighted-average share count by today's price is
+ * wrong for any issuer that split since: BKNG's FY2025 filing reports 32.6M
+ * shares against a post-split price, which produced a $5.7B cap and a P/E near 1,
+ * and a value score of 98. When no current count is available we return null —
+ * "Unavailable" is the honest answer; a plausible wrong number is not.
+ */
+export function resolveMarketCap({ price, currentShares, filingShares, feedCap }: MarketCapInputs): number | null {
+  void filingShares; // deliberately unused: see above
+  if (price == null || currentShares == null || currentShares <= 0) return feedCap ?? null;
+  const computed = price * currentShares;
+  if (feedCap != null && feedCap > 0) {
+    const ratio = computed / feedCap;
+    if (ratio > CAP_DISAGREEMENT || ratio < 1 / CAP_DISAGREEMENT) {
+      console.warn(
+        `[factors] market cap disagreement: computed ${computed.toExponential(3)} vs feed ${feedCap.toExponential(3)} — using the feed`
+      );
+      return feedCap;
+    }
+  }
+  return computed;
+}
+
+/** Current shares + the feed's cap, from one Polygon reference call per ticker. */
+async function fetchCapInputs(ticker: string): Promise<{ currentShares: number | null; feedCap: number | null }> {
+  try {
+    const details = await getTickerDetails(ticker);
+    const r = (details as { results?: Record<string, unknown> })?.results ?? {};
+    return {
+      currentShares: num(r.share_class_shares_outstanding) ?? num(r.weighted_shares_outstanding),
+      feedCap: num(r.market_cap),
+    };
+  } catch {
+    return { currentShares: null, feedCap: null }; // EDGAR's cover-page count still applies
+  }
 }
 
 // ── analyst (Finnhub) ─────────────────────────────────────────────────────────
@@ -338,11 +397,12 @@ export async function computeFactorUniverse(): Promise<FactorUniverse> {
   const tickers = list.map((c) => c.ticker);
   const sectors = list.map((c) => c.sector);
 
-  const [snaps, closeHist, funds, analysts] = await Promise.all([
+  const [snaps, closeHist, funds, analysts, capInputs] = await Promise.all([
     getAlpacaSnapshots(tickers).catch(() => new Map<string, AlpacaSnapshot>()),
     getAlpacaCloseHistory(tickers).catch(() => new Map<string, DailyClose[]>()),
     mapPool(tickers, 12, fetchFundamentals),
     mapPool(tickers, 8, fetchAnalyst),
+    mapPool(tickers, 12, fetchCapInputs),
   ]);
 
   const price = (i: number) => snaps.get(tickers[i])?.price ?? null;
@@ -350,10 +410,15 @@ export async function computeFactorUniverse(): Promise<FactorUniverse> {
   const mom = tickers.map((t) => momentum(closeHist.get(t)));
 
   // Per-stock raw sub-metrics (index-aligned).
-  const marketCap = tickers.map((_, i) => {
-    const p = price(i), sh = fund(i).dilutedShares;
-    return p != null && sh != null && sh > 0 ? p * sh : null;
-  });
+  const marketCap = tickers.map((_, i) =>
+    resolveMarketCap({
+      price: price(i),
+      // The feed's current count first, then the latest filing's cover page.
+      currentShares: capInputs[i].currentShares ?? fund(i).currentShares,
+      filingShares: fund(i).dilutedShares,
+      feedCap: capInputs[i].feedCap,
+    })
+  );
 
   // GROWTH
   const growthScore = scoreFactor([

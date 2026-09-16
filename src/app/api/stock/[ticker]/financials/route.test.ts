@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import aaplFixture from "@/lib/__fixtures__/sec/aapl.json";
+import jpmFixture from "@/lib/__fixtures__/sec/jpm.json";
 
 const deps = vi.hoisted(() => ({
   rateLimitGuard: vi.fn(),
@@ -22,11 +24,27 @@ function ctx(ticker: string) {
   return { params: Promise.resolve({ ticker }) };
 }
 
+/** Quarterly duration facts, as companyfacts files them: real period dates. */
+const Q_DATES: Record<string, [string, string]> = {
+  "2025Q1": ["2025-01-01", "2025-03-31"],
+  "2025Q2": ["2025-04-01", "2025-06-30"],
+  "2025Q3": ["2025-07-01", "2025-09-30"],
+  "2025Q4": ["2025-10-01", "2025-12-31"],
+  "2026Q1": ["2026-01-01", "2026-03-31"],
+  "2026Q2": ["2026-04-01", "2026-06-30"],
+};
 function duration(pairs: Array<[string, number]>) {
-  return { units: { USD: pairs.map(([frame, val]) => ({ form: "10-Q", frame, val, end: "" })) } };
+  return {
+    units: {
+      USD: pairs.map(([q, val]) => {
+        const [start, end] = Q_DATES[q];
+        return { form: "10-Q", filed: end, start, end, val };
+      }),
+    },
+  };
 }
-function instant(triples: Array<[string, number, string]>) {
-  return { units: { USD: triples.map(([frame, val, end]) => ({ form: "10-Q", frame, val, end })) } };
+function instant(pairs: Array<[number, string]>) {
+  return { units: { USD: pairs.map(([val, end]) => ({ form: "10-Q", filed: end, val, end })) } };
 }
 
 // 6 revenue quarters 2025Q1..2026Q2; flows for the last 4; fresh balance sheet.
@@ -34,57 +52,57 @@ const FACTS = {
   facts: {
     "us-gaap": {
       Revenues: duration([
-        ["CY2025Q1", 100],
-        ["CY2025Q2", 110],
-        ["CY2025Q3", 120],
-        ["CY2025Q4", 130],
-        ["CY2026Q1", 140],
-        ["CY2026Q2", 154],
+        ["2025Q1", 100],
+        ["2025Q2", 110],
+        ["2025Q3", 120],
+        ["2025Q4", 130],
+        ["2026Q1", 140],
+        ["2026Q2", 154],
       ]),
-      GrossProfit: duration([["CY2026Q2", 77]]),
-      CostOfRevenue: duration([["CY2026Q1", 70]]),
+      GrossProfit: duration([["2026Q2", 77]]),
+      CostOfRevenue: duration([["2026Q1", 70]]),
       NetIncomeLoss: duration([
-        ["CY2025Q3", 25],
-        ["CY2025Q4", 25],
-        ["CY2026Q1", 25],
-        ["CY2026Q2", 25],
+        ["2025Q3", 25],
+        ["2025Q4", 25],
+        ["2026Q1", 25],
+        ["2026Q2", 25],
       ]),
       OperatingIncomeLoss: duration([
-        ["CY2025Q3", 30],
-        ["CY2025Q4", 30],
-        ["CY2026Q1", 30],
-        ["CY2026Q2", 30],
+        ["2025Q3", 30],
+        ["2025Q4", 30],
+        ["2026Q1", 30],
+        ["2026Q2", 30],
       ]),
       NetCashProvidedByUsedInOperatingActivities: duration([
-        ["CY2025Q3", 40],
-        ["CY2025Q4", 40],
-        ["CY2026Q1", 40],
-        ["CY2026Q2", 40],
+        ["2025Q3", 40],
+        ["2025Q4", 40],
+        ["2026Q1", 40],
+        ["2026Q2", 40],
       ]),
       PaymentsForRepurchaseOfCommonStock: duration([
-        ["CY2025Q3", 10],
-        ["CY2025Q4", 10],
-        ["CY2026Q1", 10],
-        ["CY2026Q2", 10],
+        ["2025Q3", 10],
+        ["2025Q4", 10],
+        ["2026Q1", 10],
+        ["2026Q2", 10],
       ]),
-      CashCashEquivalentsAndShortTermInvestments: instant([["CY2026Q2I", 500, "2026-06-27"]]),
-      LongTermDebt: instant([["CY2026Q2I", 100, "2026-06-27"]]),
-      Assets: instant([["CY2026Q2I", 2000, "2026-06-27"]]),
-      StockholdersEquity: instant([["CY2026Q2I", 800, "2026-06-27"]]),
+      CashCashEquivalentsAndShortTermInvestments: instant([[500, "2026-06-30"]]),
+      LongTermDebt: instant([[100, "2026-06-30"]]),
+      Assets: instant([[2000, "2026-06-30"]]),
+      StockholdersEquity: instant([[800, "2026-06-30"]]),
     },
     dei: {
       EntityCommonStockSharesOutstanding: {
-        units: { shares: [{ form: "10-Q", frame: "CY2026Q2I", val: 100, end: "2026-06-27" }] },
+        units: { shares: [{ form: "10-Q", filed: "2026-06-30", val: 100, end: "2026-06-30" }] },
       },
     },
   },
 };
 
 const EARNINGS = [
-  { actual: 1.3, period: "2026-06-27" }, // CY2026Q2
-  { actual: 1.2, period: "2026-03-28" }, // CY2026Q1
-  { actual: 1.1, period: "2025-12-27" }, // CY2025Q4
-  { actual: 1.0, period: "2025-09-27" }, // CY2025Q3
+  { actual: 1.3, period: "2026-06-30" }, // 2026 Q2
+  { actual: 1.2, period: "2026-03-31" }, // 2026 Q1
+  { actual: 1.1, period: "2025-12-31" }, // 2025 Q4
+  { actual: 1.0, period: "2025-09-30" }, // 2025 Q3
 ];
 
 beforeEach(() => {
@@ -162,6 +180,56 @@ describe("GET /api/stock/[ticker]/financials", () => {
     deps.getEarnings.mockRejectedValueOnce(new Error("finnhub down"));
     const body = await (await GET(new Request("http://t"), ctx("ACME"))).json();
     expect(body.quarters.at(-1).epsDiluted).toBeNull();
+    expect(body.ttm.income.epsDiluted).toBeNull();
+  });
+});
+
+describe("GET financials — real filings (trimmed SEC companyfacts)", () => {
+  beforeEach(() => {
+    deps.rateLimitGuard.mockResolvedValue(null);
+    deps.getCikByTicker.mockResolvedValue("0000320193");
+    deps.getEarnings.mockResolvedValue([]);
+  });
+
+  it("fills the TTM statements for an off-calendar filer (AAPL, FY ends late Sep)", async () => {
+    deps.getCompanyFacts.mockResolvedValue(aaplFixture);
+    const body = await (await GET(new Request("http://localhost/api/stock/AAPL/financials"), ctx("AAPL"))).json();
+
+    // Used to be null: the fiscal Q4 was missing, so no 4 consecutive quarters.
+    expect(body.ttm.income.revenue).toBe(466_823_000_000);
+    expect(body.ttm.income.netIncome).toBe(128_930_000_000);
+    expect(body.ttm.cashflow.operatingCF).toBe(146_724_000_000);
+    expect(body.ttmPeriod).toEqual({ from: "2025-06-29", to: "2026-06-27" });
+    // Rows carry the fiscal period they cover, not a calendar-quarter guess.
+    expect(body.quarters.at(-1)).toMatchObject({ periodStart: "2026-03-29", periodEnd: "2026-06-27" });
+    expect(body.ttm.balance.cash).toBe(39_544_000_000);
+    expect(body.ttm.balance.cashAndShortTermInvestments).toBe(62_399_000_000);
+  });
+
+  it("reports JPM's current revenue and marks concepts it stopped tagging Unavailable", async () => {
+    deps.getCikByTicker.mockResolvedValue("0000019617");
+    deps.getCompanyFacts.mockResolvedValue(jpmFixture);
+    const body = await (await GET(new Request("http://localhost/api/stock/JPM/financials"), ctx("JPM"))).json();
+
+    expect(body.quarters.at(-1)).toMatchObject({ periodEnd: "2026-06-30", revenue: 57_347_000_000 });
+    expect(body.ttm.income.revenue).toBe(199_408_000_000);
+    // JPM last tagged these in 2014/2018 — null renders "—" instead of a stale figure.
+    expect(body.ttm.balance.cash).toBeNull();
+    expect(body.ttm.balance.totalDebt).toBeNull();
+    expect(body.ttm.balance.netCash).toBeNull();
+    expect(body.ttm.balance.totalAssets).toBe(5_015_069_000_000);
+  });
+
+  it("refuses to sum a TTM EPS across a gap in the quarters", async () => {
+    deps.getCompanyFacts.mockResolvedValue(aaplFixture);
+    deps.getEarnings.mockResolvedValue([
+      { actual: 1.0, period: "2025-06-28" },
+      // 2025-09-27 missing → the last four actuals are not four consecutive quarters
+      { actual: 1.1, period: "2025-12-27" },
+      { actual: 1.2, period: "2026-03-28" },
+      { actual: 1.3, period: "2026-06-27" },
+    ]);
+    const body = await (await GET(new Request("http://localhost/api/stock/AAPL/financials"), ctx("AAPL"))).json();
     expect(body.ttm.income.epsDiluted).toBeNull();
   });
 });

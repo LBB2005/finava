@@ -10,6 +10,7 @@ import {
   getCompanyFacts,
   extractQuarterlyFundamentals,
   extractBalanceSnapshot,
+  ttmFromQuarters,
   type QuarterlyMetric,
 } from "@/lib/edgar";
 import { getEarnings } from "@/lib/finnhub";
@@ -17,7 +18,10 @@ import { rateLimitGuard } from "@/lib/rateLimit";
 
 export interface FinancialsQuarter {
   year: number;
-  quarter: number; // calendar quarter 1-4
+  quarter: number; // calendar quarter the fiscal period ends in, 1-4
+  /** The fiscal period as filed — an off-calendar quarter is not Jan–Mar. */
+  periodStart: string;
+  periodEnd: string;
   revenue: number | null;
   revenueYoY: number | null; // fraction, e.g. 0.34
   epsDiluted: number | null;
@@ -34,14 +38,9 @@ function toMap(series: QuarterlyMetric[]): Map<number, number> {
   return new Map(series.map((m) => [ord(m.year, m.quarter), m.value]));
 }
 
-/** Sum a series' last 4 quarters when they are consecutive; else null. */
+/** Sum a series' last 4 quarters by end date; null unless they cover a year. */
 function ttmSum(series: QuarterlyMetric[]): number | null {
-  if (series.length < 4) return null;
-  const last4 = series.slice(-4);
-  const first = ord(last4[0].year, last4[0].quarter);
-  const last = ord(last4[3].year, last4[3].quarter);
-  if (last - first !== 3) return null;
-  return last4.reduce((a, m) => a + m.value, 0);
+  return ttmFromQuarters(series)?.value ?? null;
 }
 
 interface EarningsEntry {
@@ -132,6 +131,8 @@ export async function GET(
       return {
         year: m.year,
         quarter: m.quarter,
+        periodStart: m.start,
+        periodEnd: m.end,
         revenue: rev,
         revenueYoY: priorRev != null && priorRev > 0 ? rev / priorRev - 1 : null,
         epsDiluted: eps.get(o) ?? null,
@@ -151,18 +152,17 @@ export async function GET(
     const buybacksTTM = ttmSum(q.buybacks);
     const fcfTTM = ocfTTM != null ? ocfTTM - (capexTTM ?? 0) : null;
 
-    // EPS TTM = sum of the 4 most recent quarterly actuals when we have 4.
-    const epsVals = Array.from(eps.entries())
-      .sort((a, b) => a[0] - b[0])
-      .slice(-4)
-      .map(([, v]) => v);
-    const epsTTM = epsVals.length === 4 ? epsVals.reduce((a, b) => a + b, 0) : null;
+    // EPS TTM = the 4 most recent quarterly actuals, and only when they are four
+    // CONSECUTIVE quarters — a gap would silently sum the wrong window.
+    const epsOrds = Array.from(eps.entries()).sort((a, b) => a[0] - b[0]).slice(-4);
+    const epsContiguous =
+      epsOrds.length === 4 && epsOrds[3][0] - epsOrds[0][0] === 3;
+    const epsTTM = epsContiguous ? epsOrds.reduce((a, [, v]) => a + v, 0) : null;
 
     const balance = extractBalanceSnapshot(facts);
-    const netCash =
-      balance.cash != null && balance.totalDebt != null
-        ? balance.cash - balance.totalDebt
-        : null;
+    // Net cash is the whole liquid pile against debt, not just the cash line.
+    const liquid = balance.cashAndShortTermInvestments ?? balance.cash;
+    const netCash = liquid != null && balance.totalDebt != null ? liquid - balance.totalDebt : null;
     const bookValuePerShare =
       balance.equity != null && balance.sharesOutstanding
         ? balance.equity / balance.sharesOutstanding
@@ -172,6 +172,9 @@ export async function GET(
       ticker: symbol,
       quarters,
       fcfIsProxy,
+      ttmPeriod: ttmFromQuarters(q.revenue)
+        ? { from: ttmFromQuarters(q.revenue)!.from, to: ttmFromQuarters(q.revenue)!.to }
+        : null,
       ttm: {
         income: {
           revenue: revenueTTM,
@@ -181,7 +184,10 @@ export async function GET(
           epsDiluted: epsTTM,
         },
         balance: {
+          // Two explicitly different things: cash on hand, and cash plus the
+          // current marketable securities most people mean by "the cash pile".
           cash: balance.cash,
+          cashAndShortTermInvestments: balance.cashAndShortTermInvestments,
           totalDebt: balance.totalDebt,
           netCash,
           totalAssets: balance.totalAssets,
