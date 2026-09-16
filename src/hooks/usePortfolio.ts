@@ -1,10 +1,27 @@
 "use client";
+import { useCallback, useState } from "react";
 import useSWR from "swr";
 import type { Holding } from "@/types/portfolio";
 import { authFetch, authFetcher } from "@/lib/authFetch";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaidStatus } from "@/hooks/usePlaidStatus";
 import { DEV_HOLDINGS, DEV_CASH } from "@/lib/devPortfolio";
+import { addToPosition, replacePosition, type PositionInput } from "@/lib/holdings";
+
+/** How a re-added ticker folds into the position you already hold. */
+export type MergeMode = "add" | "replace";
+
+/** Set once the user clears the seeded sample book, so it doesn't come back. */
+const SAMPLE_DISMISSED_KEY = "finava_sample_portfolio_dismissed";
+
+function sampleDismissedInitially(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(SAMPLE_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function usePortfolio() {
   // Under the dev auth bypass the "dev-bypass" sentinel still authenticates
@@ -14,6 +31,7 @@ export function usePortfolio() {
   // (mock shows) while letting Plaid-synced holdings appear once imported.
   const { devBypass } = useAuth();
   const { plaidConnected, plaidInstitutions, mutatePlaidStatus } = usePlaidStatus();
+  const [sampleDismissed, setSampleDismissed] = useState(sampleDismissedInitially);
 
   const { data, error, isLoading, mutate } = useSWR<Holding[]>(
     "/api/portfolio",
@@ -52,6 +70,20 @@ export function usePortfolio() {
     await mutate();
   }
 
+  /** Edit an existing position in place — share count and per-share cost basis. */
+  async function updateHolding(
+    id: string,
+    patch: { shares?: number; avgCost?: number; companyName?: string | null; sector?: string | null }
+  ) {
+    const res = await authFetch(`/api/portfolio/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error("Failed to update holding");
+    await mutate();
+  }
+
   async function uploadCsv(file: File): Promise<{ imported: number; failed: number }> {
     const form = new FormData();
     form.append("file", file);
@@ -82,7 +114,36 @@ export function usePortfolio() {
   }
 
   const realHoldings = Array.isArray(data) ? data : [];
-  const useMockHoldings = devBypass && realHoldings.length === 0;
+  const useMockHoldings = devBypass && realHoldings.length === 0 && !sampleDismissed;
+
+  /** The position already on file for this ticker, if any. */
+  const findHolding = useCallback(
+    (ticker: string) =>
+      realHoldings.find((h) => h.ticker.toUpperCase() === ticker.trim().toUpperCase()) ?? null,
+    // realHoldings is rebuilt each render from SWR's cached array; key off that array.
+    [data] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  /**
+   * Re-add a ticker already in the book. `mode` decides whether the entered lot
+   * is folded into the position (share-weighted cost basis) or replaces it —
+   * it is never applied silently.
+   */
+  async function mergeHolding(existing: Holding, incoming: PositionInput, mode: MergeMode) {
+    const next = mode === "add" ? addToPosition(existing, incoming) : replacePosition(existing, incoming);
+    await updateHolding(existing.id, next);
+    return next;
+  }
+
+  /** Drop the seeded sample book and fall through to the real (empty) portfolio. */
+  function clearSampleHoldings() {
+    try {
+      localStorage.setItem(SAMPLE_DISMISSED_KEY, "1");
+    } catch {
+      /* private mode — the flag just won't persist across reloads */
+    }
+    setSampleDismissed(true);
+  }
 
   return {
     holdings: useMockHoldings ? DEV_HOLDINGS : realHoldings,
@@ -95,8 +156,14 @@ export function usePortfolio() {
     refresh,
     addHolding,
     removeHolding,
+    updateHolding,
+    findHolding,
+    mergeHolding,
     uploadCsv,
     setCashBalance,
+    /** True while the seeded design-time book is standing in for a real one. */
+    isSampleData: useMockHoldings,
+    clearSampleHoldings,
     // Plaid
     plaidConnected,
     plaidInstitutions,

@@ -5,6 +5,7 @@ import { applyScreen, type ScreenFilter } from "@/lib/screen";
 import { authFetch } from "@/lib/authFetch";
 import type { ScreenCommentary, SuggestedScreen } from "@/lib/researchAI";
 import LadderRow from "./LadderRow";
+import { useTickerFactsSlim } from "@/hooks/useTickerFacts";
 import { LensPanel, LensSpinner, PrimaryCta, Chevron } from "./primitives";
 
 type Status = "idle" | "parsing" | "done" | "error";
@@ -104,6 +105,7 @@ export default function ScreenMode({ universe, loading }: { universe: Stock[]; l
   }
 
   const visible = showAll ? results?.length ?? 0 : DEFAULT_VISIBLE;
+  const slim = useTickerFactsSlim((results ?? []).slice(0, visible).map((s) => s.ticker));
   const activeFactors = filter?.factors ? Object.keys(filter.factors) : [];
 
   return (
@@ -199,7 +201,7 @@ export default function ScreenMode({ universe, loading }: { universe: Stock[]; l
                 </thead>
                 <tbody>
                   {results.slice(0, visible).map((s) => (
-                    <LadderRow key={s.ticker} s={s} highlight={s.rank <= 3} />
+                    <LadderRow key={s.ticker} s={s} fs={slim.map.get(s.ticker)?.score} highlight={s.rank <= 3} />
                   ))}
                 </tbody>
               </table>

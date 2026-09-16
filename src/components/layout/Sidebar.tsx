@@ -715,7 +715,7 @@ export default function Sidebar({
     }
     return set;
   }, [conversations, streamsByConv]);
-  const { addHolding, uploadCsv, setCashBalance } = usePortfolio();
+  const { addHolding, uploadCsv, setCashBalance, findHolding, mergeHolding } = usePortfolio();
 
   const isDragging = useRef(false);
   const startX = useRef(0);
@@ -941,6 +941,10 @@ export default function Sidebar({
           onAdd={(data: HoldingFormData) =>
             addHolding({ ...data, companyName: data.companyName ?? null, sector: data.sector ?? null })
           }
+          findExisting={findHolding}
+          onMerge={async (existing, incoming, mode) => {
+            await mergeHolding(existing, incoming, mode);
+          }}
         />
       )}
       {showCsv && <CsvUploadModal onClose={() => setShowCsv(false)} onUpload={uploadCsv} />}

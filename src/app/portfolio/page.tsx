@@ -3,16 +3,17 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
-import { useFactorUniverse } from "@/hooks/useFactorUniverse";
+import { useTickerFactsSlim } from "@/hooks/useTickerFacts";
 import { useChatStore } from "@/stores/chatStore";
 import { buildPortfolioSnapshot } from "@/lib/pageContext";
 import { useToast } from "@/hooks/useToast";
-import type { Holding, Quote } from "@/types/portfolio";
+import type { Holding } from "@/types/portfolio";
 import ConnectBrokerageButton from "@/components/portfolio/ConnectBrokerageButton";
+import HoldingsTable, { type HoldingRow } from "@/components/portfolio/HoldingsTable";
+import EditHoldingModal from "@/components/portfolio/EditHoldingModal";
+import ConfirmDialog from "@/components/portfolio/ConfirmDialog";
 import ChatContextButton from "@/components/chat/ChatContextButton";
 import PageHeader from "@/components/layout/PageHeader";
-import ScorePill from "@/components/ui/ScorePill";
-import { scoreForTicker } from "@/lib/compositeScore";
 
 
 // Allocation palette — navy→lighter-blue ramp from the design kit
@@ -42,15 +43,6 @@ function arcPath(cx: number, cy: number, or: number, ir: number, a1: number, a2:
   const [x4, y4] = polarXY(cx, cy, ir, a1);
   const large = span > 180 ? 1 : 0;
   return `M${x1},${y1}A${or},${or} 0 ${large},1 ${x2},${y2}L${x3},${y3}A${ir},${ir} 0 ${large},0 ${x4},${y4}Z`;
-}
-
-interface HoldingRow {
-  holding: Holding;
-  quote?: Quote;
-  mv: number;
-  pct: number;
-  gainLoss: number;
-  gainLossPct: number;
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -153,9 +145,13 @@ export default function PortfolioPage() {
   const {
     holdings, cashBalance, setCashBalance, refresh,
     plaidConnected, plaidInstitutions, syncPlaid,
+    removeHolding, updateHolding,
+    isSampleData, clearSampleHoldings,
     error: portfolioError, isLoading: holdingsLoading,
   } = usePortfolio();
   const [syncing, setSyncing] = useState(false);
+  const [editing, setEditing] = useState<Holding | null>(null);
+  const [removing, setRemoving] = useState<Holding | null>(null);
   const institutionName = plaidInstitutions[0]?.name ?? null;
 
   async function handleSync() {
@@ -164,9 +160,9 @@ export default function PortfolioPage() {
   }
 
   const { quoteMap, error: quotesError, isLoading: quotesLoading } = useQuotes(holdings.map((h) => h.ticker));
-  // Real scored universe (S&P 500, live factors). A holding outside it has no
-  // score and renders "—" — we never fabricate one.
-  const { universe } = useFactorUniverse();
+  // The facts layer's cached Finava Score (the number the stock page shows). A
+  // holding nobody has scored yet renders "—" — we never fabricate one.
+  const slimScores = useTickerFactsSlim(holdings.map((h) => h.ticker));
   const { setPendingMessage, reset } = useChatStore();
 
   useEffect(() => {
@@ -199,7 +195,10 @@ export default function PortfolioPage() {
     const cost = h.avgCost * h.shares;
     const gainLoss = price > 0 ? mv - cost : 0;
     const gainLossPct = cost > 0 && price > 0 ? (gainLoss / cost) * 100 : 0;
-    return { holding: h, quote, mv, pct: 0, gainLoss, gainLossPct };
+    // The facts layer's cached Finava Score (W3-1) — "—" until this ticker has
+    // been scored, never a fabricated one.
+    const score = slimScores.map.get(h.ticker.toUpperCase())?.score.value?.total ?? null;
+    return { holding: h, quote, mv, pct: 0, gainLoss, gainLossPct, score };
   });
 
   const equityValue = rows.reduce((s, r) => s + r.mv, 0);
@@ -350,6 +349,20 @@ export default function PortfolioPage() {
             display: "flex", flexDirection: "column", gap: 22,
           }}>
 
+            {/* Seeded design-time book. Say so plainly — a tester should never
+                mistake these positions for their own. */}
+            {isSampleData && (
+              <div className="pf-sample-banner">
+                <span>
+                  <strong>Sample portfolio</strong> — these positions are demo data, not yours. Replace
+                  them with your own.
+                </span>
+                <button type="button" className="btn btn-ghost std-focus" onClick={clearSampleHoldings}>
+                  Clear sample
+                </button>
+              </div>
+            )}
+
             {/* ── HERO: open chart canvas — value sits on the page, chart beneath ── */}
             <div className="portfolio-hero-open">
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
@@ -472,127 +485,42 @@ export default function PortfolioPage() {
                 </div>
               </div>
 
-              {/* Holdings table */}
-              <div style={{
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-lg)",
-                overflow: "hidden",
-              }}>
-                <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 18px",
-                  background: "var(--color-surface)",
-                  borderBottom: "1px solid var(--color-border)",
-                }}>
-                  <Eyebrow>Holdings</Eyebrow>
-                  <span style={{ fontSize: "var(--text-meta)", color: "var(--color-muted)" }}>Click a row to open its stock page</span>
-                </div>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr>
-                      {[
-                        { label: "Ticker",    right: false },
-                        { label: "Finava",    right: false },
-                        { label: "Price",     right: true  },
-                        { label: "Day",       right: true  },
-                        { label: "Mkt Value", right: true  },
-                        { label: "Return",    right: true  },
-                      ].map(({ label, right }) => (
-                        <th
-                          key={label}
-                          className="mono"
-                          style={{
-                            textAlign: right ? "right" : "left",
-                            fontSize: "var(--text-micro)", fontWeight: 700,
-                            letterSpacing: "0.1em", textTransform: "uppercase",
-                            color: "var(--color-muted)",
-                            padding: "8px 12px",
-                            borderBottom: "1px solid var(--color-border)",
-                          }}
-                        >{label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, rowIdx) => {
-                      const score = scoreForTicker(universe, r.holding.ticker);
-                      const dayPct = r.quote?.changePct ?? 0;
-                      const isDayPos = dayPct >= 0;
-                      const isPos = r.gainLoss >= 0;
-                      return (
-                        <tr
-                          key={r.holding.ticker}
-                          className="portfolio-row std-focus"
-                          style={{
-                            borderBottom: rowIdx < rows.length - 1 ? "1px solid var(--color-border)" : "none",
-                            cursor: "pointer",
-                          }}
-                          onClick={() => router.push(`/stock/${r.holding.ticker}`)}
-                        >
-                          {/* Ticker chip + company name */}
-                          <td style={{ padding: "8px 12px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{
-                                fontSize: "var(--text-meta)", fontWeight: 700, letterSpacing: "0.04em",
-                                color: "var(--color-accent)", background: "var(--color-accent-light)",
-                                padding: "3px 7px", borderRadius: "var(--radius-xs)",
-                              }}>{r.holding.ticker}</span>
-                              <span style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>
-                                {r.holding.companyName ?? ""}
-                              </span>
-                            </div>
-                          </td>
-                          {/* Finava score pill — "—" until the factor universe covers this ticker */}
-                          <td style={{ padding: "8px 12px" }}>
-                            {score != null ? (
-                              <ScorePill score={score} />
-                            ) : (
-                              <span className="mono" style={{ fontSize: "var(--text-meta)", color: "var(--color-muted)" }}>—</span>
-                            )}
-                          </td>
-                          {/* Price */}
-                          <td className="mono" style={{
-                            textAlign: "right", padding: "8px 12px",
-                            fontSize: "var(--text-sm)", color: "var(--color-text)",
-                          }}>
-                            {r.quote?.price ? `$${fmt(r.quote.price)}` : quotesLoading ? <Shimmer w={48} /> : "—"}
-                          </td>
-                          {/* Day % */}
-                          <td className="mono" style={{
-                            textAlign: "right", padding: "8px 12px",
-                            fontSize: "var(--text-sm)", fontWeight: 600,
-                            color: r.quote
-                              ? isDayPos ? "var(--color-bull)" : "var(--color-bear)"
-                              : "var(--color-muted)",
-                          }}>
-                            {r.quote ? `${isDayPos ? "+" : ""}${fmt(dayPct, 2)}%` : quotesLoading ? <Shimmer w={40} /> : "—"}
-                          </td>
-                          {/* Market value */}
-                          <td className="mono" style={{
-                            textAlign: "right", padding: "8px 12px",
-                            fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--color-text)",
-                          }}>
-                            ${fmt0(r.mv)}
-                          </td>
-                          {/* Return */}
-                          <td className="mono" style={{
-                            textAlign: "right", padding: "8px 12px",
-                            fontSize: "var(--text-sm)", fontWeight: 700,
-                            color: isPos ? "var(--color-bull)" : "var(--color-bear)",
-                          }}>
-                            {isPos ? "+" : ""}{fmt(r.gainLossPct, 1)}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {/* Holdings — full table on desktop, stacked rows on a phone */}
+              <HoldingsTable
+                rows={rows}
+                quotesLoading={quotesLoading}
+                readOnly={plaidConnected}
+                onEdit={setEditing}
+                onRemove={setRemoving}
+              />
             </div>
 
           </div>
         )}
       </div>
+
+      {editing && (
+        <EditHoldingModal
+          holding={editing}
+          onSave={(patch) => updateHolding(editing.id, patch)}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={`Remove ${removing.ticker}?`}
+          body={
+            <>
+              This removes {removing.shares.toLocaleString("en-US", { maximumFractionDigits: 4 })} shares
+              of {removing.companyName ?? removing.ticker}{" "}and their cost basis from your portfolio.
+              It doesn&apos;t place a trade.
+            </>
+          }
+          confirmLabel="Remove holding"
+          onConfirm={() => removeHolding(removing.id)}
+          onClose={() => setRemoving(null)}
+        />
+      )}
 
     </div>
   );

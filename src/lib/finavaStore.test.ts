@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const deps = vi.hoisted(() => ({
   authFetch: vi.fn(),
+  mutate: vi.fn(),
 }));
 
 vi.mock("@/lib/authFetch", () => ({
   authFetch: deps.authFetch,
 }));
+vi.mock("swr", () => ({ mutate: deps.mutate }));
 
 import { getEntry, resetFinava, runFinava, subscribe } from "./finavaStore";
 
@@ -122,5 +124,20 @@ describe("finavaStore", () => {
     deps.authFetch.mockRejectedValueOnce(new Error("network down"));
     await runFinava("AAPL");
     expect(getEntry("AAPL")).toMatchObject({ status: "error", error: "network down" });
+  });
+  it("revalidates the ticker's facts once a run delivers its verdict", async () => {
+    deps.authFetch.mockResolvedValueOnce(
+      streamResponse([`data: ${JSON.stringify({ type: "verdict", verdict: { score: 60, stance: "Neutral", confidence: "High", fairValue: null, upsidePct: null, peerPremiumPct: null, take: "t", catalysts: [], risks: [], comparison: { finava: null, street: null, dcf: null } } })}\n\n`])
+    );
+    await runFinava("AAPL");
+    expect(deps.mutate).toHaveBeenCalledTimes(1);
+    const matcher = deps.mutate.mock.calls[0][0] as (k: unknown) => boolean;
+    expect(matcher("/api/facts/AAPL")).toBe(true);
+    expect(matcher("/api/facts/AAPL?cachedOnly=1")).toBe(true);
+    expect(matcher("/api/facts/AAPLX")).toBe(false);
+    expect(matcher("/api/facts?tickers=AAPL,MSFT")).toBe(true);
+    expect(matcher("/api/facts?tickers=AAPLX")).toBe(false);
+    expect(matcher("/api/stock/AAPL/verdict")).toBe(false);
+    expect(matcher(42)).toBe(false);
   });
 });

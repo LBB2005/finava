@@ -59,6 +59,47 @@ export interface ChatMessage {
   stopped?: boolean;
 }
 
+/* ── Skeptic review (W3-2) ──────────────────────────────────────────────── */
+
+/** Why the reviewer flagged a line of the draft. */
+export type SkepticProblem =
+  | "unsourced"
+  | "contradicts_evidence"
+  | "stale"
+  | "overclaim"
+  | "advice_line";
+
+/**
+ * One reviewer finding. `quote` must appear verbatim in the draft — a finding
+ * whose quote doesn't is dropped before the user ever sees it, which is what
+ * stops the reviewer critiquing a report that isn't on screen.
+ */
+export interface SkepticIssue {
+  quote: string;
+  problem: SkepticProblem;
+  /** The evidence that contradicts the quote, when the reviewer named it. */
+  evidence?: string;
+  fix: string;
+}
+
+/**
+ * What the second opinion actually did. `status` is never "reviewed" unless the
+ * review ran and was read — a skipped or failed review says so.
+ */
+export interface SkepticReport {
+  status: "reviewed" | "skipped" | "failed";
+  /** Why it didn't run. Only set for "skipped"/"failed". */
+  reason?: string;
+  /** How many analysts' outputs the reviewer was given. */
+  agentsReviewed: number;
+  /** The rewrite was cut off, so nothing can be claimed as corrected. */
+  revisionFailed?: boolean;
+  /** Issues the revision pass rewrote away. */
+  corrections: SkepticIssue[];
+  /** Issues the revision did not resolve — folded into "Confidence & gaps". */
+  caveats: SkepticIssue[];
+}
+
 export type AgentName =
   | "run_risk_agent"
   | "run_news_agent"
@@ -130,7 +171,12 @@ export type AgentEvent =
   // emit that carries the whole report, which resets the text so far.
   | { type: "final_response"; content: string; replace?: boolean }
   | { type: "skeptic_start" }
-  | { type: "skeptic_complete"; critique: string }
+  // The review ran. `critique` is the human-readable fallback (agent-detail
+  // modal, older clients); `report` is what the Second Opinion box renders.
+  | { type: "skeptic_complete"; critique: string; report?: SkepticReport }
+  // The review did NOT run. Emitted instead of `skeptic_complete` so the step is
+  // never left showing "complete" for work that never happened.
+  | { type: "skeptic_status"; status: "skipped" | "failed"; reason: string }
   | { type: "followups"; questions: string[] }
   | { type: "text_delta"; content: string }
   // ── Discovery funnel ──

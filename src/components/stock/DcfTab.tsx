@@ -3,10 +3,11 @@ import { useMemo, useState } from "react";
 import { useQuotes } from "@/hooks/useQuotes";
 import { useDcfInputs } from "@/hooks/useDcfInputs";
 import { computeDcf, defaultGrowthFor } from "@/lib/dcf";
+import { asOfLabel } from "@/lib/facts/format";
 import Rule from "@/components/ui/Rule";
 
-// Inputs come via the shared useDcfInputs hook — one SWR key + shape with the
-// intelligence rail.
+// Inputs come from the facts layer via useDcfInputs, so the sliders start from
+// exactly the inputs behind the rail's fair value. Slider tweaks stay local.
 
 function fmtMoney(n: number | null | undefined, d = 2): string {
   return typeof n === "number" && Number.isFinite(n)
@@ -59,7 +60,7 @@ function Fact({ l, v, color }: { l: string; v: string; color?: string }) {
 }
 
 export function DcfTab({ ticker }: { ticker: string }) {
-  const { data: inputs, error, isLoading } = useDcfInputs(ticker);
+  const { data: inputs, error, isLoading, asOf } = useDcfInputs(ticker);
 
   // Slider overrides start null and fall back to data-derived defaults, so we never
   // need an effect to seed them once the inputs load.
@@ -108,6 +109,7 @@ export function DcfTab({ ticker }: { ticker: string }) {
         <p className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)", lineHeight: 1.6, marginTop: 4 }}>
           Suggested WACC {pct(inputs.suggestedWacc)} (from beta){inputs.historicalGrowth != null ? ` · historical growth ${pct(inputs.historicalGrowth)}` : ""}. Terminal growth fixed at 2.5%.
           {inputs.fcfIsProxy ? " FCF proxied by operating cash flow (capex unavailable)." : ""}
+          {asOf ? ` Inputs ${asOfLabel(asOf)}.` : ""}
         </p>
       </div>
 

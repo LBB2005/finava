@@ -79,9 +79,9 @@ export function boardRanking(
   return { ranked, notEnoughData };
 }
 
-/** Hero eyebrow — the highest score on the board, not a recommendation. */
+/** Hero eyebrow — the top factor rank on the board, not a recommendation or a score. */
 export function heroTag(horizonTag: string): string {
-  return `${horizonTag} · HIGHEST SCORE`;
+  return `${horizonTag} · TOP FACTOR RANK`;
 }
 
 /** Suffix for the day's price move: "today" only while the session is open. */

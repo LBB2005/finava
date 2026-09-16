@@ -8,6 +8,7 @@ import { useQuotes } from "@/hooks/useQuotes";
 import { useToast } from "@/hooks/useToast";
 import { buildPortfolioContext } from "./ChatContainer";
 import type { Conversation } from "@/components/layout/ConversationList";
+import { serializeSkepticReport } from "@/lib/skepticReport";
 import type { ChatMessage, ChatMode, AgentEvent } from "@/types/chat";
 import type { ChatContext } from "@/lib/chatContext";
 import type { PageContext } from "@/lib/pageContext";
@@ -497,7 +498,29 @@ export default function ChatEngine() {
       }
       case "skeptic_complete":
         st.updateAgentStep(convId, "skeptic_review", { status: "complete", result: event.critique });
-        if (event.critique) st.setPendingCritique(convId, event.critique);
+        // W3-2: the structured report rides in the `critique` string (the same way
+        // agentTrace/attachment travel as JSON), so the Second Opinion box can show
+        // a receipt instead of prose. `critique` is the readable fallback.
+        if (event.report) st.setPendingCritique(convId, serializeSkepticReport(event.report));
+        else if (event.critique) st.setPendingCritique(convId, event.critique);
+        break;
+      case "skeptic_status":
+        // The review did NOT run. Never leave the step reading "complete", and
+        // tell the reader on the answer itself.
+        st.updateAgentStep(convId, "skeptic_review", {
+          status: event.status === "skipped" ? "skipped" : "error",
+          error: event.reason,
+        });
+        st.setPendingCritique(
+          convId,
+          serializeSkepticReport({
+            status: event.status,
+            reason: event.reason,
+            agentsReviewed: 0,
+            corrections: [],
+            caveats: [],
+          })
+        );
         break;
       case "followups":
         st.setPendingFollowups(convId, event.questions);

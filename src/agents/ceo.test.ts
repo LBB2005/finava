@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { AgentEvent } from "@/types/chat";
+import type { AgentEvent, SkepticReport } from "@/types/chat";
 import { resetAgentLatencies } from "./crewPlanner";
 
 // ── Scripted Anthropic stream ────────────────────────────────────────────────
@@ -39,10 +39,15 @@ vi.mock("@/lib/anthropic", () => ({
   MODEL: "test-model",
 }));
 
-// generate() backs both the skeptic critique and the follow-up questions. Each
-// test sets these; by default both are empty, so the revision pass short-circuits
-// (keeps the draft) and no follow-ups emit — matching the original behaviour.
-let skepticCritique = "";
+// generate() backs both the skeptic critique and the follow-up questions. The
+// skeptic now answers in JSON (W3-2); by default it returns a clean bill of
+// health, so the revision pass short-circuits (keeps the draft) and no follow-ups
+// emit — matching the original behaviour.
+const NO_ISSUES = '{"issues":[]}';
+/** A finding anchored to text that really is in the scripted draft. */
+const issuesOn = (quote: string) =>
+  JSON.stringify({ issues: [{ quote, problem: "unsourced", fix: "remove it" }] });
+let skepticCritique = NO_ISSUES;
 let followupsRaw = "";
 const generate = vi.fn(async (opts: { agent?: string }) => {
   if (opts?.agent === "skeptic") return skepticCritique;
@@ -122,7 +127,7 @@ const text = (t: string) => ({ type: "text", text: t });
 
 beforeEach(() => {
   finalMessages.length = 0;
-  skepticCritique = "";
+  skepticCritique = NO_ISSUES;
   followupsRaw = "";
   streamSpy.mockReset().mockImplementation(makeStreamStub);
   generate.mockClear();
@@ -239,7 +244,7 @@ describe("runCeoAgent orchestration", () => {
   });
 
   it("runs the skeptic→revision pass and ships the REVISED report, not the draft", async () => {
-    skepticCritique = "**Skeptic Review:** the beta claim is unsourced.";
+    skepticCritique = issuesOn("DRAFT report body");
     finalMessages.push(
       { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
       { stop_reason: "end_turn", content: [text("DRAFT report body")], usage: {} },
@@ -251,11 +256,10 @@ describe("runCeoAgent orchestration", () => {
     await runCeoAgent("analyze AAPL", "", (e) => events.push(e));
 
     const types = events.map((e) => e.type);
-    // Skeptic critique is surfaced for transparency…
+    // The review is surfaced as a structured report, not free prose…
     expect(types).toContain("skeptic_start");
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "skeptic_complete", critique: expect.stringContaining("Skeptic Review") }),
-    );
+    const done = events.find((e) => e.type === "skeptic_complete") as { report?: SkepticReport };
+    expect(done.report).toMatchObject({ status: "reviewed", corrections: [{ quote: "DRAFT report body" }] });
     // …but the user reads the corrected report, and the draft is gone.
     const final = events.find((e) => e.type === "final_response") as { content: string };
     expect(final.content).toContain("REVISED report body");
@@ -263,8 +267,8 @@ describe("runCeoAgent orchestration", () => {
   });
 
   it("keeps the draft when the skeptic finds nothing (revision short-circuits)", async () => {
-    // Default: skepticCritique is empty → the revision stream() is never called,
-    // so only the two scripted messages are consumed.
+    // Default: the reviewer returns no issues → the revision stream() is never
+    // called, so only the two scripted messages are consumed.
     finalMessages.push(
       { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
       { stop_reason: "end_turn", content: [text("DRAFT stands")], usage: {} },
@@ -302,9 +306,9 @@ describe("runCeoAgent orchestration", () => {
     );
   });
 
-  it("skips the expensive revision when the skeptic signs off with VERDICT: OK", async () => {
-    // A sound report: the skeptic explicitly approves, so no second full synthesis.
-    skepticCritique = "VERDICT: OK";
+  it("skips the expensive revision when the reviewer finds nothing", async () => {
+    // A sound report: no issues, so no second full synthesis.
+    skepticCritique = NO_ISSUES;
     finalMessages.push(
       { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
       { stop_reason: "end_turn", content: [text("SOUND report body")], usage: {} },
@@ -315,33 +319,48 @@ describe("runCeoAgent orchestration", () => {
 
     const final = events.find((e) => e.type === "final_response") as { content: string };
     expect(final.content).toContain("SOUND report body");
-    // No revision stream() — the sign-off short-circuits the second synthesis.
+    // No revision stream() — a clean review short-circuits the second synthesis.
     expect(streamSpy).toHaveBeenCalledTimes(2);
-    // The bare verdict token is never surfaced as a critique.
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "skeptic_complete", critique: "" }),
-    );
+    const done = events.find((e) => e.type === "skeptic_complete") as { report?: SkepticReport };
+    expect(done.report).toMatchObject({ status: "reviewed", corrections: [], caveats: [] });
   });
 
-  it("revises but strips the machine VERDICT line from the surfaced critique", async () => {
-    skepticCritique = "VERDICT: REVISE\n**Skeptic Review:** the beta claim is unsourced.";
+  it("never revises for a critique of text that is not in the report", async () => {
+    // The readout's headline skeptic failure: it critiqued a draft nobody saw.
+    // The quote is not in "DRAFT report body", so the finding is dropped and no
+    // second synthesis fires.
+    skepticCritique = issuesOn("the RSI of 71 is overbought");
     finalMessages.push(
       { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
       { stop_reason: "end_turn", content: [text("DRAFT report body")], usage: {} },
-      { stop_reason: "end_turn", content: [text("REVISED report body")], usage: {} },
     );
     const { runCeoAgent } = await import("./ceo");
     const events: AgentEvent[] = [];
     await runCeoAgent("analyze AAPL", "", (e) => events.push(e));
 
-    // Revision fires (3rd stream call) and ships the revised report.
-    expect(streamSpy).toHaveBeenCalledTimes(3);
+    expect(streamSpy).toHaveBeenCalledTimes(2);
     const final = events.find((e) => e.type === "final_response") as { content: string };
-    expect(final.content).toContain("REVISED report body");
-    // The surfaced critique keeps the human review text but not the machine verdict.
-    const skepticEvent = events.find((e) => e.type === "skeptic_complete") as { critique: string };
-    expect(skepticEvent.critique).toContain("Skeptic Review");
-    expect(skepticEvent.critique).not.toContain("VERDICT");
+    expect(final.content).toContain("DRAFT report body");
+    expect(final.content).not.toContain("RSI");
+    const done = events.find((e) => e.type === "skeptic_complete") as { report?: SkepticReport };
+    expect(done.report).toMatchObject({ corrections: [], caveats: [] });
+  });
+
+  it("says the second opinion did not run when the reviewer fails", async () => {
+    skepticCritique = "the report seems fine to me";  // unreadable: no JSON
+    finalMessages.push(
+      { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
+      { stop_reason: "end_turn", content: [text("DRAFT report body")], usage: {} },
+    );
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("analyze AAPL", "", (e) => events.push(e));
+
+    // Never "complete" for work that did not happen.
+    expect(events.find((e) => e.type === "skeptic_complete")).toBeUndefined();
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "skeptic_status", status: "failed" }),
+    );
   });
 
   it("aborts the crew when the per-run cost cap is exceeded", async () => {
@@ -523,7 +542,7 @@ function assembledPromptText(): string {
 
 describe("CEO prompt — advice line", () => {
   async function runWithRevision() {
-    skepticCritique = "VERDICT: REVISE\n**Skeptic Review:** unsourced beta.";
+    skepticCritique = issuesOn("DRAFT");
     finalMessages.push(
       { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
       { stop_reason: "end_turn", content: [text("DRAFT")], usage: {} },
@@ -578,7 +597,7 @@ describe("final_response replace flag", () => {
   });
 
   it("keeps streamed revision deltas and appended notes as plain deltas", async () => {
-    skepticCritique = "VERDICT: REVISE\n**Skeptic Review:** x";
+    skepticCritique = issuesOn("DRAFT");
     finalMessages.push(
       { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
       { stop_reason: "end_turn", content: [text("DRAFT")], usage: {} },
