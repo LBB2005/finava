@@ -28,11 +28,29 @@ export default function ChatContainer() {
   const streamingContent = useChatStore((s) => (s.conversationId ? s.streamsByConv[s.conversationId]?.streamingContent : "")) ?? "";
   const agentSteps = useChatStore((s) => (s.conversationId ? s.streamsByConv[s.conversationId]?.agentSteps : undefined)) ?? EMPTY_STEPS;
   const ceoThinking = useChatStore((s) => (s.conversationId ? s.streamsByConv[s.conversationId]?.ceoThinking : "")) ?? "";
+  const crewProgress = useChatStore((s) => (s.conversationId ? s.streamsByConv[s.conversationId]?.crewProgress : null)) ?? null;
 
   const onSuggestion = (text: string) =>
     enqueueSend({ convId: conversationId, text, mode, context: null, kind: "send" });
   const onDiscoverDeeper = (query: string) =>
     enqueueSend({ convId: conversationId, text: query, mode, context: null, kind: "deepen" });
+  // "Run full analysis" under a fast answer: re-ask the question that answer was
+  // about, this time with the crew. The engine falls back to the conversation's
+  // last question if we can't find the turn this answer replied to.
+  const onRunFullAnalysis = (message: ChatMessage) => {
+    const idx = messages.findIndex((m) => m.id === message.id);
+    const question = [...messages.slice(0, idx < 0 ? messages.length : idx)]
+      .reverse()
+      .find((m) => m.role === "user")?.content ?? "";
+    enqueueSend({ convId: conversationId, text: question, mode, context: null, kind: "full_analysis" });
+  };
+
+  // The crew announces its own ETA and says when it is against its budget; both
+  // belong on screen rather than behind a spinner.
+  const budgetWarning =
+    crewProgress?.budgetRemainingSeconds != null
+      ? { message: "Time budget reached — writing the report from what finished.", kind: "time" as const }
+      : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -48,6 +66,9 @@ export default function ChatContainer() {
         onDiscoverDeeper={onDiscoverDeeper}
         agentSteps={agentSteps}
         ceoThinking={ceoThinking}
+        crewPlanSeconds={crewProgress?.etaSeconds}
+        budgetWarning={budgetWarning}
+        onRunFullAnalysis={onRunFullAnalysis}
       />
     </div>
   );
