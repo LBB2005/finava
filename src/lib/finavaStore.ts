@@ -4,6 +4,7 @@
 // progress persists if the user toggles away mid-stream. runFinava() is deduped by
 // an in-flight guard, so a double tab-click can't fire two runs.
 
+import { mutate } from "swr";
 import { authFetch } from "@/lib/authFetch";
 import { SIGNAL_ORDER, type FinavaAnalysis, type FinavaEvent, type FinavaSignal } from "@/lib/finava";
 
@@ -75,6 +76,16 @@ function withSignal(analysis: FinavaAnalysis, signal: FinavaSignal): FinavaAnaly
   return { ...analysis, signals: next };
 }
 
+/** A run recomputes the canonical score/DCF server-side; refresh every facts read of this ticker. */
+function revalidateFacts(sym: string) {
+  void mutate((key: unknown) => {
+    if (typeof key !== "string") return false;
+    if (key === `/api/facts/${sym}` || key.startsWith(`/api/facts/${sym}?`)) return true;
+    const m = key.match(/^\/api\/facts\?tickers=([^&]*)/);
+    return !!m && m[1].split(",").includes(sym);
+  });
+}
+
 /**
  * Kick off (or no-op resume) the analysis for a ticker. Safe to call repeatedly.
  * `force` re-runs a done/hydrated ticker stale-while-revalidate style: the old
@@ -137,6 +148,7 @@ export async function runFinava(ticker: string, opts: { force?: boolean } = {}):
             analysis: { ...cur.analysis, verdict: event.verdict },
             updatedAt: new Date().toISOString(),
           });
+          revalidateFacts(sym);
         } else if (event.type === "error") {
           setEntry(sym, { ...cur, status: "error", error: event.message });
         }
