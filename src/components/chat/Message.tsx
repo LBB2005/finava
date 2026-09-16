@@ -36,6 +36,7 @@ import DiscoverResult from "./DiscoverResult";
 import type { DiscoverMessageContent } from "@/lib/scoutTypes";
 import { contextPill, type ChatContext } from "@/lib/chatContext";
 import { toUserFacingError } from "@/lib/userFacingError";
+import SecondOpinion from "./answer/SecondOpinion";
 import AnswerCard from "./answer/AnswerCard";
 import { isContractShaped } from "@/lib/answerFormat";
 import { shouldShowGlossary } from "@/lib/glossary";
@@ -617,46 +618,6 @@ function PromptBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-/* ── Skeptic critique callout ───────────────────────────────────────── */
-function SkepticCritique({ critique }: { critique: string }) {
-  return (
-    <div
-      style={{
-        borderRadius: "var(--radius-md)",
-        border: "1px solid var(--color-warn-border)",
-        background: "var(--color-warn-bg)",
-        padding: "14px 18px",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-        <svg
-          width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="2" strokeLinecap="round"
-          style={{ color: "var(--color-warn)", flexShrink: 0 }}
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
-        <span
-          style={{
-            fontSize: "var(--text-micro)",
-            fontWeight: 700,
-            color: "var(--color-warn-heading)",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-          }}
-        >
-          Second Opinion
-        </span>
-      </div>
-      <Markdown style={{ color: "var(--color-warn-text)" }}>
-        {critique}
-      </Markdown>
-    </div>
-  );
-}
-
 /* ── Simple chat avatar ─────────────────────────────────────────────── */
 function FinavaAvatar() {
   // Frost f4: bare accent mark — no solid plate behind the brand letter.
@@ -786,12 +747,12 @@ function MessageInner({
     );
   }
 
-  /* Agent / deep research: ribbon → verdict → optional critique */
+  /* Agent / deep research: ribbon → verdict → the second-opinion receipt */
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {hasTrace && <AgentRibbon steps={message.agentTrace!} />}
       <VerdictBlock message={message} glossary={glossary} />
-      {message.critique && <SkepticCritique critique={message.critique} />}
+      {message.critique && <SecondOpinion critique={message.critique} />}
       {message.followups && message.followups.length > 0 && onSuggestion && (
         <div style={{ paddingTop: 2 }}>
           <div
