@@ -1854,3 +1854,33 @@ html:has(.landing-root) { scroll-behavior: smooth; }
   padding: 28px 18px; text-align: center;
   font-size: var(--text-sm); color: var(--color-muted);
 }
+
+/* ── Answer UI (W2-3) ─────────────────────────────────────────────────
+   Verdict-first answer card, crew progress chips and glossary marks. */
+
+/* The running analyst's dot breathes; finished ones sit still. */
+@keyframes crew-chip-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.crew-chip-pulse { animation: crew-chip-pulse 1.6s ease-in-out infinite; }
+
+/* Key-number rows warm slightly on hover so the source chips read as attached
+   to that figure rather than floating. */
+.key-number-row:hover { background: var(--color-surface); }
+
+/* The answer prose is a serif lede — its markdown wrapper must not re-impose
+   the body type scale. */
+.answer-prose p {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: inherit;
+  margin: 0;
+}
+
+/* A glossary term firms up on hover/focus rather than changing colour. */
+.glossary-term:hover,
+.glossary-term:focus-visible {
+  text-decoration-color: var(--color-accent) !important;
+}

@@ -1,12 +1,8 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import StreamingMarkdown, { useSmoothStream } from "./StreamingMarkdown";
 import Message from "./Message";
 import TypingIndicator from "./TypingIndicator";
-import { LiveElapsed } from "./ResponseTiming";
-import AgentDetailModal from "@/components/agent/AgentDetailModal";
-import ModelBadge from "@/components/ui/ModelBadge";
-import { AGENT_LABELS } from "@/types/chat";
 import type { ChatMessage, ChatMode, AgentStep, Template } from "@/types/chat";
 import { useChatStore } from "@/stores/chatStore";
 import { useMarketPulse } from "@/hooks/useMarketPulse";
@@ -14,6 +10,10 @@ import { usePortfolio } from "@/hooks/usePortfolio";
 import { usMarketStatus } from "@/lib/marketHours";
 import useSWR from "swr";
 import { authFetcher } from "@/lib/authFetch";
+import CrewProgress from "./answer/CrewProgress";
+import ExperienceQuestion from "./answer/ExperienceQuestion";
+import { useExperienceLevel } from "@/hooks/useExperienceLevel";
+import type { BudgetWarning } from "@/lib/chat/crewProgress";
 
 /* ── Starter prompts with tags ──────────────────────────────────────────── */
 
@@ -63,244 +63,6 @@ function FinavaAvatar() {
   );
 }
 
-function Spinner() {
-  return (
-    <span
-      className="inline-block rounded-full border-2 border-[var(--color-accent)] border-t-transparent flex-shrink-0"
-      style={{ width: 12, height: 12, animation: "spin 0.9s linear infinite" }}
-    />
-  );
-}
-
-/* ── Agent activity panel ("Research crew") ─────────────────────────────── */
-function AgentActivityPanel({ steps, ceoThinking, startedAt }: { steps: AgentStep[]; ceoThinking?: string; startedAt?: number | null }) {
-  const [detailStep, setDetailStep] = useState<AgentStep | null>(null);
-  const complete  = steps.filter((s) => s.status === "complete").length;
-  const running   = steps.filter((s) => s.status === "running").length;
-  const total     = steps.length;
-  const isCompiling = ceoThinking === "Compiling all reports…";
-
-  // Before any agent reports in, show the same Calm Orb "thinking" beat as
-  // Simple chat — a gentle breathing wait while the crew is being deployed.
-  if (!total) {
-    return <TypingIndicator label="Assembling your research crew" startedAt={startedAt} />;
-  }
-
-  return (
-    <>
-      {detailStep && (
-        <AgentDetailModal step={detailStep} onClose={() => setDetailStep(null)} />
-      )}
-
-      {/* Mobile compact bar */}
-      <div className="frost-card flex sm:hidden items-center gap-3 px-4 py-3 rounded-[var(--radius-xl)] fade-in">
-        <span className="flex gap-1 flex-shrink-0">
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="typing-dot inline-block w-[5px] h-[5px] rounded-full" style={{ background: "var(--color-accent)", animationDelay: `${i * 160}ms` }} />
-          ))}
-        </span>
-        <span className="flex-1 text-[length:var(--text-sm)] text-[var(--color-text-secondary)]">
-          {running > 0 ? `${running} agent${running > 1 ? "s" : ""} analyzing…` : `${complete} of ${total} complete`}
-        </span>
-        <div className="rounded-full overflow-hidden flex-shrink-0" style={{ width: 60, height: 3, background: "var(--color-surface-2)" }}>
-          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(complete / total) * 100}%`, background: "var(--color-accent)" }} />
-        </div>
-      </div>
-
-      {/* Desktop full panel */}
-      <div className="hidden sm:flex gap-[14px]">
-      <FinavaAvatar />
-      <div className="flex-1 min-w-0 pt-0">
-        <div className="frost-card rounded-[var(--radius-xl)] overflow-hidden fade-in">
-          {/* Header — translucent strip, bare accent crew mark (Frost f4) */}
-          <div
-            className="frost-strip frost-hairline flex items-center gap-3 px-[14px] py-[11px]"
-            style={{ borderBottom: "1px solid" }}
-          >
-            <div
-              className="w-[24px] h-[24px] flex items-center justify-center flex-shrink-0"
-              style={{ color: "var(--color-accent)" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
-            <div className="flex flex-col gap-[1px]">
-              <span className="text-[length:var(--text-sm)] font-semibold text-[var(--color-text)]">Research crew</span>
-              <span className="text-[length:var(--text-meta)] text-[var(--color-muted)]">
-                {running > 0
-                  ? `${running} analyzing · ${complete} complete`
-                  : `${complete} of ${total} complete`}
-              </span>
-            </div>
-            {/* Progress meter */}
-            <div className="ml-auto flex items-center gap-[10px]">
-              <LiveElapsed startedAt={startedAt ?? null} className="text-[length:var(--text-meta)] text-[var(--color-muted)]" />
-              <span className="text-[length:var(--text-meta)] font-semibold text-[var(--color-text-secondary)] tabular-nums">
-                {complete}/{total}
-              </span>
-              <div
-                className="rounded-full overflow-hidden"
-                style={{ width: 80, height: 4, background: "color-mix(in oklab, var(--color-text) 10%, transparent)" }}
-              >
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${(complete / total) * 100}%`,
-                    background: "linear-gradient(90deg, color-mix(in oklab, var(--color-accent) 70%, var(--color-bg)), var(--color-accent))",
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Agent rows */}
-          <div>
-            {steps.map((step) => {
-                const isSkeptic = step.agent === "skeptic_review";
-                const label = isSkeptic ? "Skeptic Review" : (AGENT_LABELS[step.agent] ?? step.agent);
-                const focus = AGENT_FOCUS[step.agent] ?? "";
-
-                return (
-                  <div
-                    key={step.agent}
-                    className="flex items-center gap-3 px-[14px] py-[9px] transition-colors duration-300"
-                    style={{
-                      borderBottom: "1px solid color-mix(in oklab, var(--color-text) 7%, transparent)",
-                      borderTop: isSkeptic ? "1px solid color-mix(in oklab, var(--color-warn) 30%, transparent)" : undefined,
-                      // Frost: the analyzing row lifts gently off the glass.
-                      ...(step.status === "running"
-                        ? {
-                            background: "color-mix(in oklab, var(--color-bg) 60%, transparent)",
-                            borderRadius: "var(--radius-md)",
-                            boxShadow: "var(--shadow-card)",
-                          }
-                        : {}),
-                    }}
-                  >
-                    {/* Status icon */}
-                    <div className="flex justify-center" style={{ width: 16 }}>
-                      {step.status === "complete" && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-bull)" strokeWidth="2.5" strokeLinecap="round">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                      {step.status === "running" && <Spinner />}
-                      {step.status === "error" && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-bear)" strokeWidth="2.5" strokeLinecap="round">
-                          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                        </svg>
-                      )}
-                      {step.status === "pending" && (
-                        <span
-                          className="inline-block rounded-full"
-                          style={{ width: 8, height: 8, border: "1.5px solid var(--color-border-strong)" }}
-                        />
-                      )}
-                    </div>
-
-                    {/* Name + focus */}
-                    <div className="flex-1 min-w-0 flex items-baseline gap-2">
-                      <span
-                        className="text-[length:var(--text-sm)] font-semibold inline-flex items-center gap-1"
-                        style={{ color: step.status === "pending" ? "var(--color-muted)" : "var(--color-text)" }}
-                      >
-                        {isSkeptic && (
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
-                            <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                          </svg>
-                        )}
-                        {label}
-                      </span>
-                      {focus && (
-                        <span className="text-[length:var(--text-meta)] text-[var(--color-muted)] truncate">{focus}</span>
-                      )}
-                    </div>
-
-                    {/* Model badge — lights up while this agent runs */}
-                    {step.models && step.models.length > 0 && (
-                      <ModelBadge
-                        brands={step.models}
-                        size={11}
-                        showLabel
-                        lit={step.status === "running"}
-                        dim={step.status === "pending"}
-                      />
-                    )}
-
-                    {/* Status badge / view full button */}
-                    {(step.status === "complete" || step.status === "error") && step.result ? (
-                      <button
-                        onClick={() => setDetailStep(step)}
-                        className="text-[length:var(--text-micro)] font-semibold uppercase tracking-[0.1em] flex-shrink-0 px-[7px] py-[3px] rounded-[var(--radius-xs)] transition-colors duration-100"
-                        style={{ background: "var(--color-accent-light)", color: "var(--color-accent)", border: "none", cursor: "pointer", fontFamily: "inherit" }}
-                      >
-                        View
-                      </button>
-                    ) : (
-                      <span
-                        className="text-[length:var(--text-micro)] font-semibold uppercase tracking-[0.16em] flex-shrink-0"
-                        style={{
-                          color:
-                            step.status === "complete" ? "var(--color-bull)"
-                            : step.status === "running" ? "var(--color-accent)"
-                            : step.status === "error" ? "var(--color-bear)"
-                            : "var(--color-muted)",
-                        }}
-                      >
-                        {step.status === "complete" ? "complete"
-                          : step.status === "running" ? "analyzing"
-                          : step.status === "error" ? "error"
-                          : "queued"}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-          </div>
-
-          {/* Footer: compiling / synthesizing */}
-          {(isCompiling || (total > 0 && running > 0)) && (
-            <div
-              className="frost-strip frost-hairline px-[14px] py-[10px] flex items-center gap-2"
-              style={{ borderTop: "1px solid" }}
-            >
-              <span className="ticker-bars flex-shrink-0 text-[var(--color-accent)]" role="img" aria-label="Analyzing">
-                <i></i><i></i><i></i><i></i>
-              </span>
-              <span className="text-[length:var(--text-meta)] italic text-[var(--color-text-secondary)] ml-1">
-                {isCompiling ? "CEO is synthesizing findings…" : "Agents running in parallel…"}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-      </div>
-    </>
-  );
-}
-
-/** One-line focus blurb shown next to each agent name */
-const AGENT_FOCUS: Record<string, string> = {
-  run_risk_agent:        "Beta, drawdown, correlation",
-  run_news_agent:        "Last 72h material headlines",
-  run_macro_agent:       "Rates, FX, growth backdrop",
-  run_technical_agent:   "Trend, support, momentum",
-  run_dcf_agent:         "Intrinsic value range",
-  run_earnings_agent:    "EPS trends, upcoming catalysts",
-  run_insider_agent:     "Form-4 activity & exec changes",
-  run_sentiment_agent:   "Social, news flow, options skew",
-  run_competitor_agent:  "Peer comparison",
-  run_options_agent:     "Options flow, put/call ratio",
-  run_comparables_agent: "Peer multiples & relative value",
-  run_graham_agent:      "Benjamin Graham scorecard",
-  run_analyst_agent:     "Wall Street price targets",
-  run_hype_agent:        "Reddit, X, YouTube momentum",
-  run_fundamentals_agent:"Revenue, margins, FCF trends",
-  skeptic_review:        "Stress-test the thesis",
-};
 
 /* ── Market Pulse strip ──────────────────────────────────────────────────── */
 function MarketPulse() {
@@ -381,6 +143,8 @@ function EmptyState({ onSuggestion }: { onSuggestion?: (text: string) => void })
   const hasBook = holdings.length > 0;
   const suggestions = hasBook ? PORTFOLIO_SUGGESTIONS : STARTER_SUGGESTIONS;
   const setActiveTemplate = useChatStore((s) => s.setActiveTemplate);
+  // First run only: one question, then never again.
+  const { answered, loading: levelLoading, mutate: refreshLevel } = useExperienceLevel();
   const now = new Date();
   const hour = now.getHours();
   const greeting =
@@ -409,6 +173,8 @@ function EmptyState({ onSuggestion }: { onSuggestion?: (text: string) => void })
               : "Ask about any stock, or pick a prompt below to see what Finava does."}
           </p>
         </div>
+
+        {!levelLoading && !answered && <ExperienceQuestion onAnswered={refreshLevel} />}
 
         <MarketPulse />
 
@@ -501,6 +267,13 @@ interface Props {
   onDiscoverDeeper?: (query: string) => void;
   agentSteps?: AgentStep[];
   ceoThinking?: string;
+  /** From W2-2's `crew_plan` event — the run's own time estimate, when sent. */
+  crewPlanSeconds?: number;
+  /** From W2-2's `budget_warning` event. */
+  budgetWarning?: BudgetWarning | null;
+  /** Re-run a fast answer with the full crew (wired by W2-2). */
+  onRunFullAnalysis?: (message: ChatMessage) => void;
+  runFullAnalysisLabel?: string | null;
 }
 
 export default function MessageList({
@@ -513,6 +286,10 @@ export default function MessageList({
   onDiscoverDeeper,
   agentSteps = [],
   ceoThinking,
+  crewPlanSeconds,
+  budgetWarning,
+  onRunFullAnalysis,
+  runFullAnalysisLabel,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -550,12 +327,31 @@ export default function MessageList({
     <div className="flex-1 overflow-y-auto print-transcript" style={{ scrollbarGutter: "stable both-edges" }}>
       <div className="mx-auto max-w-[720px] px-4 pt-8 pb-[var(--content-pad-bottom)] flex flex-col gap-7">
         {messages.map((msg) => (
-          <Message key={msg.id} message={msg} onSuggestion={onSuggestion} onDiscoverDeeper={onDiscoverDeeper} />
+          <Message
+            key={msg.id}
+            message={msg}
+            onSuggestion={onSuggestion}
+            onDiscoverDeeper={onDiscoverDeeper}
+            onRunFullAnalysis={onRunFullAnalysis}
+            runFullAnalysisLabel={runFullAnalysisLabel}
+          />
         ))}
 
-        {/* Agent activity panel */}
-        {showAgentActivity && (
-          <AgentActivityPanel steps={agentSteps} ceoThinking={ceoThinking} startedAt={streamStartedAt} />
+        {/* Crew progress — chips per analyst plus an ETA that re-estimates from
+            the pace, so nobody waits behind a spinner with no number. */}
+        {showAgentActivity && agentSteps.length > 0 && (
+          <CrewProgress
+            steps={agentSteps}
+            startedAt={streamStartedAt}
+            plannedSeconds={crewPlanSeconds}
+            budgetWarning={budgetWarning}
+            note={ceoThinking}
+          />
+        )}
+        {/* Before any analyst reports there is nothing to count — say what is
+            actually happening, not "Assembling your research crew". */}
+        {showAgentActivity && agentSteps.length === 0 && (
+          <TypingIndicator label={ceoThinking || "Planning which analysts to run"} startedAt={streamStartedAt} />
         )}
 
         {/* Streaming response — Claude-style word-by-word fade + steady pacing */}

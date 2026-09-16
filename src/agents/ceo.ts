@@ -1,4 +1,5 @@
 import { anthropic, MODEL } from "@/lib/anthropic";
+import { answerFollowupPrompt, parseFollowups } from "@/lib/chat/answerFollowups";
 import { generate, AGENT_MODELS, type AgentKey } from "@/lib/llm";
 import { badgeBrands, type Brand } from "@/lib/models";
 import { recordUsage, currentRunCredits } from "@/lib/usage";
@@ -714,18 +715,6 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
     messages.push({ role: "user", content: toolResults });
   }
 
-  // Follow-up questions depend only on the user's prompt, so start the (cheap)
-  // call now and let it run concurrently with the skeptic→revision pass instead
-  // of adding its latency at the end. `.catch` attached immediately so an early
-  // rejection can never surface as an unhandled rejection.
-  const followupsPromise: Promise<string | null> = finalResponse
-    ? generate({
-        agent: "chatFollowups",
-        maxTokens: 120,
-        prompt: `Generate exactly 3 short follow-up research questions (max 12 words each) based on this question. Return a JSON array of strings only, no other text.\n\nQuestion: ${userPrompt.slice(0, 200)}`,
-      }).catch(() => null)
-    : Promise.resolve(null);
-
   // If the loop exhausted MAX_ITERATIONS while still requesting tools, finalResponse
   // is empty — emit a fallback so the client never sees a silent blank/hang.
   // Nothing to review or revise in that case.
@@ -796,17 +785,17 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
     }
   }
 
-  // Emit the follow-up questions (started before the skeptic pass — by now the
-  // Haiku call has usually already finished). Best-effort: a null/parse failure
-  // never fails the response.
+  // Follow-up chips are generated from the finished report, so they can only
+  // start once it exists. Best-effort: a failure never fails the response.
   try {
-    const raw = await followupsPromise;
-    const match = raw?.match(/\[[\s\S]*\]/);
-    if (match) {
-      const questions = JSON.parse(match[0]) as string[];
-      if (Array.isArray(questions) && questions.length > 0) {
-        emit({ type: "followups", questions: questions.slice(0, 3).map(String) });
-      }
+    if (finalResponse) {
+      const raw = await generate({
+        agent: "chatFollowups",
+        maxTokens: 160,
+        prompt: answerFollowupPrompt({ question: userPrompt, answer: finalResponse }),
+      });
+      const questions = parseFollowups(raw, { question: userPrompt });
+      if (questions.length > 0) emit({ type: "followups", questions });
     }
   } catch {
     // Follow-ups are best-effort — don't fail the response

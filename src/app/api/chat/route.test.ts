@@ -175,11 +175,16 @@ describe("POST /api/chat", () => {
     expect(body).toContain('data: {"text":"looks rich."}');
     expect(body).toContain('"followups":["Compare MSFT","DCF AAPL","Risks?"]');
     expect(body).toContain("data: [DONE]");
+    // The chips are drawn from the answer the user just read, not the question
+    // alone — the prompt carries both.
     expect(deps.generate).toHaveBeenCalledWith({
       agent: "chatFollowups",
-      maxTokens: 120,
-      prompt: expect.stringContaining("Question: What about AAPL?"),
+      maxTokens: 160,
+      prompt: expect.stringContaining("AAPL looks rich."),
     });
+    expect(deps.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: expect.stringContaining("The user asked: What about AAPL?") })
+    );
     expect(deps.recordUsage).toHaveBeenCalledWith({
       agent: "chat",
       model: "claude-test",

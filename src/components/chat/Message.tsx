@@ -36,6 +36,10 @@ import DiscoverResult from "./DiscoverResult";
 import type { DiscoverMessageContent } from "@/lib/scoutTypes";
 import { contextPill, type ChatContext } from "@/lib/chatContext";
 import { toUserFacingError } from "@/lib/userFacingError";
+import AnswerCard from "./answer/AnswerCard";
+import { isContractShaped } from "@/lib/answerFormat";
+import { shouldShowGlossary } from "@/lib/glossary";
+import { useExperienceLevel } from "@/hooks/useExperienceLevel";
 
 /* ── Agent focus blurbs (mirrors MessageList) ────────────────────────── */
 const AGENT_FOCUS: Record<string, string> = {
@@ -378,8 +382,14 @@ function AgentRibbon({ steps }: { steps: AgentStep[] }) {
 /* ── Verdict wrapper — left-accent card housing the markdown response ── */
 function VerdictBlock({
   message,
+  glossary,
+  onRunFullAnalysis,
+  runFullAnalysisLabel,
 }: {
   message: ChatMessage;
+  glossary?: boolean;
+  onRunFullAnalysis?: () => void;
+  runFullAnalysisLabel?: string | null;
 }) {
   const timestamp = new Date(message.createdAt).toLocaleTimeString([], {
     hour: "2-digit",
@@ -390,6 +400,27 @@ function VerdictBlock({
   // The card holds the report's actual verdict sentence. No verdict found (or a
   // stopped run that never reached it): no card, never a fragment.
   const verdict = isAgentMode ? extractVerdict(message.content) : null;
+
+  const footer = (
+    <MessageFooter message={message} timestamp={timestamp} isAgentMode={isAgentMode} />
+  );
+
+  // Written to the answer contract: verdict first, numbers with sources, the
+  // long report folded away. Anything else renders exactly as it did before.
+  if (isContractShaped(message.content)) {
+    return (
+      <div style={{ padding: "4px 0 8px" }}>
+        <AnswerCard
+          markdown={message.content}
+          messageId={message.id}
+          glossary={glossary}
+          footer={footer}
+          onRunFullAnalysis={onRunFullAnalysis}
+          runFullAnalysisLabel={runFullAnalysisLabel}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -418,38 +449,52 @@ function VerdictBlock({
       )}
 
       {/* Response body */}
-      <Markdown>{message.content}</Markdown>
+      <Markdown glossary={glossary}>{message.content}</Markdown>
 
-      {/* Footer: timestamp + mode badge */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>
+      {footer}
+    </div>
+  );
+}
+
+/* ── Footer: timestamp, mode badge, receipt, Stop state ──────────────── */
+function MessageFooter({
+  message,
+  timestamp,
+  isAgentMode,
+}: {
+  message: ChatMessage;
+  timestamp: string;
+  isAgentMode: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>
+      <span
+        style={{
+          fontSize: "var(--text-meta)",
+          color: "var(--color-muted)",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {timestamp}
+      </span>
+      {isAgentMode && (
         <span
           style={{
-            fontSize: "var(--text-meta)",
-            color: "var(--color-muted)",
-            fontVariantNumeric: "tabular-nums",
+            background: message.mode === "deep_research" ? "var(--color-deep-research-light)" : "var(--color-accent-light)",
+            color: message.mode === "deep_research" ? "var(--color-deep-research)" : "var(--color-accent)",
+            padding: "2px 7px",
+            borderRadius: 999,
+            fontSize: "var(--text-micro)",
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
           }}
         >
-          {timestamp}
+          {message.mode === "deep_research" ? "Deep Research" : "Agent"}
         </span>
-        {isAgentMode && (
-          <span
-            style={{
-              background: message.mode === "deep_research" ? "var(--color-deep-research-light)" : "var(--color-accent-light)",
-              color: message.mode === "deep_research" ? "var(--color-deep-research)" : "var(--color-accent)",
-              padding: "2px 7px",
-              borderRadius: 999,
-              fontSize: "var(--text-micro)",
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-            }}
-          >
-            {message.mode === "deep_research" ? "Deep Research" : "Agent"}
-          </span>
-        )}
-        <ResponseReceipt durationMs={message.durationMs} />
-        {message.stopped && <StoppedTag />}
-      </div>
+      )}
+      <ResponseReceipt durationMs={message.durationMs} />
+      {message.stopped && <StoppedTag />}
     </div>
   );
 }
@@ -637,11 +682,20 @@ function MessageInner({
   message,
   onSuggestion,
   onDiscoverDeeper,
+  onRunFullAnalysis,
+  runFullAnalysisLabel,
 }: {
   message: ChatMessage;
   onSuggestion?: (text: string) => void;
   onDiscoverDeeper?: (query: string) => void;
+  /** Re-ask this question with the full crew. Shown under fast answers that name a ticker. */
+  onRunFullAnalysis?: (message: ChatMessage) => void;
+  /** e.g. "~2 min · 4 analysts", when the planned depth is known. */
+  runFullAnalysisLabel?: string | null;
 }) {
+  const { level } = useExperienceLevel();
+  const glossary = shouldShowGlossary(level);
+
   if (message.role === "user") {
     return <PromptBubble message={message} />;
   }
@@ -674,20 +728,40 @@ function MessageInner({
   const isAgentMode = message.mode === "agent" || message.mode === "deep_research";
   const hasTrace = !!message.agentTrace?.length;
 
-  /* Simple chat: avatar + flat markdown, no verdict wrapper */
+  /* Simple / fast lane: avatar + answer card (or flat markdown when the reply
+     is not written to the contract — a brevity answer, or a legacy message). */
   if (!isAgentMode) {
+    const timestamp = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const receipt = (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+        <span style={{ fontSize: "var(--text-meta)", color: "var(--color-muted)", fontVariantNumeric: "tabular-nums" }}>
+          {timestamp}
+        </span>
+        <ResponseReceipt durationMs={message.durationMs} />
+        {message.stopped && <StoppedTag />}
+      </div>
+    );
+    const wantsFullAnalysis = onRunFullAnalysis && !message.stopped && mentionsTicker(message.content);
+
     return (
       <div style={{ display: "flex", gap: 14 }}>
         <FinavaAvatar />
         <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
-          <Markdown>{message.content}</Markdown>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-            <span style={{ fontSize: "var(--text-meta)", color: "var(--color-muted)", fontVariantNumeric: "tabular-nums" }}>
-              {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-            </span>
-            <ResponseReceipt durationMs={message.durationMs} />
-            {message.stopped && <StoppedTag />}
-          </div>
+          {isContractShaped(message.content) ? (
+            <AnswerCard
+              markdown={message.content}
+              messageId={message.id}
+              glossary={glossary}
+              footer={receipt}
+              onRunFullAnalysis={wantsFullAnalysis ? () => onRunFullAnalysis!(message) : undefined}
+              runFullAnalysisLabel={runFullAnalysisLabel}
+            />
+          ) : (
+            <>
+              <Markdown glossary={glossary}>{message.content}</Markdown>
+              {receipt}
+            </>
+          )}
           {message.followups && message.followups.length > 0 && onSuggestion && (
             <div style={{ marginTop: 14 }}>
               <div className="eyebrow-label" style={{ color: "var(--color-muted)", marginBottom: 8 }}>
@@ -716,7 +790,7 @@ function MessageInner({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {hasTrace && <AgentRibbon steps={message.agentTrace!} />}
-      <VerdictBlock message={message} />
+      <VerdictBlock message={message} glossary={glossary} />
       {message.critique && <SkepticCritique critique={message.critique} />}
       {message.followups && message.followups.length > 0 && onSuggestion && (
         <div style={{ paddingTop: 2 }}>
@@ -755,10 +829,17 @@ function MessageInner({
   );
 }
 
+/** Does this answer name a ticker? The full-crew button only makes sense then. */
+function mentionsTicker(content: string): boolean {
+  return /(?:^|[\s($])[A-Z]{2,5}(?=[\s.,:;)?!]|$)/m.test(content.replace(/```[\s\S]*?```/g, ""));
+}
+
 export default function Message(props: {
   message: ChatMessage;
   onSuggestion?: (text: string) => void;
   onDiscoverDeeper?: (query: string) => void;
+  onRunFullAnalysis?: (message: ChatMessage) => void;
+  runFullAnalysisLabel?: string | null;
 }) {
   return (
     <MessageErrorBoundary>

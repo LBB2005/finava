@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/requireAuth";
 import { resolvePlan, capabilitiesFor } from "@/lib/entitlements";
 import { TRIAL_DAYS } from "@/lib/plans";
 import { sanitizeAppearance } from "@/lib/appearance";
+import { DEFAULT_EXPERIENCE_LEVEL, sanitizeExperienceLevel } from "@/lib/experienceLevel";
 
 const PAID_STATUSES = new Set(["active", "trialing", "past_due"]);
 
@@ -66,6 +67,12 @@ export async function GET() {
       notifyWeeklyBriefing: (settings?.notifyWeeklyBriefing as boolean) ?? true,
       notifyProductUpdates: (settings?.notifyProductUpdates as boolean) ?? false,
       appearance: settings?.appearance ?? null,
+      // How much Finava explains. `experienceLevelSet` tells the client whether
+      // the first-run question still needs asking.
+      experienceLevel: settings?.experienceLevel
+        ? sanitizeExperienceLevel(settings.experienceLevel)
+        : DEFAULT_EXPERIENCE_LEVEL,
+      experienceLevelSet: typeof settings?.experienceLevel === "string",
       stats: {
         conversations: convSnap.size,
         briefings: briefingSnap.size,
@@ -96,6 +103,11 @@ export async function PATCH(request: Request) {
       "notifyProductUpdates",
     ]) {
       if (key in body) settingsUpdate[key] = body[key];
+    }
+
+    // Only a known level may land on the doc — it is read back into prompts.
+    if ("experienceLevel" in body) {
+      settingsUpdate.experienceLevel = sanitizeExperienceLevel(body.experienceLevel);
     }
 
     // Appearance prefs are device display settings — whitelist each key to its

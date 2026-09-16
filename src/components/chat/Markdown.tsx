@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import ChartBlock from "./ChartBlock";
+import { decorateGlossary } from "./answer/GlossaryTerm";
+import { GlossaryMarks } from "@/lib/glossary";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -127,16 +129,38 @@ export const components: Components = {
   hr: () => <hr className="my-4 border-none border-t border-[var(--color-border)]" />,
 };
 
+/**
+ * The same component map, with the first mention of each jargon term wrapped in
+ * a definition popover. One `GlossaryMarks` per rendered message, so a term is
+ * underlined once however many times it appears.
+ */
+export function glossaryComponents(marks: GlossaryMarks): Components {
+  const decorate = (children: React.ReactNode) => decorateGlossary(children, marks);
+  return {
+    ...components,
+    p: ({ children }) => <p className="text-[0.9rem] leading-[1.75] mb-3 last:mb-0 text-[var(--color-text)]">{decorate(children)}</p>,
+    li: ({ children }) => <li className="text-[0.9rem] leading-relaxed">{decorate(children)}</li>,
+    td: ({ children }) => (
+      <td className="px-4 py-2.5 text-[length:var(--text-sm)] text-[var(--color-text)] align-top">
+        {decorate(children)}
+      </td>
+    ),
+  };
+}
+
 interface Props {
   children: string;
   className?: string;
   style?: React.CSSProperties;
+  /** Underline and define finance jargon on first mention (beginner/intermediate readers). */
+  glossary?: boolean;
 }
 
-export default function Markdown({ children, className = "", style }: Props) {
+export default function Markdown({ children, className = "", style, glossary = false }: Props) {
+  const map = glossary ? glossaryComponents(new GlossaryMarks()) : components;
   return (
     <div className={`markdown-body ${className}`} style={style}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={map}>
         {children}
       </ReactMarkdown>
     </div>
