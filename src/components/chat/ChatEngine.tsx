@@ -16,6 +16,7 @@ import { applyFinalResponse, readSseData } from "@/lib/chat/stream";
 import { agentBody, classifyBody, discoverScoutBody, simpleChatBody, streamAgent, streamSimple } from "@/lib/chat/requests";
 import { discoverToMarkdown } from "@/lib/chat/discoverText";
 import { RunRegistry, stoppedMessage } from "@/lib/chat/runControl";
+import { fullAnalysisPrompt } from "@/lib/chat/escalation";
 import { INTENTS, type Intent } from "@/lib/chat/intent";
 import { toStoredMessage } from "@/lib/chat/storedMessage";
 import {
@@ -534,7 +535,9 @@ export default function ChatEngine() {
       const { holdings, cashBalance, quoteMap } = ctxRef.current;
       const portfolioContext = buildPortfolioContext(holdings, cashBalance, quoteMap);
       const pc = pageContext ?? s().pageContextByConv[convId] ?? null;
-      await runAgentMode(question, portfolioContext, convId, "agent", false, prior, undefined, pc);
+      // The fast answer to this same question is in the history the crew reads,
+      // so the turn has to say it is an escalation or the CEO just recaps it.
+      await runAgentMode(fullAnalysisPrompt(question), portfolioContext, convId, "agent", false, prior, undefined, pc);
     } catch (err) {
       if (runs.wasStopped(ctrl)) return;
       console.error("[full analysis] error:", err);
