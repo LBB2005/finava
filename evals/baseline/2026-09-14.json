@@ -1,0 +1,1095 @@
+{
+ "label": "Sep-14 baseline",
+ "date": "2026-09-14",
+ "commit": "41277e0",
+ "artifact": "https://claude.ai/code/artifact/cb61ead1-bd9d-47ac-9a8c-9a1f6f8bf5d1",
+ "personas": 50,
+ "nps": -100,
+ "npsRatingMean": 2.84,
+ "wouldPay": {
+  "yes": 0,
+  "maybe": 25,
+  "no": 25
+ },
+ "medianMaxPriceUsd": 0.0,
+ "wouldReturnMean": 3.7,
+ "scoreMeans": {
+  "easeOfUse": 4.62,
+  "answerUsefulness": 5.02,
+  "answerClarityForMe": 4.76,
+  "trustInNumbers": 4.1,
+  "speed": 2.78,
+  "modeUnderstanding": 4.62,
+  "wouldReturn": 3.7
+ },
+ "quit": 26,
+ "lostAnswerToCollapse": 44,
+ "turns": 138,
+ "collapsedTurns": 59,
+ "lanes": [
+  {
+   "lane": "clarify",
+   "turns": 10,
+   "collapsed": 0,
+   "medianSec": 2.1,
+   "p90Sec": 3.6
+  },
+  {
+   "lane": "simple",
+   "turns": 37,
+   "collapsed": 0,
+   "medianSec": 15.19,
+   "p90Sec": 26.9
+  },
+  {
+   "lane": "discover",
+   "turns": 6,
+   "collapsed": 0,
+   "medianSec": 41.3,
+   "p90Sec": 58.6
+  },
+  {
+   "lane": "agent",
+   "turns": 80,
+   "collapsed": 56,
+   "medianSec": 253,
+   "p90Sec": 385.9
+  },
+  {
+   "lane": "deep",
+   "turns": 5,
+   "collapsed": 3,
+   "medianSec": 455,
+   "p90Sec": null
+  }
+ ],
+ "switchTests": {
+  "total": 13,
+  "passed": 0
+ },
+ "factCheck": {
+  "correct": 8,
+  "minor": 5,
+  "stale": 4,
+  "wrong": 8,
+  "fabricated": 0
+ },
+ "themes": {
+  "likes": [
+   {
+    "t": "Won't fabricate: gaps shown as 'Unavailable', figures tagged to named sub-agents or sources",
+    "c": 34
+   },
+   {
+    "t": "Self-critiquing Skeptic / Second Opinion pass, as a concept",
+    "c": 23
+   },
+   {
+    "t": "Dollar figures on the user's actual holdings instead of generic percentages",
+    "c": 16
+   },
+   {
+    "t": "Concrete triggers, price levels and ranked actions",
+    "c": 13
+   },
+   {
+    "t": "Domain-literate analysis that takes a real stance",
+    "c": 12
+   },
+   {
+    "t": "Plain-English analogies and explainers in the fast simple lane",
+    "c": 11
+   },
+   {
+    "t": "Fast answers when the simple lane or a short continuation handled the question",
+    "c": 12
+   },
+   {
+    "t": "Clarify chips that let people answer with a tap",
+    "c": 5
+   }
+  ],
+  "frustrations": [
+   {
+    "t": "Multi-minute crew waits with a locked composer, no stop button and no progress or ETA",
+    "c": 48
+   },
+   {
+    "t": "Finished answer lost after streaming: report collapses to a fragment ('.*', ' decisions.*') or the VERDICT shows a scrap of disclaimer",
+    "c": 44
+   },
+   {
+    "t": "Numbers that are wrong, conflict across turns or pages, or get retracted later",
+    "c": 30
+   },
+   {
+    "t": "Reports far too long; requests for brevity ignored and re-run through the full crew",
+    "c": 26
+   },
+   {
+    "t": "Skeptic critique contradicts the report it is attached to (critiques content that isn't there, or wrongly calls true facts fabricated)",
+    "c": 23
+   },
+   {
+    "t": "Core data for the question is missing (options/IV, dividend yield, price targets, capex, bond duration, ETF holdings, correlations)",
+    "c": 19
+   },
+   {
+    "t": "Jargon above the user's level (RSI, MACD, SMA, beta, EV/EBITDA, DCF, Graham Number)",
+    "c": 17
+   },
+   {
+    "t": "Follow-ups deny, disown or contradict the earlier answer, or invent a cause for the failure",
+    "c": 16
+   },
+   {
+    "t": "Auto routing is invisible and sometimes wrong (heavy crew for casual follow-ups, a stock screener for an ETF question, asking for holdings that are already linked)",
+    "c": 15
+   }
+  ],
+  "missing": [
+   {
+    "t": "Stop/cancel control during crew and Deep Research runs",
+    "c": 34
+   },
+   {
+    "t": "Plain-language bottom line first, with a short-vs-full toggle or 'keep it fast' mode",
+    "c": 22
+   },
+   {
+    "t": "Report persistence and recovery: regenerate or retry, error state, pin or export, run receipt or audit log",
+    "c": 11
+   },
+   {
+    "t": "Progress indicator or ETA during long runs (including Discover)",
+    "c": 11
+   },
+   {
+    "t": "Inline glossary or tap-to-define for finance terms",
+    "c": 8
+   },
+   {
+    "t": "Options chain, IV rank, delta, implied move, short interest",
+    "c": 7
+   },
+   {
+    "t": "Income and fund data: dividend yield and payout ratio, ETF holdings and weights, bond duration and yields",
+    "c": 6
+   },
+   {
+    "t": "Clickable primary-source links (filings, articles) instead of only internal agent names",
+    "c": 6
+   },
+   {
+    "t": "Visible indicator of which lane or engine answered",
+    "c": 4
+   },
+   {
+    "t": "Transparent, versioned, deterministic score methodology",
+    "c": 3
+   }
+  ]
+ },
+ "perPersona": [
+  {
+   "id": 1,
+   "ai": "A1",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 7,
+    "speed": 8,
+    "modeUnderstanding": 2,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "no",
+   "price": 0,
+   "quit": false
+  },
+  {
+   "id": 2,
+   "ai": "A1",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 3,
+    "answerClarityForMe": 2,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 2,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 3,
+   "ai": "A2",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 7,
+    "answerUsefulness": 5,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 4,
+    "speed": 6,
+    "modeUnderstanding": 3,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 0,
+   "quit": false
+  },
+  {
+   "id": 4,
+   "ai": "A2",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 4,
+    "trustInNumbers": 4,
+    "speed": 3,
+    "modeUnderstanding": 3,
+    "wouldReturn": 4
+   },
+   "nps": 4,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 5,
+   "ai": "A3",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 8,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 8,
+    "trustInNumbers": 5,
+    "speed": 8,
+    "modeUnderstanding": 5,
+    "wouldReturn": 6
+   },
+   "nps": 6,
+   "pay": "maybe",
+   "price": 5,
+   "quit": false
+  },
+  {
+   "id": 6,
+   "ai": "A3",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 7,
+    "trustInNumbers": 3,
+    "speed": 5,
+    "modeUnderstanding": 6,
+    "wouldReturn": 4
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 10,
+   "quit": true
+  },
+  {
+   "id": 7,
+   "ai": "A4",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 2,
+    "speed": 3,
+    "modeUnderstanding": 3,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 8,
+   "ai": "A4",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 6,
+    "speed": 3,
+    "modeUnderstanding": 7,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 15,
+   "quit": false
+  },
+  {
+   "id": 9,
+   "ai": "A5",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 6,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 3
+   },
+   "nps": 3,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 10,
+   "ai": "A5",
+   "stock": "S1",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 3,
+    "answerClarityForMe": 4,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 2
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 11,
+   "ai": "A1",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 5,
+    "answerClarityForMe": 3,
+    "trustInNumbers": 5,
+    "speed": 3,
+    "modeUnderstanding": 2,
+    "wouldReturn": 4
+   },
+   "nps": 3,
+   "pay": "no",
+   "price": 0,
+   "quit": false
+  },
+  {
+   "id": 12,
+   "ai": "A1",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 3,
+    "answerClarityForMe": 4,
+    "trustInNumbers": 5,
+    "speed": 4,
+    "modeUnderstanding": 2,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 13,
+   "ai": "A2",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 5,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 6,
+    "speed": 3,
+    "modeUnderstanding": 6,
+    "wouldReturn": 5
+   },
+   "nps": 5,
+   "pay": "maybe",
+   "price": 5,
+   "quit": true
+  },
+  {
+   "id": 14,
+   "ai": "A2",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 7,
+    "speed": 4,
+    "modeUnderstanding": 5,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 5,
+   "quit": false
+  },
+  {
+   "id": 15,
+   "ai": "A3",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 5,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": false
+  },
+  {
+   "id": 16,
+   "ai": "A3",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 4,
+    "trustInNumbers": 7,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "maybe",
+   "price": 15,
+   "quit": true
+  },
+  {
+   "id": 17,
+   "ai": "A4",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 4,
+    "answerClarityForMe": 4,
+    "trustInNumbers": 2,
+    "speed": 3,
+    "modeUnderstanding": 2,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 18,
+   "ai": "A4",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 3,
+    "speed": 3,
+    "modeUnderstanding": 7,
+    "wouldReturn": 4
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 15,
+   "quit": false
+  },
+  {
+   "id": 19,
+   "ai": "A5",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 7,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 8,
+    "trustInNumbers": 3,
+    "speed": 5,
+    "modeUnderstanding": 8,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 10,
+   "quit": false
+  },
+  {
+   "id": 20,
+   "ai": "A5",
+   "stock": "S2",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 4,
+    "answerClarityForMe": 3,
+    "trustInNumbers": 5,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 3
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 10,
+   "quit": false
+  },
+  {
+   "id": 21,
+   "ai": "A1",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 4,
+    "answerClarityForMe": 3,
+    "trustInNumbers": 5,
+    "speed": 2,
+    "modeUnderstanding": 3,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 22,
+   "ai": "A1",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 1,
+    "answerClarityForMe": 2,
+    "trustInNumbers": 3,
+    "speed": 1,
+    "modeUnderstanding": 3,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 23,
+   "ai": "A2",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 4,
+    "trustInNumbers": 6,
+    "speed": 3,
+    "modeUnderstanding": 3,
+    "wouldReturn": 5
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 5,
+   "quit": false
+  },
+  {
+   "id": 24,
+   "ai": "A2",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 5,
+    "answerClarityForMe": 2,
+    "trustInNumbers": 4,
+    "speed": 2,
+    "modeUnderstanding": 3,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 8,
+   "quit": false
+  },
+  {
+   "id": 25,
+   "ai": "A3",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 7,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 5
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 15,
+   "quit": false
+  },
+  {
+   "id": 26,
+   "ai": "A3",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 4,
+    "speed": 2,
+    "modeUnderstanding": 4,
+    "wouldReturn": 5
+   },
+   "nps": 5,
+   "pay": "maybe",
+   "price": 10,
+   "quit": false
+  },
+  {
+   "id": 27,
+   "ai": "A4",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 2,
+    "answerClarityForMe": 3,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 4,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "maybe",
+   "price": 10,
+   "quit": true
+  },
+  {
+   "id": 28,
+   "ai": "A4",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 2,
+    "answerClarityForMe": 2,
+    "trustInNumbers": 2,
+    "speed": 2,
+    "modeUnderstanding": 4,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 29,
+   "ai": "A5",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 6,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 3
+   },
+   "nps": 3,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 30,
+   "ai": "A5",
+   "stock": "S3",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 4,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 3,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 31,
+   "ai": "A1",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 6,
+    "speed": 2,
+    "modeUnderstanding": 6,
+    "wouldReturn": 4
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 15,
+   "quit": false
+  },
+  {
+   "id": 32,
+   "ai": "A1",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 3,
+    "answerClarityForMe": 2,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 33,
+   "ai": "A2",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 7,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 4,
+    "speed": 4,
+    "modeUnderstanding": 7,
+    "wouldReturn": 6
+   },
+   "nps": 5,
+   "pay": "maybe",
+   "price": 15,
+   "quit": false
+  },
+  {
+   "id": 34,
+   "ai": "A2",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 4,
+    "wouldReturn": 4
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 10,
+   "quit": false
+  },
+  {
+   "id": 35,
+   "ai": "A3",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 4,
+    "speed": 3,
+    "modeUnderstanding": 7,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 20,
+   "quit": true
+  },
+  {
+   "id": 36,
+   "ai": "A3",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 3,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 6,
+    "speed": 2,
+    "modeUnderstanding": 7,
+    "wouldReturn": 2
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 37,
+   "ai": "A4",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 7,
+    "trustInNumbers": 3,
+    "speed": 3,
+    "modeUnderstanding": 5,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 20,
+   "quit": false
+  },
+  {
+   "id": 38,
+   "ai": "A4",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 2,
+    "answerClarityForMe": 3,
+    "trustInNumbers": 3,
+    "speed": 1,
+    "modeUnderstanding": 6,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 39,
+   "ai": "A5",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 3,
+    "answerClarityForMe": 3,
+    "trustInNumbers": 2,
+    "speed": 2,
+    "modeUnderstanding": 4,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 40,
+   "ai": "A5",
+   "stock": "S4",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 5,
+    "trustInNumbers": 4,
+    "speed": 3,
+    "modeUnderstanding": 7,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 41,
+   "ai": "A1",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 2,
+    "answerClarityForMe": 2,
+    "trustInNumbers": 2,
+    "speed": 2,
+    "modeUnderstanding": 5,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 42,
+   "ai": "A1",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 8,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 7,
+    "speed": 2,
+    "modeUnderstanding": 4,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 20,
+   "quit": false
+  },
+  {
+   "id": 43,
+   "ai": "A2",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 7,
+    "answerUsefulness": 6,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 4,
+    "speed": 3,
+    "modeUnderstanding": 5,
+    "wouldReturn": 5
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 20,
+   "quit": false
+  },
+  {
+   "id": 44,
+   "ai": "A2",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 4,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 2,
+    "speed": 2,
+    "modeUnderstanding": 3,
+    "wouldReturn": 3
+   },
+   "nps": 2,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 45,
+   "ai": "A3",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 5,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 5,
+    "speed": 2,
+    "modeUnderstanding": 4,
+    "wouldReturn": 4
+   },
+   "nps": 3,
+   "pay": "no",
+   "price": 0,
+   "quit": false
+  },
+  {
+   "id": 46,
+   "ai": "A3",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 5,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 7,
+    "trustInNumbers": 5,
+    "speed": 3,
+    "modeUnderstanding": 6,
+    "wouldReturn": 6
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 30,
+   "quit": false
+  },
+  {
+   "id": 47,
+   "ai": "A4",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 6,
+    "answerUsefulness": 7,
+    "answerClarityForMe": 8,
+    "trustInNumbers": 3,
+    "speed": 2,
+    "modeUnderstanding": 7,
+    "wouldReturn": 5
+   },
+   "nps": 4,
+   "pay": "maybe",
+   "price": 20,
+   "quit": false
+  },
+  {
+   "id": 48,
+   "ai": "A4",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 3,
+    "answerUsefulness": 5,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 4,
+    "speed": 2,
+    "modeUnderstanding": 6,
+    "wouldReturn": 4
+   },
+   "nps": 3,
+   "pay": "maybe",
+   "price": 25,
+   "quit": false
+  },
+  {
+   "id": 49,
+   "ai": "A5",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 2,
+    "answerUsefulness": 2,
+    "answerClarityForMe": 3,
+    "trustInNumbers": 1,
+    "speed": 1,
+    "modeUnderstanding": 5,
+    "wouldReturn": 1
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  },
+  {
+   "id": 50,
+   "ai": "A5",
+   "stock": "S5",
+   "scores": {
+    "easeOfUse": 4,
+    "answerUsefulness": 4,
+    "answerClarityForMe": 6,
+    "trustInNumbers": 2,
+    "speed": 3,
+    "modeUnderstanding": 3,
+    "wouldReturn": 2
+   },
+   "nps": 1,
+   "pay": "no",
+   "price": 0,
+   "quit": true
+  }
+ ]
+}

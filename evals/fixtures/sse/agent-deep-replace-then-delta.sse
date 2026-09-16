@@ -1,0 +1,20 @@
+data: {"type":"crew_plan","agents":["valuation","fundamentals","news"],"etaSeconds":300,"deep":true}
+
+data: {"type":"final_response","content":"## Answer\nAAPL"}
+
+data: {"type":"final_response","content":" "}
+
+data: {"type":"final_response","content":"looks exp"}
+
+data: {"type":"final_response","content":"ensive versus peers "}
+
+data: {"type":"final_response","content":"on "}
+
+data: {"type":"budget_warning","remainingSeconds":20}
+
+data: {"type":"final_response","content":"## Answer\nAAPL trades at 31× forward earnings against a large-cap tech median of 27×; services growth (≈14% y/y) carries the premium.\n\n## Key numbers\n| Metric | Value | Source | As of |\n|---|---|---|---|\n| Forward P/E | 31.2× | Facts layer | 2026-09-11 |\n| Services revenue growth | 14.1% | SEC 10-Q | 2026-08-01 |\n\n## Confidence & gaps\nLow — no segment margin data for Services.\n\n*This is research, not personalized investment advice. Past performance does not guarantee future results.*","replace":true}
+
+data: {"type":"final_response","content":"\n\n_This run reached its cost cap, so some agents did not finish._"}
+
+data: {"type":"done"}
+

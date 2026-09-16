@@ -1,0 +1,24 @@
+data: {"type":"final_response","content":"I r"}
+
+data: {"type":"final_response","content":"e"}
+
+data: {"type":"final_response","content":"ad this as low"}
+
+data: {"type":"final_response","content":"-valua"}
+
+data: {"type":"final_response","content":"ti"}
+
+data: {"type":"final_response","content":"on energy names wi"}
+
+data: {"type":"final_response","content":"th positive free cash"}
+
+data: {"type":"final_response","content":" flow — h"}
+
+data: {"type":"final_response","content":"ere are t"}
+
+data: {"type":"final_response","content":"he closest fits."}
+
+data: {"type":"scout_complete","tier":"quick","query":"cheap energy stocks","interpretation":"I read this as low-valuation energy names with positive free cash flow — here are the closest fits.","picks":[{"ticker":"XOM","name":"Exxon Mobil","sector":"Energy","score":81,"grade":"A","fitRank":1,"f":{},"reason":"Cheapest FCF yield in the group (≈ 8.9%)."},{"ticker":"EOG","name":"EOG Resources","sector":"Energy","score":77,"grade":"B+","fitRank":2,"f":{},"reason":"Net cash balance sheet and a variable dividend."},{"ticker":"PSX","name":"Phillips 66","sector":"Energy","score":70,"grade":"B","fitRank":3,"f":{},"reason":"Refining margins recovering; trades below book."}],"layout":"ranked"}
+
+data: {"type":"done"}
+

@@ -1,0 +1,1 @@
+I read this as low-valuation energy names with positive free cash flow — here are the closest fits.

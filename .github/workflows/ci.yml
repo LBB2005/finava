@@ -1,7 +1,7 @@
 name: CI
 
 # Gate every PR and every push to main on lint, typecheck, the test coverage
-# ratchet, and a production build. Nothing merges red. Configure this workflow as
+# ratchet, the smoke eval, and a production build. Nothing merges red. Configure this workflow as
 # a required status check in the repo's branch-protection rules for `main`.
 on:
   pull_request:
@@ -38,6 +38,13 @@ jobs:
       # drops below them fails the run, so coverage can only go up.
       - name: Test (coverage ratchet)
         run: npm run test:cov
+
+      # Replays recorded SSE through the real client stream code: saved answer ==
+      # streamed answer, 13 cross-lane switches keep context, contract answers
+      # parse, Stop keeps the partial. Mocked, no network, no spend. `eval:live`
+      # and `eval:panel` are paid and never run in CI.
+      - name: Smoke eval
+        run: npm run eval:smoke
 
       # `next build` evaluates modules that validate env at import (src/lib/env.ts
       # via the Firebase clients), and firebase-admin parses the private key at
