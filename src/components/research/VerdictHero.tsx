@@ -3,6 +3,8 @@ import Link from "next/link";
 import { HORIZONS, fmtPct1, type HorizonKey, type RankedStock } from "@/lib/research";
 import { verdictFor, heroTag, priceMoveLabel, SIGNAL_STRENGTH_HELP, type Verdict } from "@/lib/verdict";
 import { ArcGauge, GradeBadge } from "./primitives";
+import { useTickerFactsSlim } from "@/hooks/useTickerFacts";
+import { factTitle } from "@/lib/facts/format";
 
 /** Three-dot signal-strength indicator — 3 = Strong, 2 = Moderate, 1 = Weak. */
 function StrengthDots({ level }: { level: Verdict["signalStrength"] }) {
@@ -19,12 +21,16 @@ function StrengthDots({ level }: { level: Verdict["signalStrength"] }) {
 /**
  * B1 hero — the horizon's highest-scoring name (never a "pick") across one strip: arc gauge +
  * identity, live price, and the rule-based factor read filling the middle.
- * Everything shown is derived from the factor scores; no price target is
+ * The rank and the rule-based factor read come from the universe's factor
+ * scores; the gauge and grade are the facts layer's Finava Score (the number the
+ * stock page shows), or "—" until it has been computed. No price target is
  * implied here (the DCF on the stock page is the valuation surface).
  */
 export default function VerdictHero({ feature, horizon }: { feature: RankedStock; horizon: HorizonKey }) {
   const tag = HORIZONS.find((h) => h.key === horizon)?.tag ?? "1W";
   const v = verdictFor(feature, horizon); // cheap arithmetic; the React Compiler memoizes
+  const slim = useTickerFactsSlim([feature.ticker]);
+  const fs = slim.map.get(feature.ticker)?.score;
   const up = feature.chg >= 0;
   const take = v.take.split(". ")[0] + ".";
   const horizonMove = feature.mv[horizon];
@@ -33,14 +39,24 @@ export default function VerdictHero({ feature, horizon }: { feature: RankedStock
   return (
     <div className="b1-hero">
       <div className="b1-pick">
-        <ArcGauge score={feature.score} size={92} stroke={10} />
+        {fs?.value ? (
+          <div title={factTitle(fs)}><ArcGauge score={fs.value.total} size={92} stroke={10} /></div>
+        ) : (
+          <div
+            title={fs?.note ?? "Not scored yet"}
+            className="serif"
+            style={{ width: 92, height: 92, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-muted)", fontSize: "var(--text-stat)" }}
+          >
+            —
+          </div>
+        )}
         <div className="b1-id">
           <span className="mono b1-tag">{heroTag(tag)}</span>
           <div className="b1-idrow">
             <Link href={`/stock/${feature.ticker}`} className="tklink">
               <span className="serif b1-tk">{feature.ticker}</span>
             </Link>
-            <GradeBadge grade={feature.grade} size="md" />
+            {fs?.value && <GradeBadge grade={fs.value.grade} size="md" />}
           </div>
           <span className="b1-name truncate">{feature.name}</span>
         </div>
@@ -70,8 +86,8 @@ export default function VerdictHero({ feature, horizon }: { feature: RankedStock
           price history, deliberately not a forecast. */}
       <div className="b1-val">
         <div className="b1-valrow">
-          <span className="b1-vk">Factor score</span>
-          <span className="serif b1-vv">{feature.score}</span>
+          <span className="b1-vk">Factor rank</span>
+          <span className="serif b1-vv">#{feature.rank}</span>
         </div>
         <div className="b1-valrow">
           <span className="b1-vk">{tag} return</span>

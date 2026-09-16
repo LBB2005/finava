@@ -4,7 +4,7 @@
 
 import type { ScoreInputs } from "@/lib/finavaScore";
 import { getBasicFinancials, getEarnings, getPeerMetrics, getRecommendationTrends, getCandles } from "@/lib/finnhub";
-import { getCikByTicker, getCompanyFacts, extractFinancialMetrics, extractFundamentalTimeSeries } from "@/lib/edgar";
+import { getCikByTicker, getCompanyFacts, extractFinancialMetrics, extractFundamentalTimeSeries, extractCurrentSharesOutstanding } from "@/lib/edgar";
 import { suggestedWaccFromBeta, defaultFairValue, type DcfInputs } from "@/lib/dcf";
 import { getGrokSentiment } from "@/lib/sentiment/grok";
 import { insiderNetFlow } from "@/lib/stockData";
@@ -77,40 +77,94 @@ export function annualizedVolatility(closes: number[]): number | null {
   return Math.sqrt(variance) * Math.sqrt(252);
 }
 
-/** DCF fair value + FCF conversion via the dcf lib + EDGAR facts. WACC uses the default
- *  (~9%) beta assumption; beta-tuned WACC is a future refinement. */
+/** Filing-derived DCF ingredients. Pure; cached by the facts layer per ticker. */
+export interface DcfBase {
+  baseFcf: number | null;
+  fcfIsProxy: boolean;
+  sharesEdgar: number | null;
+  sharesAsOf: string | null;
+  netDebt: number;
+  historicalGrowth: number | null;
+  fcfConversion: number | null;
+  revenueCagr3y: number | null;
+}
+
+const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/** Everything the DCF needs from SEC companyfacts. `null` facts → an all-null base. */
+export function extractDcfBase(companyFacts: unknown): DcfBase {
+  if (!companyFacts) {
+    return { baseFcf: null, fcfIsProxy: true, sharesEdgar: null, sharesAsOf: null, netDebt: 0, historicalGrowth: null, fcfConversion: null, revenueCagr3y: null };
+  }
+  const mm = extractFinancialMetrics(companyFacts);
+  const series = extractFundamentalTimeSeries(companyFacts, 6);
+  const ocf = numOrNull(mm.operatingCashFlow);
+  const capex = numOrNull(mm.capex);
+  const baseFcf = ocf != null ? (capex != null ? ocf - capex : ocf) : null;
+  const netIncome = numOrNull(mm.netIncome);
+  const rev = series.revenue;
+  const historicalGrowth = rev.length >= 2 && rev[0].value > 0 && rev.at(-1)!.value > 0
+    ? Math.pow(rev.at(-1)!.value / rev[0].value, 1 / (rev.length - 1)) - 1 : null;
+  const revenueCagr3y = rev.length >= 4 && rev.at(-4)!.value > 0 && rev.at(-1)!.value > 0
+    ? Math.pow(rev.at(-1)!.value / rev.at(-4)!.value, 1 / 3) - 1 : null;
+  // Cover-page count, not the annual weighted average: the latter is pre-split
+  // until the next 10-K (see extractCurrentSharesOutstanding).
+  const cur = extractCurrentSharesOutstanding(companyFacts);
+  return {
+    baseFcf,
+    fcfIsProxy: capex == null,
+    sharesEdgar: cur?.shares ?? numOrNull(mm.sharesOutstanding),
+    sharesAsOf: cur?.asOf ?? null,
+    netDebt: (numOrNull(mm.totalDebt) ?? 0) - (numOrNull(mm.cash) ?? 0),
+    historicalGrowth,
+    fcfConversion: baseFcf != null && netIncome != null && netIncome > 0 ? baseFcf / netIncome : null,
+    revenueCagr3y,
+  };
+}
+
+/** The one place DCF inputs are finished: beta-tuned WACC, shares with a mcap÷price fallback. */
+export function finishDcfInputs(
+  base: DcfBase,
+  market: { price: number | null; beta: number | null; marketCapMillions: number | null; currency: string | null }
+): DcfInputs {
+  let shares = base.sharesEdgar;
+  if ((shares == null || shares <= 0) && market.marketCapMillions != null && market.price != null && market.price > 0) {
+    shares = (market.marketCapMillions * 1e6) / market.price;
+  }
+  return {
+    baseFcf: base.baseFcf,
+    fcfIsProxy: base.fcfIsProxy,
+    sharesOutstanding: shares != null && shares > 0 ? shares : null,
+    netDebt: base.netDebt,
+    historicalGrowth: base.historicalGrowth,
+    suggestedWacc: suggestedWaccFromBeta(market.beta),
+    currentPrice: market.price,
+    currency: market.currency ?? "USD",
+  };
+}
+
+/** DCF bundle for callers outside the facts layer. Same path as facts.dcf. */
 async function computeDcfBundle(
   symbol: string,
   price: number | null
 ): Promise<{ dcfFair: number | null; fcfConversion: number | null; revenueCagr3y: number | null }> {
   const cik = await getCikByTicker(symbol);
   if (!cik) return { dcfFair: null, fcfConversion: null, revenueCagr3y: null };
-  const facts = await getCompanyFacts(cik);
-  const mm = extractFinancialMetrics(facts);
-  const series = extractFundamentalTimeSeries(facts, 6);
-  const ocf = typeof mm.operatingCashFlow === "number" ? mm.operatingCashFlow : null;
-  const capex = typeof mm.capex === "number" ? mm.capex : null;
-  const baseFcf = ocf != null ? (capex != null ? ocf - capex : ocf) : null;
-  const netIncome = typeof mm.netIncome === "number" ? mm.netIncome : null;
-  const fcfConversion = baseFcf != null && netIncome != null && netIncome > 0 ? baseFcf / netIncome : null;
-  const rev = series.revenue;
-  const cagr = rev.length >= 2 && rev[0].value > 0 && rev.at(-1)!.value > 0
-    ? Math.pow(rev.at(-1)!.value / rev[0].value, 1 / (rev.length - 1)) - 1 : null;
-  // True 3-year revenue CAGR for the growth factor (distinct from the full-series
-  // CAGR used for DCF growth above).
-  const revenueCagr3y = rev.length >= 4 && rev.at(-4)!.value > 0 && rev.at(-1)!.value > 0
-    ? Math.pow(rev.at(-1)!.value / rev.at(-4)!.value, 1 / 3) - 1 : null;
-  const inputs: DcfInputs = {
-    baseFcf,
-    fcfIsProxy: capex == null,
-    sharesOutstanding: typeof mm.sharesOutstanding === "number" ? mm.sharesOutstanding : null,
-    netDebt: (typeof mm.totalDebt === "number" ? mm.totalDebt : 0) - (typeof mm.cash === "number" ? mm.cash : 0),
-    historicalGrowth: cagr,
-    suggestedWacc: suggestedWaccFromBeta(null),
-    currentPrice: price,
-    currency: "USD",
-  };
-  return { dcfFair: defaultFairValue(inputs), fcfConversion, revenueCagr3y };
+  const [facts, metricRaw] = await Promise.all([
+    getCompanyFacts(cik),
+    getBasicFinancials(symbol).catch(() => null),
+  ]);
+  const m = (metricRaw as { metric?: Metric } | null)?.metric ?? {};
+  const base = extractDcfBase(facts);
+  const inputs = finishDcfInputs(base, { price, beta: n(m.beta), marketCapMillions: n(m.marketCapitalization), currency: "USD" });
+  return { dcfFair: defaultFairValue(inputs), fcfConversion: base.fcfConversion, revenueCagr3y: base.revenueCagr3y };
+}
+
+export interface PrecomputedScoreParts {
+  /** Canonical DCF parts from the facts layer; skips the internal DCF fetch. */
+  dcf?: { dcfFair: number | null; fcfConversion: number | null; revenueCagr3y: number | null };
+  /** Canonical P/E (price ÷ EPS TTM). `undefined` keeps Finnhub's peTTM. */
+  peTTM?: number | null;
 }
 
 /** Full assembly. Failure-isolated per source; missing fields stay null (excluded).
@@ -121,7 +175,8 @@ export async function assembleScoreInputs(
   price: number | null,
   insiderTrades: Array<{ shares: number }> | null,
   newsSentiment: number | null,
-  companyName?: string
+  companyName?: string,
+  pre: PrecomputedScoreParts = {}
 ): Promise<ScoreInputs> {
   const base: ScoreInputs = {
     revenueYoY: null, epsYoY: null, revenueCagr3y: null,
@@ -144,11 +199,16 @@ export async function assembleScoreInputs(
     getGrokSentiment(symbol, companyName).catch(() => null),
     getCandles(symbol, "D", now - 300 * day, now).catch(() => null),
     getCandles("SPY", "D", now - 300 * day, now).catch(() => null),
-    computeDcfBundle(symbol, price).catch(() => ({ dcfFair: null, fcfConversion: null, revenueCagr3y: null })),
+    pre.dcf
+      ? Promise.resolve(pre.dcf)
+      : computeDcfBundle(symbol, price).catch(() => ({ dcfFair: null, fcfConversion: null, revenueCagr3y: null })),
   ]);
 
   const m = (metricRaw as { metric?: Metric } | null)?.metric ?? {};
   Object.assign(base, metricsToFundamentalInputs(m));
+  // One P/E everywhere: the facts layer's price ÷ EPS. peerPe stays on Finnhub's
+  // basis, so the peer ratio mixes bases by a fraction of a percent (accepted).
+  if (pre.peTTM !== undefined) base.peTTM = pre.peTTM;
   base.peerPe = peerRaw.peerPe;
   base.peerPs = peerRaw.peerPs;
   base.earningsSurprisePct = surpriseAvg(earningsRaw as Array<{ actual?: number; estimate?: number }> | null);

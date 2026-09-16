@@ -7,8 +7,10 @@ import { useWatchlistStore } from "@/stores/watchlistStore";
 import { useToast } from "@/hooks/useToast";
 import { useLiveBoard } from "@/hooks/useLiveBoard";
 import { useFactorUniverse } from "@/hooks/useFactorUniverse";
-import { compositeScore } from "@/lib/compositeScore";
-import { type FactorScores, type Stock } from "@/lib/research";
+import { useTickerFactsSlim } from "@/hooks/useTickerFacts";
+import { factTitle } from "@/lib/facts/format";
+import type { Fact, SlimScore } from "@/lib/facts/types";
+import { type FactorScores } from "@/lib/research";
 import { CONSTITUENT_BY_TICKER } from "@/lib/extraUniverse";
 import ScorePill from "@/components/ui/ScorePill";
 import ChatContextButton from "@/components/chat/ChatContextButton";
@@ -167,7 +169,9 @@ interface RowData {
   changePct: number | null;
   marketCap: number | null;
   f: FactorScores | null;
-  score: number;
+  /** The facts layer's cached Finava Score; null until computed. */
+  score: number | null;
+  scoreFact: Fact<SlimScore> | null;
   signals: Signal[];
 }
 
@@ -210,11 +214,11 @@ function TableRow({ data, isLast, onRemove, onClick }: {
           </span>
         </div>
       </td>
-      {/* Finava score pill — "—" until the factor universe has this ticker */}
+      {/* Finava score — the facts layer's cached score, "—" until computed */}
       <td style={{ padding: "8px 12px" }}>
-        {data.f
-          ? <ScorePill score={data.score} />
-          : <span className="mono" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>—</span>}
+        {data.score != null
+          ? <span title={data.scoreFact ? factTitle(data.scoreFact) : undefined}><ScorePill score={data.score} /></span>
+          : <span className="mono" title={data.scoreFact?.note} style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>—</span>}
       </td>
       {/* Last price */}
       <td className="mono" style={{ textAlign: "right", fontSize: "var(--text-sm)", color: "var(--color-text)", padding: "8px 12px", fontVariantNumeric: "tabular-nums" }}>
@@ -331,6 +335,7 @@ export default function WatchlistSplitRail() {
 
   const { liveMap } = useLiveBoard(tickers);
   const { universe } = useFactorUniverse();
+  const slim = useTickerFactsSlim(tickers);
 
   // Build enriched row data
   const rows: RowData[] = tickers.map((ticker) => {
@@ -338,7 +343,8 @@ export default function WatchlistSplitRail() {
     const stock = universe?.find((s) => s.ticker === ticker) ?? null;
     const f = stock?.f ?? null;
     const changePct = live?.changePct ?? null;
-    const sc = stock ? compositeScore(stock) : 0;
+    const scoreFact = slim.map.get(ticker)?.score ?? null;
+    const sc = scoreFact?.value?.total ?? null;
     const signals = deriveSignals(changePct, f);
     return {
       ticker,
@@ -348,9 +354,10 @@ export default function WatchlistSplitRail() {
       marketCap: live?.marketCap ?? null,
       f,
       score: sc,
+      scoreFact,
       signals,
     };
-  }).sort((a, b) => b.score - a.score);
+  }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.ticker.localeCompare(b.ticker));
 
   // Insight summary
   const n = rows.length;
@@ -601,7 +608,7 @@ export default function WatchlistSplitRail() {
 
               {/* Score leaders */}
               <RailSection title="Score leaders">
-                {rows.slice(0, 5).map((row) => (
+                {rows.filter((row) => row.score != null).slice(0, 5).map((row) => (
                   <div
                     key={row.ticker}
                     className="portfolio-row"
@@ -610,7 +617,7 @@ export default function WatchlistSplitRail() {
                   >
                     <span className="mono" style={{ fontSize: "var(--text-meta)", fontWeight: 700, color: "var(--color-accent)" }}>{row.ticker}</span>
                     <div style={{ height: 6, borderRadius: 999, background: "var(--color-surface-2)", overflow: "hidden" }}>
-                      <div style={{ width: `${row.score}%`, height: "100%", borderRadius: 999, background: scoreTierColor(row.score) }} />
+                      <div style={{ width: `${row.score}%`, height: "100%", borderRadius: 999, background: scoreTierColor(row.score!) }} />
                     </div>
                     <span className="mono" style={{ fontSize: "var(--text-meta)", fontWeight: 700, color: "var(--color-text)" }}>{row.score}</span>
                   </div>

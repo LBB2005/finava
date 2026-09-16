@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
 import { fmtPct1, type RankedStock } from "@/lib/research";
-import { GradeBadge, MiniBars } from "./primitives";
+import { FactGradeCell, FactScoreCell, MiniBars } from "./primitives";
+import type { Fact, SlimScore } from "@/lib/facts/types";
 
 /** One leaderboard / match row — shared by the Board and the Screen results table. */
-export default function LadderRow({ s, highlight = false }: { s: RankedStock; highlight?: boolean }) {
+/** `fs` is the facts layer's cached score; rank still comes from the factor composite. */
+export default function LadderRow({ s, fs, highlight = false }: { s: RankedStock; fs?: Fact<SlimScore>; highlight?: boolean }) {
   return (
     <tr className={highlight ? "top3" : ""}>
       <td className="mono" style={{ textAlign: "left", fontSize: "var(--text-sm)", fontWeight: 600, color: highlight ? "var(--color-accent)" : "var(--color-muted)" }}>
@@ -21,15 +23,8 @@ export default function LadderRow({ s, highlight = false }: { s: RankedStock; hi
         {fmtPct1(s.chg)}
       </td>
       <td><div className="flex justify-center"><MiniBars f={s.f} /></div></td>
-      <td>
-        <div className="flex items-center" style={{ gap: 9 }}>
-          <div className="fbar-track" style={{ flex: 1, height: 7 }}>
-            <div className="fbar-fill" style={{ width: s.score + "%", height: "100%", background: "var(--color-accent)" }} />
-          </div>
-          <span className="serif" style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-text)", width: 24, textAlign: "right" }}>{s.score}</span>
-        </div>
-      </td>
-      <td style={{ textAlign: "center" }}><div className="flex justify-center"><GradeBadge grade={s.grade} size="sm" /></div></td>
+      <td><FactScoreCell fact={fs} trackClass="fbar-track" trackStyle={{ flex: 1, height: 7 }} /></td>
+      <td style={{ textAlign: "center" }}><div className="flex justify-center"><FactGradeCell fact={fs} /></div></td>
     </tr>
   );
 }

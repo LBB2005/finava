@@ -2,9 +2,14 @@
 import { useFinava } from "@/hooks/useFinava";
 import { useVerdictCache, verdictAge } from "@/hooks/useVerdictCache";
 import { useQuotes } from "@/hooks/useQuotes";
+import { useTickerFacts } from "@/hooks/useTickerFacts";
+import { pillarsToSignals } from "@/lib/facts/signals";
+import { factTitle } from "@/lib/facts/format";
+import { blendFairValue } from "@/lib/finavaScore";
 import {
   SIGNAL_ORDER,
   SIGNAL_LABELS,
+  verdictLabel,
   type FinavaSignal,
   type Stance,
   type SignalKey,
@@ -131,10 +136,10 @@ function SignalBar({ signalKey, signal }: { signalKey: SignalKey; signal: Finava
   );
 }
 
-function CompareBox({ src, value, price, highlight }: { src: string; value: number | null; price: number | null; highlight?: boolean }) {
+function CompareBox({ src, value, price, highlight, title }: { src: string; value: number | null; price: number | null; highlight?: boolean; title?: string }) {
   const up = value != null && price && price > 0 ? ((value - price) / price) * 100 : null;
   return (
-    <div style={{ flex: 1, textAlign: "center", padding: "9px 6px", borderRadius: "var(--radius-md)", background: highlight ? "var(--color-accent-light)" : "var(--color-surface)", border: `1px solid ${highlight ? "var(--color-accent-medium)" : "var(--color-border)"}` }}>
+    <div title={title} style={{ flex: 1, textAlign: "center", padding: "9px 6px", borderRadius: "var(--radius-md)", background: highlight ? "var(--color-accent-light)" : "var(--color-surface)", border: `1px solid ${highlight ? "var(--color-accent-medium)" : "var(--color-border)"}` }}>
       <div className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>{src}</div>
       <div className="serif" style={{ fontSize: "var(--text-lg)", fontWeight: 700, color: "var(--color-text)" }}>{value != null ? fmtMoney(value).replace(".00", "") : "—"}</div>
       <div className="mono" style={{ fontSize: "var(--text-micro)", marginTop: 1, color: up == null ? "var(--color-muted)" : up >= 0 ? "var(--color-bull)" : "var(--color-bear)" }}>{up != null ? signedPct(up) : "n/a"}</div>
@@ -154,10 +159,26 @@ export function FinavaTab({ ticker }: { ticker: string }) {
   const { neverRun, resolving } = useVerdictCache(ticker);
 
   const verdict = analysis.verdict;
-  const byKey = new Map(analysis.signals.map((s) => [s.key, s]));
-  const ringColor = verdict ? stanceColor(verdict.score >= 60 ? "bullish" : verdict.score <= 40 ? "bearish" : "neutral") : "var(--color-accent)";
   const streaming = status === "streaming";
   const age = verdictAge(updatedAt);
+
+  // One set of numbers: while a run streams, show it live; otherwise the facts
+  // layer's canonical score, pillars and valuation lead, and a cached narrative
+  // is shown as written earlier.
+  const facts = useTickerFacts(ticker);
+  const scored = facts.data?.score.value ?? null;
+  const canonical = !streaming && scored ? scored : null;
+  const signalsShown = canonical ? pillarsToSignals(canonical.pillars) : analysis.signals;
+  const byKey = new Map(signalsShown.map((s) => [s.key, s]));
+  const orbScore = canonical?.total ?? verdict?.score ?? null;
+  const orbStance = canonical ? verdictLabel(canonical.total) : verdict?.stance ?? null;
+  const orbConfidence = canonical?.confidence ?? verdict?.confidence ?? null;
+  const ringColor = orbScore != null ? stanceColor(orbScore >= 60 ? "bullish" : orbScore <= 40 ? "bearish" : "neutral") : "var(--color-accent)";
+  const scoreTitle = facts.data ? factTitle(facts.data.score) : undefined;
+  const dcfValue = facts.data?.dcf.value?.fairValue ?? null;
+  const streetValue = facts.data?.streetTarget.value ?? null;
+  const blended = blendFairValue({ dcf: dcfValue, street: streetValue });
+  const narrativeScoreDiffers = !!(verdict && canonical && verdict.score !== canonical.total);
 
   if (status === "idle") {
     if (resolving && !neverRun) {
@@ -188,8 +209,10 @@ export function FinavaTab({ ticker }: { ticker: string }) {
           <button className="tbtn on" onClick={run}>RUN FINAVA&apos;S ANALYSIS</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0 }}>
-          <ScoreOrb score={null} stance={null} color={ringColor} live={false} />
-          <span className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)", letterSpacing: "0.1em" }}>CONFIDENCE —</span>
+          <div title={scoreTitle}>
+            <ScoreOrb score={orbScore} stance={orbStance} color={ringColor} live={false} />
+          </div>
+          <span className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)", letterSpacing: "0.1em" }}>CONFIDENCE {orbConfidence ? orbConfidence.toUpperCase() : "—"}</span>
         </div>
       </div>
     );
@@ -243,6 +266,11 @@ export function FinavaTab({ ticker }: { ticker: string }) {
                   {take.dek}
                 </p>
               )}
+              {narrativeScoreDiffers && (
+                <p className="mono" style={{ margin: "6px 0 0", fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
+                  Narrative written{age ? ` ${age}` : " earlier"} when the score was {verdict!.score}. Score now {canonical!.total}.
+                </p>
+              )}
             </>
           ) : (
             <p className="shimmer-text serif" style={{ margin: "10px 0 0", fontSize: "var(--text-display)", fontWeight: 800 }}>
@@ -251,16 +279,16 @@ export function FinavaTab({ ticker }: { ticker: string }) {
           )}
 
           {/* Crew ribbon — frost summary once settled; the live bars stream below. */}
-          {!streaming && analysis.signals.length > 0 && (
+          {!streaming && signalsShown.length > 0 && (
             <div className="frost-card" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 13px", borderRadius: "var(--radius-lg)", marginTop: 14, flexWrap: "wrap" }}>
-              {analysis.signals.map((s) => (
+              {signalsShown.map((s) => (
                 <span key={s.key} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--text-micro)", color: "var(--color-text-secondary)", fontWeight: s.stance === "bearish" ? 700 : 500 }}>
                   <span style={{ width: 6, height: 6, borderRadius: 99, background: stanceColor(s.stance), flexShrink: 0 }} />
                   {s.label}
                 </span>
               ))}
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 5 }}>
-                {Array.from(new Set(analysis.signals.flatMap((s) => (s.model ? [s.model] : [])))).slice(0, 3).map((m) => (
+                {Array.from(new Set(signalsShown.flatMap((s) => (s.model ? [s.model] : [])))).slice(0, 3).map((m) => (
                   <ModelBadge key={m} slug={m} size={11} />
                 ))}
               </span>
@@ -269,9 +297,11 @@ export function FinavaTab({ ticker }: { ticker: string }) {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, flexShrink: 0 }}>
-          <ScoreOrb score={verdict?.score ?? null} stance={verdict?.stance ?? null} color={ringColor} live={streaming} />
+          <div title={scoreTitle}>
+            <ScoreOrb score={orbScore} stance={orbStance} color={ringColor} live={streaming} />
+          </div>
           <span className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)", letterSpacing: "0.1em" }}>
-            CONFIDENCE {verdict ? verdict.confidence.toUpperCase() : "—"}
+            CONFIDENCE {orbConfidence ? orbConfidence.toUpperCase() : "—"}
           </span>
         </div>
       </div>
@@ -283,13 +313,19 @@ export function FinavaTab({ ticker }: { ticker: string }) {
           <SignalBar key={k} signalKey={k} signal={byKey.get(k)} />
         ))}
 
-        {verdict && (
+        {(verdict || dcfValue != null || streetValue != null) && (
           <div className="fade-in" style={{ marginTop: 20 }}>
             <Rule>Valuation · vs ${price != null ? price.toFixed(2) : "—"}</Rule>
             <div style={{ display: "flex", gap: 8 }}>
-              <CompareBox src="Finava" value={verdict.comparison.finava} price={price} highlight />
-              <CompareBox src="Street" value={verdict.comparison.street} price={price} />
-              <CompareBox src="DCF" value={verdict.comparison.dcf} price={price} />
+              <CompareBox
+                src={dcfValue != null && streetValue != null ? "DCF + Street" : "Finava"}
+                title={dcfValue != null && streetValue != null ? "Blend of DCF and Street target (equal weight)" : "The one available anchor"}
+                value={blended}
+                price={price}
+                highlight
+              />
+              <CompareBox src="Street" value={streetValue} price={price} title={facts.data ? factTitle(facts.data.streetTarget) : undefined} />
+              <CompareBox src="DCF" value={dcfValue} price={price} title={facts.data ? factTitle(facts.data.dcf) : undefined} />
             </div>
           </div>
         )}

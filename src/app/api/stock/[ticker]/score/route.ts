@@ -1,21 +1,15 @@
-// Deterministic Finava Score for a single ticker — the intelligence rail's
-// Score cell and the Overview's pillar bars. Reads the warm 15-minute factor
-// universe memo (the same engine the Research board uses), so this adds zero
-// upstream calls. Public read-only, like /api/research/factors.
-
+// The canonical Finava Score for one ticker, read from the facts layer (the
+// 15-factor engine). Kept for callers of this path; the stock page reads
+// /api/facts/[ticker] directly. A score we can't compute is null with a note.
 import { NextResponse } from "next/server";
-import { getFactorUniverse } from "@/lib/factorUniverse";
-import { composite, grade } from "@/lib/research";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { getTickerFacts } from "@/lib/facts/ticker";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ ticker: string }> }
-) {
-  const limited = await rateLimitGuard(req, "stock-score", {
-    capacity: 20,
-    refillPerSec: 0.5,
-  });
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+export async function GET(req: Request, { params }: { params: Promise<{ ticker: string }> }) {
+  const limited = await rateLimitGuard(req, "stock-score", { capacity: 20, refillPerSec: 0.5 });
   if (limited) return limited;
 
   const { ticker } = await params;
@@ -23,30 +17,20 @@ export async function GET(
   if (!symbol) return NextResponse.json({ error: "Missing ticker." }, { status: 400 });
 
   try {
-    const universe = await getFactorUniverse();
-    const stock = universe.stocks.find((s) => s.ticker === symbol) ?? null;
-    if (!stock) {
-      // Outside the scored universe (non-S&P names) — the rail renders
-      // "Not yet scored".
-      return NextResponse.json(
-        { error: `${symbol} is not in the scored universe yet.` },
-        { status: 404 }
-      );
-    }
-
-    const score = composite(stock, "month");
+    const { score } = await getTickerFacts(symbol);
+    const v = score.value;
     return NextResponse.json({
       ticker: symbol,
-      f: stock.f,
-      score,
-      grade: grade(score),
-      asOf: universe.asOf,
+      score: v?.total ?? null,
+      grade: v?.grade ?? null,
+      pillars: v?.pillars ?? [],
+      confidence: v?.confidence ?? null,
+      asOf: score.asOf,
+      version: v?.version ?? null,
+      note: score.note ?? null,
     });
   } catch (err) {
     console.error("[stock score]", symbol, err);
-    return NextResponse.json(
-      { error: `Couldn't compute the score for ${symbol}.` },
-      { status: 502 }
-    );
+    return NextResponse.json({ error: `Couldn't compute the score for ${symbol}.` }, { status: 502 });
   }
 }

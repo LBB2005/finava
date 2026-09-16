@@ -1,9 +1,10 @@
 // Finava Analysis — deterministic 15-factor score, streamed. The FINAVA tab POSTs here.
 //
-// We assemble real per-metric data (EDGAR + Finnhub metric/candles/peers + Grok X
-// sentiment + insider flow), compute the score DETERMINISTICALLY via computeFinavaScore
-// (six pillars, each a weighted blend of factors, with exclude-and-reweight on missing
-// data), and stream the six pillar signals followed by a verdict. The LLM is used ONLY
+// A run asks the facts layer for a fresh score (getTickerFacts refreshDerived: real
+// EDGAR + Finnhub + Grok inputs through the deterministic computeFinavaScore), which
+// also refreshes the global cache the rail, board and watchlist read. We stream those
+// six pillar signals followed by a verdict, so this tab and every other surface show
+// one number. The LLM is used ONLY
 // to write the narrative ("the take") around the already-decided numbers — never to pick
 // the score. A narrative failure still ships the deterministic verdict, flagged
 // `fallback: true` (no model badge, not cached).
@@ -16,22 +17,10 @@ import { requireAuth } from "@/lib/requireAuth";
 import { checkUsageLimit, usageStore, makeRunContext } from "@/lib/usage";
 import { userRateLimit } from "@/lib/rateLimit";
 import { getStockBundle } from "@/lib/stockData";
-import { assembleScoreInputs } from "@/lib/finavaInputs";
-import {
-  computeFinavaScore,
-  blendFairValue,
-  type PillarScore,
-  type PillarKey,
-} from "@/lib/finavaScore";
-import {
-  stanceFromScore,
-  verdictLabel,
-  SIGNAL_ORDER,
-  type FinavaSignal,
-  type FinavaVerdict,
-  type SignalKey,
-  type FinavaEvent,
-} from "@/lib/finava";
+import { blendFairValue } from "@/lib/finavaScore";
+import { getTickerFacts } from "@/lib/facts/ticker";
+import { pillarsToSignals } from "@/lib/facts/signals";
+import { verdictLabel, type FinavaVerdict, type FinavaEvent } from "@/lib/finava";
 import { DATA_ACCURACY_RULE } from "@/lib/dataAccuracy";
 import { saveVerdict } from "@/lib/verdictStore";
 
@@ -58,34 +47,6 @@ function toStrings(v: unknown): string[] {
     .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
     .map((x) => x.trim())
     .slice(0, 4);
-}
-
-/** Headline = the most extreme present factor in the pillar, with a direction word. */
-function topFactorHeadline(p: PillarScore): string {
-  const present = p.factors.filter((f) => f.score != null);
-  if (present.length === 0) return "Limited data";
-  const top = present.reduce((a, b) =>
-    Math.abs(b.score! - 50) > Math.abs(a.score! - 50) ? b : a
-  );
-  const dir = top.score! >= 60 ? "Strong" : top.score! <= 40 ? "Weak" : "Mixed";
-  return `${dir} ${top.label.toLowerCase()}`;
-}
-
-function pillarToSignal(p: PillarScore): FinavaSignal {
-  const score = p.score == null ? 50 : Math.round(p.score);
-  const present = p.factors.filter((f) => f.score != null);
-  return {
-    key: p.key as SignalKey,
-    label: p.label,
-    score,
-    isNoData: p.score == null, // dark pillar: UI renders N/A instead of a 50 bar
-    stance: stanceFromScore(score),
-    headline: p.score == null ? "No data yet" : topFactorHeadline(p),
-    detail:
-      present.map((f) => f.detail).slice(0, 2).join(" · ") ||
-      "Insufficient data for a confident signal.",
-    factors: p.factors.map((f) => ({ key: f.key, label: f.label, score: f.score, detail: f.detail })),
-  };
 }
 
 export async function POST(
@@ -118,10 +79,6 @@ export async function POST(
   }
 
   const name = bundle.profile?.name ?? symbol;
-  const price = bundle.quote?.price ?? null;
-  const street = bundle.analysts?.targetMean ?? null;
-  const newsSentiment = bundle.sentiment?.score ?? null;
-  const insiderTrades = bundle.insider;
 
   const encoder = new TextEncoder();
   // Assembly (incl. a Grok call up to ~30s) runs INSIDE start() so the HTTP response
@@ -134,32 +91,24 @@ export async function POST(
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`));
 
       try {
-        const inputs = await assembleScoreInputs(symbol, price, insiderTrades, newsSentiment, name);
-        const result = computeFinavaScore(inputs);
-        const dcfFair = inputs.dcfFair;
-        const fairValue = blendFairValue({ dcf: dcfFair, street });
-        const upsidePct =
-          fairValue != null && price && price > 0 ? ((fairValue - price) / price) * 100 : null;
-
-        // Steady peer-relative read: avg premium/discount of P/E & P/S vs the peer
-        // group. Headlined on the card until a Street anchor makes fairValue credible.
-        const pePrem = inputs.peTTM != null && inputs.peTTM > 0 && inputs.peerPe != null && inputs.peerPe > 0
-          ? inputs.peTTM / inputs.peerPe - 1 : null;
-        const psPrem = inputs.psTTM != null && inputs.psTTM > 0 && inputs.peerPs != null && inputs.peerPs > 0
-          ? inputs.psTTM / inputs.peerPs - 1 : null;
-        const prems = [pePrem, psPrem].filter((x): x is number => x != null);
-        const peerPremiumPct = prems.length ? (prems.reduce((a, b) => a + b, 0) / prems.length) * 100 : null;
-
-        // Stream the six pillar signals in display order.
-        const byKey = new Map<PillarKey, PillarScore>(result.pillars.map((p) => [p.key, p]));
-        const signals: FinavaSignal[] = [];
-        for (const key of SIGNAL_ORDER) {
-          const p = byKey.get(key as PillarKey);
-          if (!p) continue;
-          const signal = pillarToSignal(p);
-          signals.push(signal);
-          send({ type: "signal", signal });
+        // One score everywhere: the run refreshes the facts layer's score/DCF
+        // (and its global cache), then streams exactly those numbers.
+        const facts = await getTickerFacts(symbol, { refreshDerived: true });
+        const scored = facts.score.value;
+        if (!scored) {
+          send({ type: "error", message: `Couldn't compute the Finava Score for ${symbol}: ${facts.score.note ?? "not enough data"}.`.replace(/\.\.$/, ".") });
+          return;
         }
+        const price = facts.price.value;
+        const street = facts.streetTarget.value;
+        const dcfFair = facts.dcf.value?.fairValue ?? null;
+        const fairValue = blendFairValue({ dcf: dcfFair, street });
+        const upsidePct = fairValue != null && price && price > 0 ? ((fairValue - price) / price) * 100 : null;
+        const peerPremiumPct = scored.peerPremiumPct;
+        const result = { score: scored.total, confidence: scored.confidence, pillars: scored.pillars };
+
+        const signals = pillarsToSignals(scored.pillars);
+        for (const signal of signals) send({ type: "signal", signal });
 
         // ── Narrative (LLM only writes prose around the decided numbers) ────────
         // A narrative failure (provider error or no usable take) is NOT dressed
