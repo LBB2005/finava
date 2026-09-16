@@ -35,6 +35,7 @@ export async function POST(req: Request) {
     wave,
     templateId,
     pageContext,
+    conversationId,
   } = body;
 
   // Fold the viewed-page snapshot into the CEO's context block so the crew scopes
@@ -105,6 +106,7 @@ export async function POST(req: Request) {
               discover: !!discover,
               tier: tier === "deep" ? "deep" : "quick",
               templateId: typeof templateId === "string" ? templateId : undefined,
+              conversationId: typeof conversationId === "string" ? conversationId : undefined,
             });
           }
         } catch (err) {

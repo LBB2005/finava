@@ -96,7 +96,7 @@ export const AGENT_LABELS: Record<AgentName, string> = {
   skeptic_review: "Skeptic Review",
 };
 
-export type AgentStatus = "pending" | "running" | "complete" | "error";
+export type AgentStatus = "pending" | "running" | "complete" | "error" | "skipped";
 
 export interface AgentStep {
   agent: AgentName;
@@ -111,6 +111,16 @@ export type AgentEvent =
   // Emitted once, right after the CEO decides the crew — lets the UI pop the
   // panel up pre-sized with every agent shown as "queued" before any runs.
   | { type: "crew_planned"; agents: AgentName[] }
+  // The deterministic crew plan (W2-2), emitted before any agent runs so the UI
+  // can show who is on the job and how long it should take. `crew_planned` above
+  // is the older model-chosen announcement and still fires alongside it.
+  | { type: "crew_plan"; agents: string[]; etaSeconds: number; deep?: boolean }
+  // Per-agent lifecycle for the progress row. Carries the elapsed ms on a
+  // terminal status so the ETA countdown can re-base itself.
+  | { type: "agent_progress"; agent: string; status: "running" | "done" | "failed" | "skipped"; ms?: number }
+  // The run is close enough to its wall-clock budget that it will synthesize from
+  // whatever has finished. `remainingSeconds` is what's left of the budget.
+  | { type: "budget_warning"; remainingSeconds: number }
   | { type: "agent_start"; agent: AgentName; models?: Brand[] }
   | { type: "agent_complete"; agent: AgentName; result: string; models?: Brand[] }
   | { type: "agent_error"; agent: AgentName; error: string }

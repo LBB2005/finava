@@ -37,6 +37,7 @@ import {
   TURN_TTL_MS,
   isReusable,
   loadTurnData,
+  recordCrewOutputs,
   resetTurnDataCache,
   saveTurnData,
   type TurnData,
@@ -151,5 +152,32 @@ describe("saveTurnData / loadTurnData", () => {
     await expect(saveTurnData("u1", "c1", turn(new Date(NOW).toISOString()))).resolves.toBeUndefined();
     // The in-memory copy is still usable for the immediate follow-up.
     await expect(loadTurnData("u1", "c1")).resolves.not.toBeNull();
+  });
+});
+
+describe("recordCrewOutputs", () => {
+  it("stores what the crew gathered without erasing the fast lane's data", async () => {
+    resetTurnDataCache();
+    const qc = quickContext("2026-09-15T20:55:00.000Z");
+    await saveTurnData("u1", "c1", { quickContext: qc, storedAt: "2026-09-15T20:55:00.000Z" });
+    await recordCrewOutputs("u1", "c1", { run_dcf_agent: "fair value $120" });
+
+    const stored = await loadTurnData("u1", "c1");
+    expect(stored?.crewOutputs).toEqual({ run_dcf_agent: "fair value $120" });
+    expect(stored?.quickContext).toEqual(qc);
+  });
+
+  it("merges a second crew run's outputs into the first", async () => {
+    resetTurnDataCache();
+    await recordCrewOutputs("u1", "c2", { run_dcf_agent: "a" });
+    await recordCrewOutputs("u1", "c2", { run_risk_agent: "b" });
+    expect((await loadTurnData("u1", "c2"))?.crewOutputs).toEqual({ run_dcf_agent: "a", run_risk_agent: "b" });
+  });
+
+  it("is a no-op without a conversation (the live harness and debate route have none)", async () => {
+    resetTurnDataCache();
+    await recordCrewOutputs("u1", undefined, { run_dcf_agent: "a" });
+    await recordCrewOutputs(undefined, "c3", { run_dcf_agent: "a" });
+    expect(await loadTurnData("u1", "c3")).toBeNull();
   });
 });

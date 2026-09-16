@@ -214,21 +214,28 @@ export default function ChatEngine() {
     laneMode.set(convId, answerMode);
     s().setAgentSteps(convId, []);
     s().setCeoThinking(convId, "");
+    // Last run's crew panel must not linger over this one; `crew_plan` refills it.
+    s().setCrewProgress(convId, null);
 
     const retry = () => { void runAgentMode(text, portfolioContext, convId, mode, deepResearch, history, templateId, pageContext); };
 
     try {
       const finalContent = await streamAgent(
         authFetch,
-        agentBody({
-          prior: history,
-          text,
-          portfolioContext,
-          deepResearch,
-          holdings: ctxRef.current.holdings.map((h) => ({ ticker: h.ticker, shares: h.shares })),
-          templateId,
-          pageContext,
-        }),
+        {
+          ...agentBody({
+            prior: history,
+            text,
+            portfolioContext,
+            deepResearch,
+            holdings: ctxRef.current.holdings.map((h) => ({ ticker: h.ticker, shares: h.shares })),
+            templateId,
+            pageContext,
+          }),
+          // Keys the crew's gathered outputs so a short follow-up can be answered
+          // from them by the fast lane instead of re-running the whole crew.
+          conversationId: convId,
+        },
         {
           signal: ctrl?.signal,
           onResponse: handleUsageLimit,
@@ -253,6 +260,9 @@ export default function ChatEngine() {
         });
       }
     } finally {
+      // The finished run's crew state lives on the committed message's agentTrace;
+      // the live panel is cleared so it can't outlast the run that produced it.
+      if (runs.isCurrent(convId, ctrl)) s().setCrewProgress(convId, null);
       endRun(convId, ctrl);
     }
   }
@@ -416,6 +426,31 @@ export default function ChatEngine() {
   ) {
     const st = s();
     switch (event.type) {
+      case "crew_plan": {
+        // The deterministic plan (W2-2): who is on the job and how long it should
+        // take, announced before any agent runs so the panel opens with a real ETA.
+        st.setCrewProgress(convId, {
+          agents: event.agents,
+          etaSeconds: event.etaSeconds,
+          deep: !!event.deep,
+          startedAt: Date.now(),
+          status: {},
+          ms: {},
+          budgetRemainingSeconds: null,
+        });
+        break;
+      }
+      case "agent_progress": {
+        st.patchCrewProgress(convId, { agent: event.agent, status: event.status, ms: event.ms });
+        // An agent the run never got to is marked skipped rather than left on
+        // "queued", which reads as a hang.
+        if (event.status === "skipped") st.updateAgentStep(convId, event.agent, { status: "skipped" });
+        break;
+      }
+      case "budget_warning":
+        st.patchCrewProgress(convId, { budgetRemainingSeconds: event.remainingSeconds });
+        st.setCeoThinking(convId, "Time budget reached — writing the report from what finished…");
+        break;
       case "crew_planned": {
         // Pre-size the panel: show every planned agent as queued before any runs.
         // Preserve already-known statuses if this fires after some agents started.
@@ -479,6 +514,34 @@ export default function ChatEngine() {
           notifyChatError(owner.convId, event.message || "Something went wrong while analyzing. Please retry.", owner.retry);
         }
         break;
+    }
+  }
+
+  // "Run full analysis" — the explicit crew request behind a fast answer (W2-3
+  // renders the button and calls this through the send queue). It re-asks the
+  // question the fast answer was about, with the conversation's page context, so
+  // the sized crew works on the same ticker.
+  async function runFullAnalysis(convId: string, text: string, pageContext?: PageContext | null) {
+    if (s().slice(convId).isStreaming) return;
+    const prior = s().messagesOf(convId);
+    const question =
+      text.trim() || [...prior].reverse().find((m) => m.role === "user")?.content.trim() || "";
+    if (!question) return; // nothing to analyze — don't start an empty crew run
+    s().setStreaming(convId, true);
+    s().clearStreamingContent(convId);
+    const ctrl = runs.start(convId);
+    try {
+      const { holdings, cashBalance, quoteMap } = ctxRef.current;
+      const portfolioContext = buildPortfolioContext(holdings, cashBalance, quoteMap);
+      const pc = pageContext ?? s().pageContextByConv[convId] ?? null;
+      await runAgentMode(question, portfolioContext, convId, "agent", false, prior, undefined, pc);
+    } catch (err) {
+      if (runs.wasStopped(ctrl)) return;
+      console.error("[full analysis] error:", err);
+      endRun(convId, ctrl);
+      notifyChatError(convId, "Couldn't run the full analysis. Please retry.", () => {
+        void runFullAnalysis(convId, text, pageContext);
+      });
     }
   }
 
@@ -600,6 +663,10 @@ export default function ChatEngine() {
   async function processSend(req: SendRequest) {
     if (req.kind === "deepen") {
       await deepen(req.convId!, req.text);
+      return;
+    }
+    if (req.kind === "full_analysis") {
+      await runFullAnalysis(req.convId!, req.text, req.pageContext);
       return;
     }
 
