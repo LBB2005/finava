@@ -1,4 +1,3 @@
-// src/lib/facts/format.test.ts
 import { describe, expect, it } from "vitest";
 import { asOfLabel, factTitle } from "./format";
 import { fact, missing } from "./types";

@@ -1,4 +1,3 @@
-// src/lib/facts/portfolio.ts
 // A user's book as facts. The arithmetic (totals, rounded weights) is
 // computePortfolio's — the same numbers chat already quotes — wrapped with
 // sources and as-of, and priced from the facts layer's quote cache.

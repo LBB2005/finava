@@ -1,4 +1,3 @@
-// src/lib/facts/signals.ts
 // Pillar → FinavaSignal, shared by the finava-analysis stream and the Finava
 // tab's facts read so both render the same bars. Client-safe.
 import type { PillarScore, ScoreInputs } from "@/lib/finavaScore";

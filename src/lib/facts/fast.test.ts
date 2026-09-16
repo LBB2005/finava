@@ -1,4 +1,3 @@
-// src/lib/facts/fast.test.ts
 import { describe, expect, it, vi } from "vitest";
 
 // finavaInputs → grok → usage → firebase-admin; earnings-agent → llm.

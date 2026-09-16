@@ -1,4 +1,3 @@
-// src/lib/facts/portfolio.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeFirestore } from "@/test/fakeFirestore";
 

@@ -1,4 +1,3 @@
-// src/lib/facts/types.ts
 // The facts layer's shared vocabulary. Client-safe: type-only imports, no I/O.
 //
 // Every number Finava displays is a Fact: a value plus where it came from and

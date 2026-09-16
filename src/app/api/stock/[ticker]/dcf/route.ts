@@ -1,4 +1,3 @@
-// src/app/api/stock/[ticker]/dcf/route.ts
 // DCF base inputs, read from the facts layer so this and every other surface use
 // the one input path (beta-tuned WACC, split-safe shares). The DCF tab recomputes
 // locally as the user drags sliders; those tweaks never leave the browser.

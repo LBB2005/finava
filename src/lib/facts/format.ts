@@ -1,4 +1,3 @@
-// src/lib/facts/format.ts
 // Human as-of strings for facts: small print and hover titles. Client-safe.
 import type { Fact } from "./types";
 

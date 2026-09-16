@@ -1,4 +1,3 @@
-// src/lib/finavaInputs.dcf.test.ts
 // The single DCF input path, on real (trimmed) SEC filings.
 import { describe, expect, it, vi } from "vitest";
 

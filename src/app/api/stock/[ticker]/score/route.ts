@@ -1,4 +1,3 @@
-// src/app/api/stock/[ticker]/score/route.ts
 // The canonical Finava Score for one ticker, read from the facts layer (the
 // 15-factor engine). Kept for callers of this path; the stock page reads
 // /api/facts/[ticker] directly. A score we can't compute is null with a note.

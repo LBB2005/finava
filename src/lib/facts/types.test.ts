@@ -1,4 +1,3 @@
-// src/lib/facts/types.test.ts
 import { describe, expect, it } from "vitest";
 import { fact, missing, hasValue, toSlim, SCORE_VERSION, type TickerFacts } from "./types";
 

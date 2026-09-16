@@ -1,4 +1,3 @@
-// src/lib/facts/signals.test.ts
 import { describe, expect, it } from "vitest";
 import { pillarToSignal, pillarsToSignals, peerPremiumPct } from "./signals";
 import type { PillarScore } from "@/lib/finavaScore";

@@ -1,4 +1,3 @@
-// src/lib/facts/cache.test.ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/firebase-admin", () => ({ db: { collection: vi.fn() } }));

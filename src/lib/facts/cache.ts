@@ -1,4 +1,3 @@
-// src/lib/facts/cache.ts
 // Two-tier cache for the facts layer.
 //
 // Tier 1, in process (globalThis, survives dev HMR like factorUniverse.ts):

@@ -1,4 +1,3 @@
-// src/test/factsFixture.ts
 // A complete, plausible TickerFacts for tests. Every field sourced and dated.
 import { computeFinavaScore, type ScoreInputs } from "@/lib/finavaScore";
 import { grade } from "@/lib/research";

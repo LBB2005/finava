@@ -1,4 +1,3 @@
-// src/test/fakeFirestore.ts
 // Minimal path-based Firestore fake for tests: collection/doc chains, get/set
 // (with merge), collection get() over direct children, orderBy (no-op sort by id).
 type Data = Record<string, unknown>;

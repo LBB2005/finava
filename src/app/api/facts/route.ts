@@ -1,4 +1,3 @@
-// src/app/api/facts/route.ts
 // Cache-only score headlines for list rows (watchlist, board, portfolio).
 // Never computes: a name nobody has opened reads "Not scored yet".
 import { NextResponse } from "next/server";

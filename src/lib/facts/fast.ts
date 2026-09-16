@@ -1,4 +1,3 @@
-// src/lib/facts/fast.ts
 // Raw source payloads → the non-derived facts. Pure: no I/O, so every rule about
 // sources, as-of and missing-value notes is tested here without mocks.
 import type { TickerSnapshot } from "@/lib/finnhub";

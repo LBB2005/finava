@@ -1,4 +1,3 @@
-// src/app/api/stock/[ticker]/dcf/route.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tickerFactsFixture } from "@/test/factsFixture";
 import { missing } from "@/lib/facts/types";

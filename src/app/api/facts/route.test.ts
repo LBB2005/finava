@@ -1,4 +1,3 @@
-// src/app/api/facts/route.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
 

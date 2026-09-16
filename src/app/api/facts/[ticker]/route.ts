@@ -1,4 +1,3 @@
-// src/app/api/facts/[ticker]/route.ts
 // A ticker's facts: every number the stock page shows, sourced and dated.
 // Public read-only market data (same posture as /api/stock/[ticker]/score).
 // `?cachedOnly=1` skips the expensive score/DCF assembly for a fast first paint.

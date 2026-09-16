@@ -1,4 +1,3 @@
-// src/lib/facts/ticker.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import aapl from "@/lib/__fixtures__/sec/aapl.json";
 import { createFakeFirestore } from "@/test/fakeFirestore";

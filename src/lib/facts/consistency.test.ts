@@ -1,4 +1,3 @@
-// src/lib/facts/consistency.test.ts
 // The acceptance check: for five tickers, every loader a surface reads returns
 // the same score, DCF fair value and price. Upstream vendors are mocked at the
 // module boundary; everything from the facts layer up runs for real.

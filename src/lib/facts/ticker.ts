@@ -1,4 +1,3 @@
-// src/lib/facts/ticker.ts
 // The one loader for a ticker's numbers. Server-only.
 //
 // Fast fields (quote, fundamentals, filings, calendar, Street) come from the
