@@ -1,6 +1,8 @@
 "use client";
 import type { CSSProperties, ReactNode, ButtonHTMLAttributes } from "react";
 import { FACTORS, factorColor, gradeClass, type FactorScores } from "@/lib/research";
+import type { Fact, SlimScore } from "@/lib/facts/types";
+import { factTitle } from "@/lib/facts/format";
 
 /* ── Lens panel — the house card with a surface header strip ────────── */
 
@@ -191,4 +193,40 @@ export function MiniBars({ f }: { f: FactorScores }) {
       ))}
     </div>
   );
+}
+
+/* ── Finava Score cell — the facts layer's canonical score for a row ───── */
+
+/** The canonical Finava Score as a bar + number, or "—" with the reason on hover.
+ *  Board rank comes from the factor composite; the score shown is always facts. */
+export function FactScoreCell({
+  fact,
+  trackClass = "b-score-track",
+  trackStyle,
+}: {
+  fact: Fact<SlimScore> | undefined;
+  trackClass?: string;
+  trackStyle?: CSSProperties;
+}) {
+  if (!fact?.value) {
+    return (
+      <span className="mono" title={fact?.note ?? "Not scored yet"} style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>
+        —
+      </span>
+    );
+  }
+  const v = fact.value;
+  return (
+    <div title={factTitle(fact)} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+      <div className={trackClass} style={trackStyle}>
+        <div style={{ width: v.total + "%", height: "100%", borderRadius: 999, background: "var(--color-accent)" }} />
+      </div>
+      <span className="serif" style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-text)", width: 24, textAlign: "right" }}>{v.total}</span>
+    </div>
+  );
+}
+
+/** Grade for a row from the facts score, or a muted dash. */
+export function FactGradeCell({ fact }: { fact: Fact<SlimScore> | undefined }) {
+  return fact?.value ? <GradeBadge grade={fact.value.grade} size="sm" /> : <span style={{ color: "var(--color-muted)" }}>—</span>;
 }
