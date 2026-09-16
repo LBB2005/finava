@@ -2,7 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { components as baseComponents } from "./Markdown";
+import { components as baseComponents, glossaryComponents } from "./Markdown";
+import AnswerCard from "./answer/AnswerCard";
+import { isContractShaped } from "@/lib/answerFormat";
+import { GlossaryMarks, shouldShowGlossary } from "@/lib/glossary";
+import { useExperienceLevel } from "@/hooks/useExperienceLevel";
 
 /**
  * Claude-style streaming text. The refinement lives entirely in the *pacing*:
@@ -58,11 +62,24 @@ export function useSmoothStream(raw: string, active: boolean): string {
 }
 
 export default function StreamingMarkdown({ content }: { content: string }) {
+  const { level } = useExperienceLevel();
+  const glossary = shouldShowGlossary(level);
+
+  // An answer written to the contract streams straight into the answer card, so
+  // the verdict is readable the moment it lands instead of after the report —
+  // sections fill in underneath it as they arrive.
+  if (isContractShaped(content)) {
+    return <AnswerCard markdown={content} messageId="streaming" glossary={glossary} streaming />;
+  }
+
   // Reuse the exact settled-text component map — the smooth-paced reveal is the
   // only motion, so there is no per-word flicker and nothing shifts on finish.
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={baseComponents}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={glossary ? glossaryComponents(new GlossaryMarks()) : baseComponents}
+      >
         {content}
       </ReactMarkdown>
     </div>

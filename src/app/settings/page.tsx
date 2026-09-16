@@ -13,6 +13,14 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianG
 import { axisProps, gridProps, ChartTooltip } from "@/lib/chartTheme";
 import { FORMAT_PRESETS, sanitizeFormats, type FormatKey } from "@/lib/templates";
 import type { Template } from "@/types/chat";
+import {
+  EXPERIENCE_LEVELS,
+  EXPERIENCE_LABELS,
+  EXPERIENCE_BLURBS,
+  DEFAULT_EXPERIENCE_LEVEL,
+  sanitizeExperienceLevel,
+  type ExperienceLevel,
+} from "@/lib/experienceLevel";
 
 interface UserData {
   uid: string;
@@ -31,6 +39,7 @@ interface UserData {
   allowInvestorDNA: boolean;
   notifyWeeklyBriefing?: boolean;
   notifyProductUpdates?: boolean;
+  experienceLevel?: ExperienceLevel;
   stats: { conversations: number; briefings: number };
 }
 
@@ -351,11 +360,32 @@ function AppearanceSection() {
   );
 }
 
-function GeneralSection() {
+function GeneralSection({ userData, mutate }: { userData: UserData | undefined; mutate: () => void }) {
   const { devEnabled, devBypass, toggleDevBypass } = useAuth();
+  const level = sanitizeExperienceLevel(userData?.experienceLevel ?? DEFAULT_EXPERIENCE_LEVEL);
+
+  async function setLevel(next: ExperienceLevel) {
+    await authFetch("/api/user", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ experienceLevel: next }),
+    });
+    mutate();
+  }
+
   return (
     <div>
       <Head title="General" description="App-wide preferences." />
+      <Row
+        label="Investing experience"
+        description={`Sets how much Finava explains — never which numbers you see. ${EXPERIENCE_BLURBS[level]}`}
+      >
+        <Segmented
+          value={level}
+          options={EXPERIENCE_LEVELS.map((l) => ({ v: l, label: EXPERIENCE_LABELS[l] }))}
+          onChange={setLevel}
+        />
+      </Row>
       {devEnabled && (
         <Row
           label="Developer preview mode"
@@ -1641,7 +1671,7 @@ export default function SettingsPage() {
               </button>
             </div>
           )}
-          {active === "general" && <GeneralSection />}
+          {active === "general" && <GeneralSection userData={userData} mutate={mutate} />}
           {active === "templates" && <TemplatesSection />}
           {active === "appearance" && <AppearanceSection />}
           {active === "notifications" && <NotificationsSection userData={userData} mutate={mutate} />}

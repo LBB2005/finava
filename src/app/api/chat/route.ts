@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { anthropic, MODEL } from "@/lib/anthropic";
+import { answerFollowupPrompt, parseFollowups } from "@/lib/chat/answerFollowups";
 import { generate } from "@/lib/llm";
 import { DATA_ACCURACY_RULE } from "@/lib/dataAccuracy";
 import { promptClockLine } from "@/lib/promptClock";
@@ -70,25 +71,19 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
         ? lastUserContent.content
         : "";
 
-    // Follow-up suggestions depend only on the user's question, so run the
-    // (cheap) call concurrently with the main stream instead of serializing it
-    // after the last token. `.catch` attached immediately so an early rejection
-    // can never surface as an unhandled rejection.
-    const followupsPromise: Promise<string | null> = generate({
-      agent: "chatFollowups",
-      maxTokens: 120,
-      prompt: `Generate exactly 3 short follow-up research questions (max 12 words each). Return a JSON array of strings only.\n\nQuestion: ${lastUserText.slice(0, 200)}`,
-    }).catch(() => null);
 
     const readable = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
+        // The finished answer, kept so the follow-up chips can be drawn from it.
+        let answerText = "";
         try {
           for await (const event of stream) {
             if (
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta"
             ) {
+              answerText += event.delta.text;
               const data = JSON.stringify({ text: event.delta.text });
               controller.enqueue(encoder.encode(`data: ${data}\n\n`));
             }
@@ -104,17 +99,21 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
               cacheRead: final.usage?.cache_read_input_tokens,
             });
           } catch { /* metering is best-effort */ }
-          // Emit follow-up suggestions (started concurrently with the stream)
+          // Follow-up chips come from the answer the user just read, not from
+          // their question alone — chips about things the answer never covered
+          // were a top beta complaint. This runs after the stream because the
+          // finished text is its input.
           try {
-            const raw = await followupsPromise;
-            const match = raw?.match(/\[[\s\S]*\]/);
-            if (match) {
-              const questions = JSON.parse(match[0]) as string[];
-              if (Array.isArray(questions) && questions.length > 0) {
-                controller.enqueue(encoder.encode(
-                  `data: ${JSON.stringify({ followups: questions.slice(0, 3).map(String) })}\n\n`
-                ));
-              }
+            const raw = await generate({
+              agent: "chatFollowups",
+              maxTokens: 160,
+              prompt: answerFollowupPrompt({ question: lastUserText, answer: answerText }),
+            });
+            const questions = parseFollowups(raw, { question: lastUserText });
+            if (questions.length > 0) {
+              controller.enqueue(encoder.encode(
+                `data: ${JSON.stringify({ followups: questions })}\n\n`
+              ));
             }
           } catch { /* follow-ups are best-effort */ }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
