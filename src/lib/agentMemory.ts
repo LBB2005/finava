@@ -214,30 +214,9 @@ export async function saveCache(
 
 // ── Ticker extraction ─────────────────────────────────────────────────────────
 
-const TICKER_BLOCKLIST = new Set([
-  "AI", "US", "PE", "YTD", "CEO", "CFO", "CTO", "COO", "AND", "THE", "FOR",
-  "ETF", "IPO", "SEC", "FCF", "EPS", "RSI", "DCF", "SMA", "EMA", "MACD",
-  "GDP", "CPI", "FED", "IMF", "USD", "EUR", "GBP", "BTC", "ETH", "NFT",
-  "LTM", "TTM", "NTM", "LBO", "DCF", "IRR", "NPV", "ROE", "ROA", "ROI",
-  "WACC", "EBIT", "EBITDA", "GAAP", "CAGR", "OTC", "NYSE", "NASDAQ",
-  "ATH", "ATL", "AUM", "NAV", "VIX", "SPX", "TBD", "N/A", "NA",
-]);
-
-/**
- * Extract likely stock ticker symbols from a block of text.
- * Matches 2-5 uppercase letter sequences (with optional leading $).
- * Filters common English abbreviations and financial terms.
- */
-export function extractTickers(text: string): string[] {
-  const matches = text.match(/\b\$?([A-Z]{2,5})\b/g) ?? [];
-  return [
-    ...new Set(
-      matches
-        .map((t) => t.replace(/^\$/, ""))
-        .filter((t) => !TICKER_BLOCKLIST.has(t))
-    ),
-  ];
-}
+// Lives in `@/lib/tickers` (no firebase-admin import) so client code and the
+// Auto-mode router can use it too. Re-exported here for existing call sites.
+export { extractTickers } from "@/lib/tickers";
 
 // ── Ticker memory (learning) ──────────────────────────────────────────────────
 

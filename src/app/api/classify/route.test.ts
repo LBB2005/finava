@@ -58,10 +58,10 @@ beforeEach(() => {
 
 describe("POST /api/classify — routing", () => {
   it("returns the model's intent", async () => {
-    deps.generate.mockResolvedValueOnce('{"intent":"agent","needsClarify":false}');
+    deps.generate.mockResolvedValueOnce('{"intent":"fast"}');
     await expect(classify({ userPrompt: "is TSLA a buy?" })).resolves.toEqual({
       status: 200,
-      json: { intent: "agent", needsClarify: false },
+      json: { intent: "fast" },
     });
   });
 
@@ -71,21 +71,25 @@ describe("POST /api/classify — routing", () => {
   });
 
   it("accepts the discover intent", async () => {
-    deps.generate.mockResolvedValueOnce('{"intent":"discover","needsClarify":false}');
+    deps.generate.mockResolvedValueOnce('{"intent":"discover"}');
     expect((await classify({ userPrompt: "find cheap energy stocks" })).json.intent).toBe("discover");
   });
 
-  it("falls back to simple for an unrecognised intent", async () => {
-    deps.generate.mockResolvedValueOnce('{"intent":"deep_research","needsClarify":false}');
-    expect((await classify({ userPrompt: "hi" })).json.intent).toBe("simple");
+  it("falls back to fast for an unrecognised intent", async () => {
+    deps.generate.mockResolvedValueOnce('{"intent":"deep_research"}');
+    expect((await classify({ userPrompt: "hi" })).json.intent).toBe("fast");
   });
 
-  it("falls back to simple when the intent field is missing", async () => {
+  it("falls back to fast when the intent field is missing", async () => {
     deps.generate.mockResolvedValueOnce("{}");
-    expect((await classify({ userPrompt: "hi" })).json).toEqual({
-      intent: "simple",
-      needsClarify: false,
-    });
+    expect((await classify({ userPrompt: "hi" })).json).toEqual({ intent: "fast" });
+  });
+
+  it("no longer emits the retired simple/agent intents", async () => {
+    deps.generate.mockResolvedValueOnce('{"intent":"agent"}');
+    expect((await classify({ userPrompt: "is NVDA a buy?" })).json.intent).toBe("fast");
+    deps.generate.mockResolvedValueOnce('{"intent":"simple"}');
+    expect((await classify({ userPrompt: "what is a P/E ratio?" })).json.intent).toBe("fast");
   });
 
   it("calls the cheap router model with a token cap", async () => {
@@ -96,28 +100,68 @@ describe("POST /api/classify — routing", () => {
   });
 });
 
+// The heart of W2-1: the crew is opt-in. On 13-14 Sep, Auto sent 80 of 138
+// turns to it unasked — median 253 s, one run 382 s, past the 300 s cap.
+describe("POST /api/classify — the crew is opt-in", () => {
+  const explicit = [
+    "full analysis of NVDA",
+    "deep dive on AMD",
+    "run the crew on TSLA",
+    "research report on SOFI",
+  ];
+  for (const userPrompt of explicit) {
+    it(`routes "${userPrompt}" to full_analysis`, async () => {
+      deps.generate.mockResolvedValueOnce('{"intent":"full_analysis"}');
+      expect((await classify({ userPrompt })).json.intent).toBe("full_analysis");
+    });
+  }
+
+  const fastFamily = [
+    "is it too late to buy NVDA?",
+    "is AMD a buy right now?",
+    "should I worry about TSLA's margins?",
+    "thoughts on PLTR at this price",
+    "how risky is my portfolio?",
+  ];
+  for (const userPrompt of fastFamily) {
+    it(`keeps "${userPrompt}" in the fast lane even if the router says crew`, async () => {
+      deps.generate.mockResolvedValueOnce('{"intent":"full_analysis"}');
+      expect((await classify({ userPrompt })).json.intent).toBe("fast");
+    });
+  }
+
+  it("honours an explicit crew request the router under-called", async () => {
+    deps.generate.mockResolvedValueOnce('{"intent":"fast"}');
+    expect((await classify({ userPrompt: "give me a full analysis of NVDA" })).json.intent).toBe(
+      "full_analysis",
+    );
+  });
+
+  it("never sends a brevity follow-up to the crew", async () => {
+    deps.generate.mockResolvedValueOnce('{"intent":"full_analysis"}');
+    expect((await classify({ userPrompt: "so yes or no?" })).json.intent).toBe("fast");
+  });
+});
+
 describe("POST /api/classify — model output parsing", () => {
   it("unwraps a ```json fenced response", async () => {
-    deps.generate.mockResolvedValueOnce('```json\n{"intent":"agent","needsClarify":false}\n```');
-    expect((await classify({ userPrompt: "NVDA" })).json.intent).toBe("agent");
+    deps.generate.mockResolvedValueOnce('```json\n{"intent":"discover"}\n```');
+    expect((await classify({ userPrompt: "cheap energy names" })).json.intent).toBe("discover");
   });
 
   it("extracts the object from surrounding prose", async () => {
-    deps.generate.mockResolvedValueOnce('Sure! {"intent":"agent","needsClarify":false} Hope that helps.');
-    expect((await classify({ userPrompt: "NVDA" })).json.intent).toBe("agent");
+    deps.generate.mockResolvedValueOnce('Sure! {"intent":"discover"} Hope that helps.');
+    expect((await classify({ userPrompt: "cheap energy names" })).json.intent).toBe("discover");
   });
 
-  it("degrades to simple when the response has no JSON object", async () => {
-    deps.generate.mockResolvedValueOnce("I think you want agent mode.");
-    expect((await classify({ userPrompt: "NVDA" })).json).toEqual({
-      intent: "simple",
-      needsClarify: false,
-    });
+  it("degrades to fast when the response has no JSON object", async () => {
+    deps.generate.mockResolvedValueOnce("I think you want the crew.");
+    expect((await classify({ userPrompt: "NVDA" })).json).toEqual({ intent: "fast" });
   });
 
-  it("degrades to simple on malformed JSON", async () => {
-    deps.generate.mockResolvedValueOnce('{"intent":"agent",}');
-    expect((await classify({ userPrompt: "NVDA" })).json.intent).toBe("simple");
+  it("degrades to fast on malformed JSON", async () => {
+    deps.generate.mockResolvedValueOnce('{"intent":"discover",}');
+    expect((await classify({ userPrompt: "NVDA" })).json.intent).toBe("fast");
   });
 
   it("never dead-ends when the model call throws, and says the route is degraded", async () => {
@@ -125,8 +169,15 @@ describe("POST /api/classify — model output parsing", () => {
     deps.generate.mockRejectedValueOnce(new Error("upstream 500"));
     await expect(classify({ userPrompt: "NVDA" })).resolves.toEqual({
       status: 200,
-      json: { intent: "simple", needsClarify: false, degraded: true },
+      json: { intent: "fast", degraded: true },
     });
+  });
+
+  it("still honours an explicit crew request when the router is down", async () => {
+    vi.spyOn(console, "error").mockImplementationOnce(() => {});
+    deps.generate.mockRejectedValueOnce(new Error("upstream 500"));
+    const { json } = await classify({ userPrompt: "full analysis of NVDA" });
+    expect(json).toEqual({ intent: "full_analysis", degraded: true });
   });
 
   it("logs the failure and marks router health degraded (no silent fallback)", async () => {
@@ -146,67 +197,71 @@ describe("POST /api/classify — model output parsing", () => {
 });
 
 describe("POST /api/classify — clarify handling", () => {
+  const clarify = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      intent: "clarify",
+      clarifyQuestion: "  What are you after?  ",
+      clarifyChips: ["Growth", "Value", "Quality"],
+      ...over,
+    });
+
   it("passes through a well-formed clarify", async () => {
-    deps.generate.mockResolvedValueOnce(
-      JSON.stringify({
-        intent: "discover",
-        needsClarify: true,
-        clarifyQuestion: "  What are you after?  ",
-        clarifyChips: ["Growth", "Value", "Quality"],
-      }),
-    );
+    deps.generate.mockResolvedValueOnce(clarify());
     expect((await classify({ userPrompt: "what should I buy?" })).json).toEqual({
-      intent: "discover",
-      needsClarify: true,
+      intent: "clarify",
       clarifyQuestion: "What are you after?",
       clarifyChips: ["Growth", "Value", "Quality"],
     });
   });
 
   it("caps the chips at four", async () => {
-    deps.generate.mockResolvedValueOnce(
-      JSON.stringify({
-        intent: "discover",
-        needsClarify: true,
-        clarifyQuestion: "Which style?",
-        clarifyChips: ["a", "b", "c", "d", "e", "f"],
-      }),
-    );
+    deps.generate.mockResolvedValueOnce(clarify({ clarifyChips: ["a", "b", "c", "d", "e", "f"] }));
     expect((await classify({ userPrompt: "ideas?" })).json.clarifyChips).toEqual(["a", "b", "c", "d"]);
   });
 
   it("drops a clarify that has no question", async () => {
-    deps.generate.mockResolvedValueOnce(
-      JSON.stringify({ intent: "discover", needsClarify: true, clarifyChips: ["a"] }),
-    );
-    expect((await classify({ userPrompt: "ideas?" })).json).toEqual({
-      intent: "discover",
-      needsClarify: false,
-    });
+    deps.generate.mockResolvedValueOnce(clarify({ clarifyQuestion: undefined }));
+    expect((await classify({ userPrompt: "ideas?" })).json).toEqual({ intent: "discover" });
   });
 
   it("drops a clarify whose question is blank", async () => {
-    deps.generate.mockResolvedValueOnce(
-      JSON.stringify({ intent: "discover", needsClarify: true, clarifyQuestion: "   ", clarifyChips: ["a"] }),
-    );
-    expect((await classify({ userPrompt: "ideas?" })).json.needsClarify).toBe(false);
+    deps.generate.mockResolvedValueOnce(clarify({ clarifyQuestion: "   " }));
+    expect((await classify({ userPrompt: "ideas?" })).json.intent).toBe("discover");
   });
 
   it("drops a clarify with no usable chips", async () => {
-    deps.generate.mockResolvedValueOnce(
-      JSON.stringify({ intent: "discover", needsClarify: true, clarifyQuestion: "Which?", clarifyChips: [] }),
-    );
-    expect((await classify({ userPrompt: "ideas?" })).json.needsClarify).toBe(false);
+    deps.generate.mockResolvedValueOnce(clarify({ clarifyChips: [] }));
+    expect((await classify({ userPrompt: "ideas?" })).json.intent).toBe("discover");
   });
 
-  it("ignores a truthy-but-not-true needsClarify", async () => {
-    deps.generate.mockResolvedValueOnce(
-      JSON.stringify({ intent: "simple", needsClarify: "yes", clarifyQuestion: "Which?", clarifyChips: ["a"] }),
-    );
-    expect((await classify({ userPrompt: "hi" })).json).toEqual({
-      intent: "simple",
-      needsClarify: false,
+  it("never asks which stock when the page already pins one", async () => {
+    deps.generate.mockResolvedValueOnce(clarify({ clarifyQuestion: "Which stock?" }));
+    const { json } = await classify({
+      userPrompt: "is this a buy?",
+      pageContext: { kind: "stock", ticker: "NVDA", snapshot: "NVDA $180" },
     });
+    expect(json).toEqual({ intent: "fast" });
+  });
+
+  it("never asks which stock when the message names one", async () => {
+    deps.generate.mockResolvedValueOnce(clarify());
+    expect((await classify({ userPrompt: "is NVDA a buy?" })).json.intent).toBe("fast");
+  });
+
+  it("does not clarify when amount, level and goal are already given", async () => {
+    // The readout's Priya case: she said everything needed and was asked anyway.
+    deps.generate.mockResolvedValueOnce(clarify({ clarifyQuestion: "What's your risk tolerance?" }));
+    const { json } = await classify({
+      userPrompt:
+        "I have $5,000 to invest, I'm a complete beginner, and I want long-term growth over 10 years. Where do I start?",
+    });
+    expect(json).toEqual({ intent: "discover" });
+  });
+
+  it("does not clarify twice in a row", async () => {
+    deps.generate.mockResolvedValueOnce(clarify());
+    const { json } = await classify({ userPrompt: "what should I buy?", allowClarify: false });
+    expect(json).toEqual({ intent: "discover" });
   });
 });
 

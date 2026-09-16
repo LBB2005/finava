@@ -364,8 +364,8 @@ export default function MessageList({
           </div>
         )}
 
-        {/* Simple mode waiting — Calm Orb thinking indicator */}
-        {mode === "simple" && isStreaming && !streamingContent && (
+        {/* Fast/Quick lane waiting — Calm Orb thinking indicator */}
+        {(mode === "simple" || mode === "fast") && isStreaming && !streamingContent && (
           <TypingIndicator label="Thinking it through" startedAt={streamStartedAt} />
         )}
 

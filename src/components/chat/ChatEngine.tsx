@@ -16,6 +16,7 @@ import { applyFinalResponse, readSseData } from "@/lib/chat/stream";
 import { agentBody, classifyBody, discoverScoutBody, simpleChatBody, streamAgent, streamSimple } from "@/lib/chat/requests";
 import { discoverToMarkdown } from "@/lib/chat/discoverText";
 import { RunRegistry, stoppedMessage } from "@/lib/chat/runControl";
+import { INTENTS, type Intent } from "@/lib/chat/intent";
 import { toStoredMessage } from "@/lib/chat/storedMessage";
 import {
   emptyEvidence,
@@ -58,7 +59,7 @@ export function stopConversationStream(convId: string) {
   const slice = st.slice(convId);
   if (!runs.stop(convId)) return;
   const durationMs = slice.streamStartedAt != null ? Date.now() - slice.streamStartedAt : undefined;
-  const msg = stoppedMessage(slice, laneMode.get(convId) ?? "simple", durationMs);
+  const msg = stoppedMessage(slice, laneMode.get(convId) ?? "fast", durationMs);
   laneMode.delete(convId);
   st.addMessage(convId, msg);
   st.setStreaming(convId, false);
@@ -170,13 +171,18 @@ export default function ChatEngine() {
     return startedAt != null ? Date.now() - startedAt : undefined;
   }
 
+  /**
+   * The fast grounded lane (W2-1): live data under a 2.5 s budget, then one
+   * streamed answer. `mode` is "fast" from Auto and "simple" from the manual
+   * Quick mode — the route is the same either way.
+   */
   async function runSimpleChat(text: string, portfolioContext: string, convId: string, mode: ChatMode, history: ChatMessage[], templateId?: string, pageContext?: PageContext | null) {
     const ctrl = runs.get(convId);
-    laneMode.set(convId, "simple");
+    laneMode.set(convId, mode);
     try {
       const fullContent = await streamSimple(
         authFetch,
-        simpleChatBody({ prior: history, text, portfolioContext, templateId, pageContext }),
+        simpleChatBody({ prior: history, text, portfolioContext, templateId, pageContext, conversationId: convId }),
         {
           signal: ctrl?.signal,
           onResponse: handleUsageLimit,
@@ -494,10 +500,11 @@ export default function ChatEngine() {
     }
   }
 
-  // Auto mode — the unified router. Classify the message (simple/agent/discover),
-  // optionally ask ONE clarifying question first, then delegate to the matching
-  // handler exactly as the manual modes do. Any router failure falls back to
-  // simple chat so Auto never dead-ends.
+  // Auto mode — the unified router. Classify the message
+  // (fast/discover/clarify/full_analysis), optionally ask ONE clarifying
+  // question first, then delegate to the matching handler exactly as the manual
+  // modes do. Any router failure falls back to the fast lane so Auto never
+  // dead-ends — and never silently spends four minutes on the crew.
   async function runAuto(
     text: string,
     portfolioContext: string,
@@ -522,28 +529,31 @@ export default function ChatEngine() {
 
       s().setCeoThinking(convId, "Working out the best way to answer…");
 
-      let intent: "simple" | "agent" | "discover" = "simple";
-      let needsClarify = false;
+      let intent: Intent = "fast";
       let clarifyQuestion = "";
       let clarifyChips: string[] = [];
       try {
         const res = await authFetch("/api/classify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(classifyBody({ prior, userPrompt: combined, portfolioContext, pageContext })),
+          body: JSON.stringify(classifyBody({ prior, userPrompt: combined, portfolioContext, pageContext, allowClarify })),
           signal: ctrl?.signal,
         });
         if (await handleUsageLimit(res)) return;
         if (res.ok) {
           const data = await res.json();
-          if (data?.intent === "agent" || data?.intent === "discover") intent = data.intent;
-          if (allowClarify && data?.needsClarify && data?.clarifyQuestion && Array.isArray(data?.clarifyChips)) {
-            needsClarify = true;
+          if (INTENTS.includes(data?.intent)) intent = data.intent as Intent;
+          if (intent === "clarify" && data?.clarifyQuestion && Array.isArray(data?.clarifyChips)) {
             clarifyQuestion = String(data.clarifyQuestion);
             clarifyChips = data.clarifyChips.map(String).filter(Boolean).slice(0, 4);
           }
+          // A clarify with nothing to ask is not a clarify — answer instead.
+          if (intent === "clarify" && (!clarifyQuestion || !clarifyChips.length)) intent = "fast";
+          // The server already suppresses a second clarify, but the client knows
+          // for certain whether it just asked one.
+          if (intent === "clarify" && !allowClarify) intent = "fast";
         }
-      } catch { /* fall through to simple */ }
+      } catch { /* fall through to the fast lane */ }
 
       // Stopped while routing: don't start a lane.
       if (!runs.isCurrent(convId, ctrl)) return;
@@ -551,7 +561,7 @@ export default function ChatEngine() {
       // Clarify: post the question as a plain assistant message with tappable
       // chips (reuses the followup-chip UI) and stop. The reply re-enters here
       // and hits the pending branch above.
-      if (needsClarify && clarifyChips.length) {
+      if (intent === "clarify") {
         pendingClarify.set(convId, { originalPrompt: text });
         s().setCeoThinking(convId, "");
         endRun(convId, ctrl);
@@ -559,7 +569,7 @@ export default function ChatEngine() {
           id: crypto.randomUUID(),
           role: "assistant",
           content: clarifyQuestion,
-          mode: "simple",
+          mode: "fast",
           createdAt: new Date().toISOString(),
           followups: clarifyChips,
         });
@@ -569,10 +579,12 @@ export default function ChatEngine() {
       s().setCeoThinking(convId, "");
       if (intent === "discover") {
         await runDiscoverMode(combined, portfolioContext, convId, "quick", undefined, prior);
-      } else if (intent === "agent") {
+      } else if (intent === "full_analysis") {
+        // The crew, only because the user asked for it. W2-2 replaces this call
+        // with its sized-crew entry point (same signature).
         await runAgentMode(combined, portfolioContext, convId, "agent", false, prior, templateId, pageContext);
       } else {
-        await runSimpleChat(combined, portfolioContext, convId, "simple", prior, templateId, pageContext);
+        await runSimpleChat(combined, portfolioContext, convId, "fast", prior, templateId, pageContext);
       }
     } catch (err) {
       if (runs.wasStopped(ctrl)) return;
@@ -614,7 +626,7 @@ export default function ChatEngine() {
       }
       if (pageContext) s().setPageContextForConv(convId, pageContext);
       ctrl = runs.start(convId);
-      laneMode.set(convId, mode === "auto" ? "simple" : mode);
+      laneMode.set(convId, mode === "auto" ? "fast" : mode);
 
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),

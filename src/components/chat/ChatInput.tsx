@@ -83,6 +83,17 @@ const MODE_CONFIG: Record<ChatMode, { label: string; pill: string; description: 
       </svg>
     ),
   },
+  fast: {
+    label: "Fast answer",
+    pill: "Fast",
+    description: "Grounded answer in seconds",
+    color: "var(--color-text-secondary)",
+    icon: (
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </svg>
+    ),
+  },
   simple: {
     label: "Simple Chat",
     pill: "Simple Chat",
@@ -97,10 +108,10 @@ const MODE_CONFIG: Record<ChatMode, { label: string; pill: string; description: 
 };
 
 // Only the modes a user should have to choose between. Auto already routes to
-// simple, agent and discover on its own (see /api/classify), so offering them
-// as separate buttons asks a new user to learn five things to ask one question.
-// MODE_CONFIG keeps all five: an older conversation stored in agent/discover/
-// simple still renders its own pill label correctly.
+// the fast lane, the crew and discover on its own (see /api/classify), so
+// offering them as separate buttons asks a new user to learn five things to ask
+// one question. MODE_CONFIG keeps every mode: a message stored as fast/agent/
+// discover/simple still renders its own pill label correctly.
 const MODE_ORDER: ChatMode[] = ["auto", "deep_research"];
 
 /** Tiny attachment-type glyphs (image / file-text / paperclip). */

@@ -21,13 +21,16 @@ export function simpleChatBody(a: {
   portfolioContext: string;
   templateId?: string;
   pageContext?: PageContext | null;
+  /** Lets the fast lane reuse this conversation's last fetch for a reformat. */
+  conversationId?: string;
 }) {
-  const next: ChatMessage = { id: "next", role: "user", content: a.text, mode: "simple", createdAt: "" };
+  const next: ChatMessage = { id: "next", role: "user", content: a.text, mode: "fast", createdAt: "" };
   return {
     messages: buildHistory([...a.prior, next]),
     portfolioContext: a.portfolioContext,
     templateId: a.templateId,
     pageContext: a.pageContext ?? undefined,
+    conversationId: a.conversationId,
   };
 }
 
@@ -72,12 +75,15 @@ export function classifyBody(a: {
   userPrompt: string;
   portfolioContext: string;
   pageContext?: PageContext | null;
+  /** False on the turn right after a clarifying question, so we never ask twice. */
+  allowClarify?: boolean;
 }) {
   return {
     userPrompt: a.userPrompt,
     history: buildHistory(a.prior).slice(-CLASSIFY_TURNS),
     portfolioContext: a.portfolioContext,
     pageContext: a.pageContext ?? undefined,
+    allowClarify: a.allowClarify,
   };
 }
 
