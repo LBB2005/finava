@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
-import { useFactorUniverse } from "@/hooks/useFactorUniverse";
+import { useTickerFactsSlim } from "@/hooks/useTickerFacts";
 import { useChatStore } from "@/stores/chatStore";
 import { buildPortfolioSnapshot } from "@/lib/pageContext";
 import { useToast } from "@/hooks/useToast";
@@ -12,7 +12,6 @@ import ConnectBrokerageButton from "@/components/portfolio/ConnectBrokerageButto
 import ChatContextButton from "@/components/chat/ChatContextButton";
 import PageHeader from "@/components/layout/PageHeader";
 import ScorePill from "@/components/ui/ScorePill";
-import { scoreForTicker } from "@/lib/compositeScore";
 
 
 // Allocation palette — navy→lighter-blue ramp from the design kit
@@ -164,9 +163,9 @@ export default function PortfolioPage() {
   }
 
   const { quoteMap, error: quotesError, isLoading: quotesLoading } = useQuotes(holdings.map((h) => h.ticker));
-  // Real scored universe (S&P 500, live factors). A holding outside it has no
-  // score and renders "—" — we never fabricate one.
-  const { universe } = useFactorUniverse();
+  // The facts layer's cached Finava Score (the number the stock page shows). A
+  // holding nobody has scored yet renders "—" — we never fabricate one.
+  const slimScores = useTickerFactsSlim(holdings.map((h) => h.ticker));
   const { setPendingMessage, reset } = useChatStore();
 
   useEffect(() => {
@@ -515,7 +514,7 @@ export default function PortfolioPage() {
                   </thead>
                   <tbody>
                     {rows.map((r, rowIdx) => {
-                      const score = scoreForTicker(universe, r.holding.ticker);
+                      const score = slimScores.map.get(r.holding.ticker.toUpperCase())?.score.value?.total ?? null;
                       const dayPct = r.quote?.changePct ?? 0;
                       const isDayPos = dayPct >= 0;
                       const isPos = r.gainLoss >= 0;
@@ -542,7 +541,7 @@ export default function PortfolioPage() {
                               </span>
                             </div>
                           </td>
-                          {/* Finava score pill — "—" until the factor universe covers this ticker */}
+                          {/* Finava score pill — "—" until this ticker's Finava Score has been computed */}
                           <td style={{ padding: "8px 12px" }}>
                             {score != null ? (
                               <ScorePill score={score} />
