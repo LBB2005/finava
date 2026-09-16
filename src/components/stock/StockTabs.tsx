@@ -5,7 +5,7 @@ import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
 import { useNewsImages } from "@/hooks/useNewsImages";
 import { useFinava } from "@/hooks/useFinava";
-import { useVerdictCache } from "@/hooks/useVerdictCache";
+import { useVerdictCache, verdictAge } from "@/hooks/useVerdictCache";
 import { factorColor } from "@/lib/research";
 import { useTickerFacts } from "@/hooks/useTickerFacts";
 import type {
@@ -351,11 +351,14 @@ export function OverviewTab({
 
   // Cached-first verdict (shared SWR key with the rail — one read per page).
   const { resolving } = useVerdictCache(ticker);
-  const { analysis, status } = useFinava(ticker);
+  const { analysis, status, updatedAt } = useFinava(ticker);
   const verdict = analysis.verdict;
 
   // Pillar bars are the canonical score's six pillars (the same engine as the rail and Finava tab).
   const facts = useTickerFacts(ticker);
+  // A cached narrative can quote an older score; say so rather than let two numbers disagree silently.
+  const canonicalTotal = facts.data?.score.value?.total ?? null;
+  const staleNarrative = !!verdict && status !== "streaming" && canonicalTotal != null && verdict.score !== canonicalTotal;
   const fin = useSWR<FinancialsResponse>(`/api/stock/${encodeURIComponent(ticker)}/financials`, publicJson, {
     revalidateOnFocus: false, shouldRetryOnError: false, dedupingInterval: 300_000,
   });
@@ -390,6 +393,12 @@ export function OverviewTab({
               )}
               <p className="mono" style={{ margin: "8px 0 0", fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
                 {verdict.fallback ? "Factor data only" : "AI-generated narrative"} · not investment advice
+                {staleNarrative && (
+                  <>
+                    <br />
+                    Written{verdictAge(updatedAt) ? ` ${verdictAge(updatedAt)}` : " earlier"} when the score was {verdict.score}. Score now {canonicalTotal}.
+                  </>
+                )}
               </p>
             </>
           ) : status === "streaming" ? (
