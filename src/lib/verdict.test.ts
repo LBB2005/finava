@@ -78,8 +78,10 @@ describe("verdict labels read as research, not recommendations", () => {
     expect(SIGNAL_STRENGTH_HELP).toMatch(/not a probability/i);
   });
 
-  it("tags the hero as the highest score, not a pick", () => {
-    expect(heroTag("1W")).toBe("1W · HIGHEST SCORE");
+  it("tags the hero as the top factor rank, not a pick or a score", () => {
+    // The board's #1 is the top factor rank; "score" means the facts-layer Finava Score only.
+    expect(heroTag("1W")).toBe("1W · TOP FACTOR RANK");
+    expect(heroTag("1W")).not.toMatch(/score/i);
     expect(heroTag("1W")).not.toMatch(/pick/i);
   });
 });
