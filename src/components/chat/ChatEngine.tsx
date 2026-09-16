@@ -16,6 +16,7 @@ import { planWaves, mergeWaveEvidence, mergeWaves } from "@/lib/discoveryRun";
 import { applyFinalResponse, readSseData } from "@/lib/chat/stream";
 import { agentBody, classifyBody, discoverScoutBody, simpleChatBody, streamAgent, streamSimple } from "@/lib/chat/requests";
 import { discoverToMarkdown } from "@/lib/chat/discoverText";
+import { isFundQuestion } from "@/lib/capabilityCheck";
 import { RunRegistry, stoppedMessage } from "@/lib/chat/runControl";
 import { fullAnalysisPrompt } from "@/lib/chat/escalation";
 import { INTENTS, type Intent } from "@/lib/chat/intent";
@@ -664,6 +665,10 @@ export default function ChatEngine() {
         });
         return;
       }
+
+      // Discover screens individual stocks; a fund question goes to the fast lane,
+      // which answers about funds instead of handing back stock picks (W4-1).
+      if (intent === "discover" && isFundQuestion(combined, prior.filter((m) => m.role === "user").map((m) => m.content))) intent = "fast";
 
       s().setCeoThinking(convId, "");
       if (intent === "discover") {
