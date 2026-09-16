@@ -1,11 +1,5 @@
-import {
-  getBasicFinancials,
-  getCompanyNews,
-  getEarningsCalendar,
-  getQuote,
-} from "@/lib/finnhub";
-import { getFactorUniverse } from "@/lib/factorUniverse";
-import { composite, grade } from "@/lib/research";
+import { getCompanyNews } from "@/lib/finnhub";
+import type { Fact, TickerFacts } from "@/lib/facts/types";
 import { isValidTicker } from "@/lib/tickers";
 import type { PageContext } from "@/lib/pageContext";
 
@@ -22,8 +16,8 @@ import type { PageContext } from "@/lib/pageContext";
  * Every value carries its own source and as-of, and a value we could not get is
  * the literal string "Unavailable" — never a plausible stand-in.
  *
- * Deliberately small: the W3-1 facts layer replaces this, and the whole surface
- * it has to reproduce is `getQuickContext` + `renderQuickContext`.
+ * Since W3-1 the numbers come from the facts layer (the same ones the stock
+ * page shows); this module only formats them for the prompt and adds headlines.
  */
 
 /** The one string a missing value is ever allowed to be. */
@@ -124,15 +118,35 @@ function usd(n: number | null): string | null {
   return `$${n.toFixed(2)}`;
 }
 
-/** Market cap arrives from Finnhub in millions of USD. */
-function usdFromMillions(n: number | null): string | null {
-  return n == null ? null : usd(n * 1e6);
+/** Map a Fact to the prompt's string triple. A missing fact is Unavailable across the row. */
+function show<T>(f: Fact<T> | undefined, fmt: (v: T) => string | null): QuickValue {
+  if (!f || f.value == null) return unavailable();
+  const v = fmt(f.value);
+  return v == null ? unavailable() : { value: v, source: f.source, asOf: f.asOf };
 }
 
-/** Build a value, or `Unavailable` when the formatted figure came back null. */
-function value(v: string | null, source: string, asOf: string | null): QuickValue {
-  if (v == null || asOf == null) return unavailable();
-  return { value: v, source, asOf };
+/** facts' source names → the words this prompt block has always used. */
+const DROPPED_LABELS: Record<string, string> = {
+  quote: "quote",
+  metric: "key stats",
+  edgar: "filings",
+  earnings: "earnings date",
+  target: "street target",
+  derived: "score",
+};
+
+function toQuickFacts(f: TickerFacts): QuickFacts {
+  return {
+    price: show(f.price, (v) => usd(v)),
+    change: show(f.change1d, (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`),
+    marketCap: show(f.marketCap, (v) => usd(v)),
+    peTTM: show(f.pe, (v) => v.toFixed(1)),
+    epsTTM: show(f.epsTTM, (v) => usd(v)),
+    range52w: show(f.range52w, (v) => `${usd(v.low)}–${usd(v.high)}`),
+    dividendYield: show(f.dividendYield, (v) => `${v.toFixed(2)}%`),
+    nextEarnings: show(f.nextEarnings, (v) => (v.estimated ? `${v.date} (estimated)` : v.date)),
+    finavaScore: show(f.score, (v) => `${v.total} (${v.grade})`),
+  };
 }
 
 // ── Budget ───────────────────────────────────────────────────────────────────
@@ -208,38 +222,6 @@ function readHeadlines(raw: unknown): QuickHeadline[] {
     }));
 }
 
-/** The calendar's own date IS the fact; `asOf` is when we read the calendar. */
-function readNextEarnings(raw: unknown): QuickValue {
-  const rows = (raw as { earningsCalendar?: Record<string, unknown>[] } | null)?.earningsCalendar;
-  if (!Array.isArray(rows)) return unavailable();
-  const today = isoDay(new Date());
-  const next = rows
-    .filter((r) => typeof r.date === "string" && r.date >= today)
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
-  if (!next) return unavailable();
-  return value(String(next.date), "Finnhub earnings calendar", isoDay(new Date()));
-}
-
-/**
- * The deterministic Finava score, read from the warm 15-minute factor universe
- * memo. Cheap when warm and dropped by the budget when cold — which is exactly
- * the "if cheap" the plan asks for.
- */
-function readScore(universe: unknown, ticker: string): QuickValue {
-  const u = universe as { asOf?: string; stocks?: { ticker: string; f: Record<string, number> }[] } | null;
-  const stock = u?.stocks?.find((s) => s.ticker === ticker);
-  if (!stock || !u?.asOf) return unavailable();
-  try {
-    const score = composite(stock as never, "month");
-    // A row missing a factor makes the weighted sum NaN. "NaN (F)" is a
-    // fabricated grade; a score we cannot compute is simply Unavailable.
-    if (!Number.isFinite(score)) return unavailable();
-    return value(`${score} (${grade(score)})`, "Finava factor model", u.asOf);
-  } catch {
-    return unavailable();
-  }
-}
-
 // ── Assembly ─────────────────────────────────────────────────────────────────
 
 /**
@@ -260,51 +242,30 @@ export async function getQuickContext(input: QuickContextInput): Promise<QuickCo
   };
   if (!ticker) return base;
 
-  const deadline = Date.now() + (input.budgetMs ?? DEFAULT_BUDGET_MS);
+  const budgetMs = input.budgetMs ?? DEFAULT_BUDGET_MS;
+  const deadline = Date.now() + budgetMs;
   const now = new Date();
   const newsFrom = isoDay(new Date(now.getTime() - 14 * DAY_MS));
-  const earningsTo = isoDay(new Date(now.getTime() + 120 * DAY_MS));
 
-  const [quote, financials, news, earnings, universe] = await Promise.all([
-    within("quote", deadline, () => getQuote(ticker), dropped),
-    within("key stats", deadline, () => getBasicFinancials(ticker), dropped),
+  const [facts, news] = await Promise.all([
+    // cachedOnly: a fast answer never waits on a cold score assembly.
+    within("market data", deadline, async () => {
+      // Loaded lazily: the facts loader reaches firebase-admin, which validates
+      // service-account env at module load (same reason as turnData.ts).
+      const { getTickerFacts } = await import("@/lib/facts/ticker");
+      return getTickerFacts(ticker, { cachedOnly: true, deadlineMs: budgetMs });
+    }, dropped),
     within("news", deadline, () => getCompanyNews(ticker, newsFrom, isoDay(now)), dropped),
-    within("earnings date", deadline, () => getEarningsCalendar(isoDay(now), earningsTo, ticker), dropped),
-    within("score", deadline, () => getFactorUniverse(), dropped),
   ]);
 
-  const facts = emptyFacts();
-
-  if (quote) {
-    facts.price = value(usd(num(quote.price)), "Finnhub quote", quote.asOf ?? null);
-    const pct = num(quote.changePct);
-    facts.change = value(
-      pct == null ? null : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`,
-      "Finnhub quote",
-      quote.asOf ?? null
-    );
+  if (facts) {
+    for (const name of facts.dropped) dropped.push(DROPPED_LABELS[name] ?? name);
   }
-
-  if (financials) {
-    const m = (financials as { metric?: Record<string, unknown> }).metric ?? {};
-    const src = "Finnhub basic financials";
-    const asOf = isoDay(now);
-    facts.marketCap = value(usdFromMillions(num(m.marketCapitalization)), src, asOf);
-    const pe = num(m.peTTM) ?? num(m.peBasicExclExtraTTM);
-    facts.peTTM = value(pe == null ? null : pe.toFixed(1), src, asOf);
-    const eps = num(m.epsTTM) ?? num(m.epsBasicExclExtraItemsTTM);
-    facts.epsTTM = value(usd(eps), src, asOf);
-    const hi = num(m["52WeekHigh"]);
-    const lo = num(m["52WeekLow"]);
-    facts.range52w = value(hi != null && lo != null ? `${usd(lo)}–${usd(hi)}` : null, src, asOf);
-    const dy = num(m.dividendYieldIndicatedAnnual) ?? num(m.currentDividendYieldTTM);
-    facts.dividendYield = value(dy == null ? null : `${dy.toFixed(2)}%`, src, asOf);
-  }
-
-  if (earnings) facts.nextEarnings = readNextEarnings(earnings);
-  if (universe) facts.finavaScore = readScore(universe, ticker);
-
-  return { ...base, facts, headlines: news ? readHeadlines(news) : [] };
+  return {
+    ...base,
+    facts: facts ? toQuickFacts(facts) : emptyFacts(),
+    headlines: news ? readHeadlines(news) : [],
+  };
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────

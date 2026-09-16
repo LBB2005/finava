@@ -1,58 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tickerFactsFixture } from "@/test/factsFixture";
+import { missing } from "@/lib/facts/types";
 
-const deps = vi.hoisted(() => ({
-  getQuote: vi.fn(),
-  getBasicFinancials: vi.fn(),
-  getCompanyNews: vi.fn(),
-  getEarningsCalendar: vi.fn(),
-  getFactorUniverse: vi.fn(),
-}));
+const deps = vi.hoisted(() => ({ getTickerFacts: vi.fn(), getCompanyNews: vi.fn() }));
+vi.mock("@/lib/facts/ticker", () => ({ getTickerFacts: deps.getTickerFacts }));
+vi.mock("@/lib/finnhub", () => ({ getCompanyNews: deps.getCompanyNews }));
 
-vi.mock("@/lib/finnhub", () => ({
-  getQuote: deps.getQuote,
-  getBasicFinancials: deps.getBasicFinancials,
-  getCompanyNews: deps.getCompanyNews,
-  getEarningsCalendar: deps.getEarningsCalendar,
-}));
-vi.mock("@/lib/factorUniverse", () => ({ getFactorUniverse: deps.getFactorUniverse }));
-
-import {
-  UNAVAILABLE,
-  getQuickContext,
-  pickTickers,
-  renderQuickContext,
-  type QuickContext,
-} from "./quickContext";
+import { UNAVAILABLE, getQuickContext, pickTickers, renderQuickContext, type QuickContext } from "./quickContext";
 
 /** A promise that never settles inside the budget. */
 function hangs<T>(): Promise<T> {
   return new Promise<T>(() => {});
 }
-
-const QUOTE = {
-  ticker: "NVDA",
-  price: 182.5,
-  change: 3.2,
-  changePct: 1.79,
-  volume: 0,
-  high: 0,
-  low: 0,
-  open: 0,
-  prevClose: 179.3,
-  asOf: "2026-09-15T20:00:00.000Z",
-  asOfSource: "exchange" as const,
-};
-
-const FINANCIALS = {
-  metric: {
-    marketCapitalization: 4_460_000,
-    peTTM: 51.2,
-    "52WeekHigh": 195.6,
-    "52WeekLow": 86.6,
-    dividendYieldIndicatedAnnual: 0.02,
-    epsTTM: 3.56,
-  },
-};
 
 const NEWS = [
   { headline: "Nvidia lifts data-centre outlook", source: "Reuters", url: "u1", datetime: 1_757_000_000 },
@@ -65,21 +24,8 @@ const NEWS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  deps.getQuote.mockResolvedValue(QUOTE);
-  deps.getBasicFinancials.mockResolvedValue(FINANCIALS);
+  deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("NVDA"));
   deps.getCompanyNews.mockResolvedValue(NEWS);
-  deps.getEarningsCalendar.mockResolvedValue({
-    earningsCalendar: [{ symbol: "NVDA", date: "2026-11-18", hour: "amc" }],
-  });
-  deps.getFactorUniverse.mockResolvedValue({
-    asOf: "2026-09-15T19:45:00.000Z",
-    stocks: [
-      {
-        ticker: "NVDA",
-        f: { mom: 72, growth: 95, quality: 88, analyst: 80, value: 30, health: 66 },
-      },
-    ],
-  });
 });
 
 afterEach(() => {
@@ -114,30 +60,36 @@ describe("getQuickContext", () => {
   it("returns live values with a source and an as-of for each", async () => {
     const qc = await getQuickContext({ tickers: ["NVDA"] });
     expect(qc.ticker).toBe("NVDA");
-    expect(qc.facts.price.value).toBe("$182.50");
-    expect(qc.facts.price.source).toMatch(/Finnhub/);
-    expect(qc.facts.price.asOf).toBe("2026-09-15T20:00:00.000Z");
+    expect(qc.facts.price).toEqual({ value: "$182.50", source: "Finnhub quote", asOf: "2026-09-15T20:00:00.000Z" });
+    expect(qc.facts.change.value).toBe("+1.79%");
     expect(qc.facts.marketCap.value).toBe("$4.46T");
-    expect(qc.facts.peTTM.value).toBe("51.2");
+    expect(qc.facts.peTTM.value).toBe("51.3");
+    expect(qc.facts.epsTTM.value).toBe("$3.56");
     expect(qc.facts.range52w.value).toBe("$86.60–$195.60");
     expect(qc.facts.dividendYield.value).toBe("0.02%");
-    expect(qc.facts.nextEarnings.value).toBe("2026-11-18");
+    expect(qc.facts.nextEarnings.value).toBe("2026-11-18 (estimated)");
   });
 
-  it("carries the Finava score with the universe's as-of", async () => {
+  it("reads the facts layer cache-only under the turn's budget", async () => {
+    await getQuickContext({ tickers: ["NVDA"], budgetMs: 900 });
+    expect(deps.getTickerFacts).toHaveBeenCalledWith("NVDA", { cachedOnly: true, deadlineMs: 900 });
+  });
+
+  it("carries the canonical Finava score with its as-of", async () => {
+    const f = tickerFactsFixture("NVDA");
     const qc = await getQuickContext({ tickers: ["NVDA"] });
-    expect(qc.facts.finavaScore.value).toMatch(/^\d{1,3} \([A-F][+-]?\)$/);
-    expect(qc.facts.finavaScore.asOf).toBe("2026-09-15T19:45:00.000Z");
+    expect(qc.facts.finavaScore).toEqual({
+      value: `${f.score.value!.total} (${f.score.value!.grade})`,
+      source: "Finava Score v2 (15 factors)",
+      asOf: f.score.asOf,
+    });
   });
 
-  it("refuses a score it cannot actually compute", async () => {
-    // A universe row missing a factor must read Unavailable, not "NaN (F)".
-    deps.getFactorUniverse.mockResolvedValue({
-      asOf: "2026-09-15T19:45:00.000Z",
-      stocks: [{ ticker: "NVDA", f: { mom: 72 } }],
-    });
+  it("shows a score nobody has computed yet as Unavailable, not as dropped", async () => {
+    deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("NVDA", { score: missing("Finava Score v2 (15 factors)", "Not scored yet") }));
     const qc = await getQuickContext({ tickers: ["NVDA"] });
     expect(qc.facts.finavaScore.value).toBe(UNAVAILABLE);
+    expect(qc.dropped).not.toContain("score");
   });
 
   it("returns the 5 latest dated headlines, newest first", async () => {
@@ -148,45 +100,31 @@ describe("getQuickContext", () => {
   });
 
   it("renders a missing value as Unavailable, never a stand-in", async () => {
-    deps.getBasicFinancials.mockResolvedValue({ metric: {} });
+    deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("NVDA", { marketCap: missing("x", "Needs a price and a share count"), pe: missing("x", "Loss-making") }));
     const qc = await getQuickContext({ tickers: ["NVDA"] });
-    expect(qc.facts.marketCap.value).toBe(UNAVAILABLE);
+    expect(qc.facts.marketCap).toEqual({ value: UNAVAILABLE, source: UNAVAILABLE, asOf: UNAVAILABLE });
     expect(qc.facts.peTTM.value).toBe(UNAVAILABLE);
-    expect(qc.facts.marketCap.source).toBe(UNAVAILABLE);
   });
 
-  it("survives a source that throws", async () => {
-    deps.getQuote.mockRejectedValue(new Error("Finnhub 429"));
+  it("names the sources facts dropped, in the words the prompt already uses", async () => {
+    deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("NVDA", { price: missing("Finnhub quote", "Not retrieved in time"), dropped: ["quote", "metric", "earnings"] }));
     const qc = await getQuickContext({ tickers: ["NVDA"] });
     expect(qc.facts.price.value).toBe(UNAVAILABLE);
-    expect(qc.facts.peTTM.value).toBe("51.2"); // the others still land
-    expect(qc.dropped).toContain("quote");
-  });
-
-  it("drops whatever misses the budget and names it", async () => {
-    deps.getFactorUniverse.mockReturnValue(hangs());
-    const started = Date.now();
-    const qc = await getQuickContext({ tickers: ["NVDA"], budgetMs: 120 });
-    expect(Date.now() - started).toBeLessThan(1000);
-    expect(qc.facts.finavaScore.value).toBe(UNAVAILABLE);
-    expect(qc.dropped).toContain("score");
-    expect(qc.facts.price.value).toBe("$182.50"); // fast sources still made it
+    expect(qc.dropped).toEqual(expect.arrayContaining(["quote", "key stats", "earnings date"]));
   });
 
   it("returns within the budget even when every source hangs", async () => {
-    deps.getQuote.mockReturnValue(hangs());
-    deps.getBasicFinancials.mockReturnValue(hangs());
+    deps.getTickerFacts.mockReturnValue(hangs());
     deps.getCompanyNews.mockReturnValue(hangs());
-    deps.getEarningsCalendar.mockReturnValue(hangs());
-    deps.getFactorUniverse.mockReturnValue(hangs());
     const started = Date.now();
     const qc = await getQuickContext({ tickers: ["NVDA"], budgetMs: 120 });
     expect(Date.now() - started).toBeLessThan(1000);
     expect(qc.facts.price.value).toBe(UNAVAILABLE);
     expect(qc.headlines).toEqual([]);
+    expect(qc.dropped).toEqual(expect.arrayContaining(["market data", "news"]));
   });
 
-  it("fetches the sources in parallel, not one after another", async () => {
+  it("fetches facts and news in parallel", async () => {
     let inFlight = 0;
     let peak = 0;
     const slow = <T,>(v: T) => async () => {
@@ -196,16 +134,15 @@ describe("getQuickContext", () => {
       inFlight -= 1;
       return v;
     };
-    deps.getQuote.mockImplementation(slow(QUOTE));
-    deps.getBasicFinancials.mockImplementation(slow(FINANCIALS));
+    deps.getTickerFacts.mockImplementation(slow(tickerFactsFixture("NVDA")));
     deps.getCompanyNews.mockImplementation(slow(NEWS));
     await getQuickContext({ tickers: ["NVDA"] });
-    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBe(2);
   });
 
   it("skips every fetch when there is no ticker to fetch for", async () => {
     const qc = await getQuickContext({ tickers: [] });
-    expect(deps.getQuote).not.toHaveBeenCalled();
+    expect(deps.getTickerFacts).not.toHaveBeenCalled();
     expect(qc.ticker).toBeNull();
     expect(qc.facts.price.value).toBe(UNAVAILABLE);
   });
@@ -225,15 +162,15 @@ describe("renderQuickContext", () => {
   });
 
   it("says Unavailable rather than omitting a metric", async () => {
-    deps.getEarningsCalendar.mockResolvedValue({ earningsCalendar: [] });
+    deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("NVDA", { nextEarnings: missing("Finnhub earnings calendar", "No earnings date in the next 120 days") }));
     const md = await rendered();
     expect(md).toMatch(new RegExp(`Next earnings.*${UNAVAILABLE}`));
   });
 
   it("lists what was dropped so the answer can admit the gap", async () => {
-    deps.getFactorUniverse.mockReturnValue(hangs());
-    const qc = await getQuickContext({ tickers: ["NVDA"], budgetMs: 120 });
-    expect(renderQuickContext(qc)).toMatch(/score/);
+    deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("NVDA", { dropped: ["edgar"] }));
+    const qc = await getQuickContext({ tickers: ["NVDA"] });
+    expect(renderQuickContext(qc)).toMatch(/filings/);
   });
 
   it("produces a compact block, not a data dump", async () => {
