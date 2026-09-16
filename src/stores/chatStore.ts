@@ -19,6 +19,27 @@ export interface StreamSlice {
   pendingCritique: string;
   pendingFollowups: string[];
   discoverProgress: { current: number; total: number } | null;
+  /** The planned crew for this run, its ETA, and how far through it is (W2-2).
+   *  Null outside a crew run. W2-3's CrewProgress row renders it. */
+  crewProgress: CrewProgress | null;
+}
+
+/** What the crew said it would do, and how it is tracking against that. */
+export interface CrewProgress {
+  /** Agent tool names, in the order the planner chose them. */
+  agents: string[];
+  /** Quoted wall-clock for the whole run, from `crew_plan`. */
+  etaSeconds: number;
+  /** Deep Research — a deliberately wider crew on a longer budget. */
+  deep: boolean;
+  /** Epoch ms the plan was announced, so the UI can count down from the ETA. */
+  startedAt: number;
+  /** Per-agent state. Absent = not started yet. */
+  status: Record<string, "running" | "done" | "failed" | "skipped">;
+  /** Observed wall-clock per finished agent, for re-basing the countdown. */
+  ms: Record<string, number>;
+  /** Set once the run is against its budget and will synthesize with what it has. */
+  budgetRemainingSeconds: number | null;
 }
 
 export const emptySlice = (): StreamSlice => ({
@@ -30,6 +51,7 @@ export const emptySlice = (): StreamSlice => ({
   pendingCritique: "",
   pendingFollowups: [],
   discoverProgress: null,
+  crewProgress: null,
 });
 
 /** A queued send the ChatEngine will pick up and run. */
@@ -45,8 +67,10 @@ export interface SendRequest {
    *  model can scope its answer. Captured at enqueue time — before the composing
    *  page can unmount — then remembered per-conversation for follow-up turns. */
   pageContext?: PageContext | null;
-  /** "send" routes by mode; "deepen" escalates a quick discover to a deep run. */
-  kind: "send" | "deepen";
+  /** "send" routes by mode; "deepen" escalates a quick discover to a deep run;
+   *  "full_analysis" is the explicit "Run full analysis" request behind a fast
+   *  answer — it runs the sized crew on `text` regardless of `mode`. */
+  kind: "send" | "deepen" | "full_analysis";
   /** Optional response-template id whose instructions/format shape this answer. */
   templateId?: string;
 }
@@ -111,6 +135,13 @@ interface ChatState {
   setPendingCritique: (convId: string, c: string) => void;
   setPendingFollowups: (convId: string, q: string[]) => void;
   setDiscoverProgress: (convId: string, p: { current: number; total: number } | null) => void;
+  /** Start (or clear) a crew run's progress. Called on `crew_plan`. */
+  setCrewProgress: (convId: string, p: CrewProgress | null) => void;
+  /** Fold one `agent_progress` / `budget_warning` update into the run. */
+  patchCrewProgress: (
+    convId: string,
+    update: { agent?: string; status?: "running" | "done" | "failed" | "skipped"; ms?: number; budgetRemainingSeconds?: number }
+  ) => void;
   /** Tear down a conversation's state entirely (e.g. on delete). */
   dropConversation: (convId: string) => void;
 
@@ -223,6 +254,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ streamsByConv: patchSlice(s.streamsByConv, convId, { pendingFollowups: q }) })),
   setDiscoverProgress: (convId, p) =>
     set((s) => ({ streamsByConv: patchSlice(s.streamsByConv, convId, { discoverProgress: p }) })),
+  setCrewProgress: (convId, p) =>
+    set((s) => ({ streamsByConv: patchSlice(s.streamsByConv, convId, { crewProgress: p }) })),
+  patchCrewProgress: (convId, update) =>
+    set((s) => {
+      const cur = s.streamsByConv[convId]?.crewProgress;
+      // Progress only exists inside a planned run — an update that arrives after
+      // the run is cleared (a stopped chat, a late event) is dropped, not resurrected.
+      if (!cur) return {};
+      const next: CrewProgress = {
+        ...cur,
+        status: update.agent && update.status ? { ...cur.status, [update.agent]: update.status } : cur.status,
+        ms: update.agent && update.ms != null ? { ...cur.ms, [update.agent]: update.ms } : cur.ms,
+        budgetRemainingSeconds:
+          update.budgetRemainingSeconds != null ? update.budgetRemainingSeconds : cur.budgetRemainingSeconds,
+      };
+      return { streamsByConv: patchSlice(s.streamsByConv, convId, { crewProgress: next }) };
+    }),
 
   dropConversation: (convId) =>
     set((s) => {

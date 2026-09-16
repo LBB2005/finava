@@ -30,10 +30,12 @@ export interface TurnData {
   /** ISO instant this turn's data was gathered. */
   storedAt: string;
   /**
-   * The crew's gathered agent outputs, when a full analysis produced them.
-   * Written by W2-2; the fast lane only ever reads it.
+   * The crew's gathered sub-agent outputs, keyed by agent tool name
+   * (`run_dcf_agent`, …), when a full analysis produced them. Written by the
+   * crew; the fast lane reads them so a short follow-up after a full analysis
+   * ("so yes or no?") is answered from what the crew already gathered.
    */
-  crewOutputs?: string;
+  crewOutputs?: Record<string, string>;
 }
 
 // ── In-memory layer ──────────────────────────────────────────────────────────
@@ -128,4 +130,27 @@ export async function loadTurnData(userId: string, convId: string): Promise<Turn
     console.warn("[turnData] load failed (will refetch):", err);
     return null;
   }
+}
+
+/**
+ * Store what a crew run gathered, alongside whatever the fast lane already
+ * fetched for this conversation.
+ *
+ * Merges rather than replaces: a turn can have both a QuickContext (fast lane)
+ * and crew outputs, and neither should erase the other. Best-effort by design —
+ * losing the scratch copy costs a refetch, never an answer.
+ */
+export async function recordCrewOutputs(
+  userId: string | undefined,
+  convId: string | undefined,
+  crewOutputs: Record<string, string>
+): Promise<void> {
+  if (!userId || !convId || !Object.keys(crewOutputs).length) return;
+  const prev = await loadTurnData(userId, convId).catch(() => null);
+  await saveTurnData(userId, convId, {
+    ...(prev ?? {}),
+    quickContext: prev?.quickContext ?? null,
+    storedAt: new Date().toISOString(),
+    crewOutputs: { ...(prev?.crewOutputs ?? {}), ...crewOutputs },
+  } as TurnData);
 }

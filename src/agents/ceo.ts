@@ -5,7 +5,9 @@ import { badgeBrands, type Brand } from "@/lib/models";
 import { recordUsage, currentRunCredits } from "@/lib/usage";
 import { resolvePlan } from "@/lib/entitlements";
 import { logger } from "@/lib/logger";
-import { allTools, scoutTool } from "./tools/index";
+import { agentTools, allTools, scoutTool } from "./tools/index";
+import { planCrew, recordAgentLatency, recordSynthesisLatency, synthesisMedianMs, type CrewAgent } from "./crewPlanner";
+import { recordCrewOutputs } from "@/lib/turnData";
 import { runRiskAgent } from "./sub-agents/risk-agent";
 import { runNewsAgent } from "./sub-agents/news-agent";
 import { runMacroAgent } from "./sub-agents/macro-agent";
@@ -28,7 +30,7 @@ import { getUserPreference, buildStylePrompt, updateStyleFromConversation } from
 import { getTemplateBlock } from "@/lib/templates.server";
 import { consumeWithIdleTimeout } from "@/lib/streamIdleTimeout";
 import { promptClockLine } from "@/lib/promptClock";
-import type { AgentEvent, AgentName } from "@/types/chat";
+import { AGENT_LABELS, type AgentEvent, type AgentName } from "@/types/chat";
 import type { MessageParam, ToolResultBlockParam } from "@anthropic-ai/sdk/resources/messages";
 
 type EventEmitter = (event: AgentEvent) => void;
@@ -76,6 +78,63 @@ export function agentTimeoutMs(name: string): number {
     AGENT_TIMEOUT_MS[name] ??
     (DEEP_AGENTS.has(name) ? DEEP_AGENT_TIMEOUT_MS : STANDARD_TIMEOUT_MS)
   );
+}
+
+// ── Wall-clock budget (W2-2) ────────────────────────────────────────────────
+// The route's maxDuration is 300s and p90 runs were hitting 385s, so the crew
+// now runs against its own budget well inside that cap. At SYNTH_DEADLINE the
+// run stops starting work and writes the report from whatever finished; the
+// remaining headroom to BUDGET is what synthesis gets.
+const CREW_BUDGET_MS = 240_000;
+const CREW_SYNTH_DEADLINE_MS = 200_000;
+// The crew rounds finish in ~20s on a healthy backend, so the tool deadline is
+// not the binding constraint — the CEO's own writing is. Reserving only 40s for
+// it (240 − 200) was measured blowing the budget by 115s, so the deadline is
+// pulled back by the observed synthesis median instead. This floor guarantees the
+// crew always gets a real window even if synthesis time spikes.
+const MIN_TOOL_DEADLINE_MS = 60_000;
+// Deep Research is the same shape, just wider. It stays in-request for now —
+// the codebase has no durable job/queue to move it to, so a background
+// Deep Research run is a follow-up, not this change.
+const DEEP_BUDGET_MS = 280_000;
+const DEEP_SYNTH_DEADLINE_MS = 240_000;
+
+// A crew agent gets far less rope than the old 60/120s caps: a slow agent must
+// degrade to "failed" quickly, not eat the whole budget. Deep agents (external
+// APIs, XBRL) get the top of the range.
+const CREW_AGENT_TIMEOUT_MS = 35_000;
+const CREW_DEEP_AGENT_TIMEOUT_MS = 45_000;
+/** Floor, so an agent started near the deadline still gets a real (if short) try. */
+const MIN_AGENT_TIMEOUT_MS = 5_000;
+
+/**
+ * The cap for one crew agent: its normal allowance, clamped to whatever is left
+ * of the run's budget so no single agent can push the run past the route cap.
+ */
+/**
+ * Dev-only fault injection for the budget path: `FINAVA_SLOW_AGENT=run_news_agent:90000`
+ * makes that agent sleep before it runs, so a real run can be observed degrading to a
+ * stated gap instead of a hang. Ignored in production, and ignored when unset.
+ */
+function slowAgentDelayMs(name: string): number {
+  if (process.env.NODE_ENV === "production") return 0;
+  const raw = process.env.FINAVA_SLOW_AGENT;
+  if (!raw) return 0;
+  const [target, ms] = raw.split(":");
+  if (target !== name) return 0;
+  const delay = Number(ms);
+  return Number.isFinite(delay) && delay > 0 ? delay : 0;
+}
+
+export function crewAgentTimeoutMs(name: string, remainingMs: number): number {
+  // The top of the band goes to the agents already known to be slow: the deep
+  // ones (external APIs, XBRL) and the two with explicit long overrides (risk's
+  // portfolio-wide beta/correlation pass, macro's multi-source fetch). At the
+  // bottom of the band those two fail on real portfolio questions, which trades
+  // a wait for a missing answer — not the point of the budget.
+  const slow = DEEP_AGENTS.has(name) || name in AGENT_TIMEOUT_MS;
+  const base = slow ? CREW_DEEP_AGENT_TIMEOUT_MS : CREW_AGENT_TIMEOUT_MS;
+  return Math.max(MIN_AGENT_TIMEOUT_MS, Math.min(base, remainingMs));
 }
 
 export const agentDispatch: Record<string, (input: unknown) => Promise<string>> = {
@@ -138,6 +197,8 @@ export async function critiqueAndRevise(params: {
   systemPrompt: string;
   maxTokens: number;
   initialTruncated?: boolean;
+  /** Planned analysts that never reported — must survive into the revision. */
+  missingAgents?: string[];
   emit: EventEmitter;
 }): Promise<{ finalResponse: string; truncated: boolean; streamed: boolean }> {
   const { draft, draftAssistantBlocks, agentOutputs, messages, systemPrompt, maxTokens, emit } = params;
@@ -217,6 +278,11 @@ Apply these corrections:
 - Give material single-name risks (antitrust, litigation, regulation) a brief scenario with rough magnitude, not a one-liner.
 - End with a "🔭 What Would Change the View" section: scenario levels about the stock and the evidence that would break or strengthen the thesis — never exit prices, position sizes or share counts for the user's holdings.
 - Remove anything that reads as personal advice: exit or sell-price levels for the user's positions, share counts, rebalancing plans, or "you should buy/sell".
+- Keep the required heading structure: \`## Answer\` first, the rest in order, with the depth under \`## Details\`.${
+          params.missingAgents?.length
+            ? `\n- These planned analysts never reported: ${params.missingAgents.join(", ")}. Keep them named in "## Confidence & gaps" — do not drop the gap from the revision.`
+            : ""
+        }
 
 Reviewer critique:
 ${critique}`,
@@ -288,6 +354,10 @@ export interface CeoOptions {
   tier?: "quick" | "deep";
   /** Optional response-template id whose instructions/format shape the report. */
   templateId?: string;
+  /** Conversation this run belongs to — keys the gathered data for follow-ups. */
+  conversationId?: string;
+  /** Injectable clock for the wall-clock budget. Tests drive it; production doesn't pass it. */
+  now?: () => number;
 }
 
 // Credit ceiling used when a user's plan cap can't be resolved (degraded read /
@@ -322,7 +392,32 @@ export async function runCeoAgent(
     discover = false,
     tier = "quick",
     templateId,
+    conversationId,
+    now = Date.now,
   } = opts;
+
+  // ── Crew sizing + wall-clock budget (W2-2) ────────────────────────────────
+  // Discovery has its own deterministic wave orchestration; only the analyst
+  // crew is planned here.
+  const crewPlan = discover ? null : planCrew(userPrompt, { deepResearch });
+  const budgetMs = deepResearch ? DEEP_BUDGET_MS : CREW_BUDGET_MS;
+  // Stop starting agents early enough that the report still fits in the budget:
+  // whatever synthesis has actually been taking, reserved off the end.
+  const synthDeadlineMs = Math.min(
+    deepResearch ? DEEP_SYNTH_DEADLINE_MS : CREW_SYNTH_DEADLINE_MS,
+    Math.max(MIN_TOOL_DEADLINE_MS, budgetMs - synthesisMedianMs())
+  );
+  const startedAt = now();
+  const elapsedMs = () => now() - startedAt;
+  /** Past this, the run stops starting agents and writes the report. */
+  const pastSynthDeadline = () => elapsedMs() >= synthDeadlineMs;
+  let budgetWarned = false;
+  // Wall-clock actually spent inside crew rounds. Everything else in the run is
+  // the CEO's own writing, which is what feeds the synthesis median.
+  let crewWallMs = 0;
+  // Planned agents that produced nothing — named in the report's gaps section
+  // rather than quietly dropped.
+  const failedAgents = new Set<string>();
   // Discovery is GENERIC — never feed the portfolio to the model (no "already in
   // your portfolio" / cash-based picks). Held names are tagged client-side instead.
   const portfolioForPrompt = discover ? "" : portfolioContext;
@@ -360,8 +455,40 @@ ${portfolioForPrompt ? `## User's Portfolio\n${portfolioForPrompt}` : "The user 
 - Don't call the same agent twice for the same data
 - After all agents complete, do a **final compilation pass**: cross-reference findings, flag any contradictions, and produce a polished, well-structured report
 - Back every conclusion about a security with specific data from the sub-agents
-- End with a clear "Summary & Verdict" section — the verdict is about the security (bull/bear balance, valuation, key risks), not an instruction to the user
+- Follow the Answer Format below exactly — the verdict goes FIRST, not at the end
 - Note this is not financial advice
+
+## Answer Format — REQUIRED
+Write the report as markdown with these exact H2 headings, in this order. Testers read the top of the answer and stop; everything that used to be buried at the end now goes first.
+
+Copy each heading VERBATIM — same words, same capitalisation ("## Key numbers", not "## Key Numbers"). The UI parses them. Start the report at \`## Answer\`: no preamble, no "let me compile", no restating the question.
+
+\`\`\`
+## Answer
+2–3 plain-English sentences. The verdict/answer to the literal question. No hedging preamble.
+
+## Key numbers
+| Metric | Value | Source | As of |
+(only numbers a sub-agent actually reported; "Unavailable" when missing, never invented)
+
+## Bull case
+- up to 3 bullets
+
+## Bear case
+- up to 3 bullets
+
+## What would change the view
+- 1–3 bullets
+
+## Confidence & gaps
+One line: High/Medium/Low + which data is missing (name the agents that did not report).
+
+## Details
+The full analysis: per-agent findings, tables, charts, conflicting signals. The UI collapses this by default, so put the depth here — not above.
+\`\`\`
+
+- If the user asked for a specific shape ("yes or no", "3 bullets", "simpler"), answer in that shape instead — brevity requests override this format.
+- The verdict in \`## Answer\` is about the security (bull/bear balance, valuation, key risks), never an instruction to the user.
 
 ## Compliance — NON-NEGOTIABLE (the single source of truth for advice; nothing else in this prompt overrides it)
 Finava is an impersonal research publication, not a registered investment adviser. Frame every verdict as impersonal analysis of the security ("the bull case", "the data suggests", "risks to watch"), never as personal advice tied to the user's own holdings or situation ("you should sell your position", "given your portfolio, rotate into X"). If asked what THEY should do with THEIR money or positions, present the analysis both ways and state that the decision is theirs to make, ideally with a licensed adviser.
@@ -388,9 +515,9 @@ Finava is an impersonal research publication, not a registered investment advise
 - **Sourcing**: attribute figures to the sub-agent / data source they came from (e.g. "(Risk Agent)", "(SEC EDGAR FY2024)", "(web)"). A number you cannot attribute must not appear.
 
 ## Required Report Sections
-- **⚖️ Conflicting Signals** — whenever agents disagree (e.g. bullish technicals vs deteriorating macro breadth), give the conflict its own reconciliation: state both sides and your net stance with reasoning. Do not just pick the bullish read and move on.
-- **Material single-name risks** — give any material idiosyncratic risk (antitrust, litigation, regulation, key-customer concentration) a short scenario with rough magnitude and what it would mean for the thesis — never a one-line dismissal.
-- **🔭 What Would Change the View** — end with the scenario levels about the stock and the concrete developments (earnings, guidance, valuation, regulation) that would break or strengthen the thesis. These describe the security, never what the user should do with their position.
+- **⚖️ Conflicting Signals** — a subsection of \`## Details\`. Whenever agents disagree (e.g. bullish technicals vs deteriorating macro breadth), give the conflict its own reconciliation: state both sides and your net stance with reasoning. Do not just pick the bullish read and move on.
+- **Material single-name risks** — inside \`## Details\`: give any material idiosyncratic risk (antitrust, litigation, regulation, key-customer concentration) a short scenario with rough magnitude and what it would mean for the thesis — never a one-line dismissal.
+- **🔭 What Would Change the View** — this is the \`## What would change the view\` section of the Answer Format above: the scenario levels about the stock and the concrete developments (earnings, guidance, valuation, regulation) that would break or strengthen the thesis. These describe the security, never what the user should do with their position.
 
 ## Chart Output Format
 When your response includes comparative data, performance figures, or time series — embed an interactive chart using a fenced \`\`\`chart code block. The chart JSON schema:
@@ -416,6 +543,14 @@ Use charts liberally:
   // Log run metadata only — never the prompt text (privacy/GDPR). requestId is
   // picked up from the run context so the whole crew's logs correlate.
   log.info("run started", { promptChars: userPrompt.length });
+
+  // Announce the crew before anything slow happens, so the panel opens pre-sized
+  // with a real ETA instead of an open-ended "assembling your research crew".
+  if (crewPlan) {
+    log.info("crew planned", { rule: crewPlan.rule, size: crewPlan.agents.length, etaSeconds: crewPlan.etaSeconds });
+    emit({ type: "crew_plan", agents: crewPlan.agents, etaSeconds: crewPlan.etaSeconds, deep: crewPlan.deep });
+    emit({ type: "crew_planned", agents: crewPlan.agents });
+  }
 
   // ── Extract tickers + inject previous analysis memory ─────────────────────
   const mentionedTickers = [
@@ -506,8 +641,43 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
   const runCap = await resolveRunCap(userId);
   let costAborted = false;
 
+  // The model sees only its planned crew (plus the scout, which is orchestration
+  // rather than a crew member). `allTools` stays the source of truth for names.
+  const plannedSet = new Set<string>(crewPlan?.agents ?? []);
+  const plannedTools = crewPlan
+    ? [...agentTools.filter((t) => plannedSet.has(t.name)), scoutTool]
+    : allTools;
+
+  /** Names every planned agent that produced nothing this run. */
+  const missingAgents = (): CrewAgent[] =>
+    (crewPlan?.agents ?? []).filter((a) => !agentOutputs.has(a));
+
+  /** Human-readable gap list for the report's `## Confidence & gaps` line. */
+  const missingLabels = () =>
+    missingAgents().map((a) => AGENT_LABELS[a as AgentName] ?? a);
+
   while (iteration < MAX_ITERATIONS) {
     iteration++;
+
+    // Budget kill-switch. Past the deadline we stop starting work: tools are
+    // dropped above, and the model is told which agents never reported so the
+    // gap is stated in the report rather than silently missing.
+    if (crewPlan && !budgetWarned && pastSynthDeadline()) {
+      budgetWarned = true;
+      const remainingSeconds = Math.max(0, Math.round((budgetMs - elapsedMs()) / 1000));
+      log.warn("crew budget deadline reached — synthesizing early", {
+        elapsedMs: elapsedMs(),
+        missing: missingAgents(),
+      });
+      emit({ type: "budget_warning", remainingSeconds });
+      const gaps = missingLabels();
+      if (gaps.length) {
+        messages.push({
+          role: "user",
+          content: `Time budget reached — do not call any more agents. Write the report now from the data you already have.\n\nThese planned analysts did not report: ${gaps.join(", ")}. Name them in "## Confidence & gaps" and lower the stated confidence accordingly. Do not fill their dimensions with assumptions.`,
+        });
+      }
+    }
 
     // Cost kill-switch — stop before the next expensive synthesis turn if this
     // run has already blown its credit cap. Ships whatever was drafted so far.
@@ -531,9 +701,14 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
       // In Discover mode the CEO may ONLY call the scout — never the crew. This
       // hard-stops the model from "validating" picks with DCF/hype agents (which
       // made quick slow and crew-driven). The client runs the crew for deep.
-      // Once the crew-round cap is reached, omit tools entirely so the CEO must
-      // write the report from the agent outputs it already has.
-      ...(toolRounds < MAX_TOOL_ROUNDS ? { tools: discover ? [scoutTool] : allTools } : {}),
+      // Otherwise the model is offered ONLY the planned crew, so it can pick the
+      // arguments but not the headcount.
+      // Tools are dropped entirely once the crew-round cap is reached, or once
+      // the budget deadline passes, so the CEO must write the report from the
+      // agent outputs it already has.
+      ...(toolRounds < MAX_TOOL_ROUNDS && !pastSynthDeadline()
+        ? { tools: discover ? [scoutTool] : plannedTools }
+        : {}),
       messages,
     });
     let response: Awaited<ReturnType<typeof draftStream.finalMessage>>;
@@ -610,7 +785,9 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
           .map((b) => b.name as AgentName)
       ),
     ];
-    if (crewAgents.length > 0) {
+    // With a deterministic plan the panel was already pre-sized from it; a second
+    // announcement here would only reorder the same rows.
+    if (crewAgents.length > 0 && !crewPlan) {
       emit({ type: "crew_planned", agents: crewAgents });
     }
 
@@ -619,8 +796,10 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
       if (block.name === "scout_universe") continue;
       const an = block.name as AgentName;
       emit({ type: "agent_start", agent: an, models: modelsForAgent(an) });
+      emit({ type: "agent_progress", agent: an, status: "running" });
     }
 
+    const roundStartedAt = now();
     const toolResults: ToolResultBlockParam[] = await Promise.all(
       toolUseBlocks.map(async (block) => {
         if (block.type !== "tool_use") {
@@ -666,11 +845,19 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
                 }
               : block.input;
 
+          // Dev fault injection sits ahead of the cache: a cached agent returns
+          // instantly, so behind the cache the hook would never fire.
+          const delayMs = slowAgentDelayMs(block.name);
+          if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+
           // ── Cache check ───────────────────────────────────────────────────
           const cached = await checkCache(block.name, cacheInput);
           if (cached) {
             agentOutputs.set(block.name, cached);
             emit({ type: "agent_complete", agent: agentName, result: cached, models: modelsForAgent(agentName) });
+            // A cache hit costs no wall clock, so it must not drag the rolling
+            // median down — report it as done at 0 ms and don't record it.
+            emit({ type: "agent_progress", agent: agentName, status: "done", ms: 0 });
             return {
               type: "tool_result" as const,
               tool_use_id: block.id,
@@ -678,11 +865,18 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
             };
           }
 
+          const agentStartedAt = now();
           const run = handler(block.input);
-          const agentTimeoutMs =
-            AGENT_TIMEOUT_MS[block.name] ??
-            (DEEP_AGENTS.has(block.name) ? DEEP_AGENT_TIMEOUT_MS : STANDARD_TIMEOUT_MS);
-          const result = await withTimeout(run, agentTimeoutMs, block.name);
+          // Inside a planned crew every agent runs on the short cap, clamped by
+          // what's left of the budget; outside one (discovery, the live harness)
+          // the original per-agent caps still apply.
+          const timeoutMs = crewPlan
+            ? crewAgentTimeoutMs(block.name, synthDeadlineMs - elapsedMs())
+            : AGENT_TIMEOUT_MS[block.name] ??
+              (DEEP_AGENTS.has(block.name) ? DEEP_AGENT_TIMEOUT_MS : STANDARD_TIMEOUT_MS);
+          const result = await withTimeout(run, timeoutMs, block.name);
+          const agentMs = now() - agentStartedAt;
+          if (crewPlan) recordAgentLatency(block.name as CrewAgent, agentMs);
 
           // ── Cache save (deferred, flushed before "done") ──────────────────
           pendingWrites.push(
@@ -693,6 +887,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
 
           agentOutputs.set(block.name, result);
           emit({ type: "agent_complete", agent: agentName, result, models: modelsForAgent(agentName) });
+          emit({ type: "agent_progress", agent: agentName, status: "done", ms: agentMs });
           return {
             type: "tool_result" as const,
             tool_use_id: block.id,
@@ -700,7 +895,9 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
           };
         } catch (err) {
           const errorMsg = toUserFacingError(err);
+          failedAgents.add(block.name);
           emit({ type: "agent_error", agent: agentName, error: errorMsg });
+          emit({ type: "agent_progress", agent: agentName, status: "failed" });
           return {
             type: "tool_result" as const,
             tool_use_id: block.id,
@@ -711,8 +908,25 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
       })
     );
 
+    crewWallMs += now() - roundStartedAt;
+
     emit({ type: "ceo_compiling" });
     messages.push({ role: "user", content: toolResults });
+  }
+
+  // Any planned agent that never ran — the model didn't call it, or the budget
+  // ran out first — is reported as skipped. Without this its row would sit on
+  // "queued" forever, which reads as a hang rather than a stated gap.
+  for (const agent of missingAgents()) {
+    if (failedAgents.has(agent)) continue; // already reported as failed
+    emit({ type: "agent_progress", agent, status: "skipped" });
+  }
+
+  // Hand the gathered outputs to the follow-up store, so the next short question
+  // ("so yes or no?", "what about the risks") can be answered by the fast lane
+  // from this data instead of re-running the crew.
+  if (agentOutputs.size) {
+    void recordCrewOutputs(userId, conversationId, Object.fromEntries(agentOutputs));
   }
 
   // If the loop exhausted MAX_ITERATIONS while still requesting tools, finalResponse
@@ -746,6 +960,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
         systemPrompt: fullSystemPrompt,
         maxTokens: SYNTH_MAX_TOKENS,
         initialTruncated: truncated,
+        missingAgents: missingLabels(),
         emit,
       });
       finalResponse = revised.finalResponse;
@@ -800,6 +1015,11 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
   } catch {
     // Follow-ups are best-effort — don't fail the response
   }
+
+  // Feed the ETA: how long the CEO's own draft/critique/revision took this run.
+  // This is the dominant cost of a crew answer, so quoting it honestly is what
+  // keeps the next run's ETA from promising 80 s for a three-minute wait.
+  if (crewPlan) recordSynthesisLatency(elapsedMs() - crewWallMs);
 
   // Flush background persistence before the stream closes — otherwise Vercel may
   // freeze the instance and these Firestore writes never land.

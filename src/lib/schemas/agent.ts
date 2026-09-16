@@ -26,6 +26,9 @@ export const AgentRequestSchema = z.object({
   /** Snapshot of the stock/research page the message was composed on, so the
    *  crew scopes its work to that ticker. */
   pageContext: PageContextSchema.optional(),
+  /** Conversation this run belongs to. Keys the gathered sub-agent outputs so a
+   *  follow-up can be answered from them instead of re-running the crew. */
+  conversationId: z.string().max(200).optional(),
 });
 
 export type AgentRequestBody = z.infer<typeof AgentRequestSchema>;
