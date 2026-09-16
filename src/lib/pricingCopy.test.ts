@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PLANS, TRIAL_DAYS, TRIAL_PLAN } from "./plans";
-import { pricingTiers, trialLine } from "./pricingCopy";
+import { PLANS, TRIAL_DAYS, TRIAL_PLAN, TYPICAL_RUN_CREDITS } from "./plans";
+import { creditsInRuns, pricingTiers, trialLine } from "./pricingCopy";
 
 const tiers = pricingTiers();
 const byName = Object.fromEntries(tiers.map((t) => [t.name, t]));
@@ -19,9 +19,29 @@ describe("pricing copy", () => {
     expect(byName.Pro.features).toContain(`${PLANS.Pro.monthly.toLocaleString("en-US")} credits / month`);
   });
 
-  it("counts Deep Research runs where plans.ts caps them", () => {
-    expect(byName.Free.features).toContain(`${PLANS.Free.deepResearchPerMonth} Deep Research runs / month`);
+  it("counts Deep Research runs where plans.ts caps them, with the right plural", () => {
+    expect(PLANS.Free.deepResearchPerMonth).toBe(1);
+    expect(byName.Free.features).toContain("1 Deep Research run / month");
     expect(byName.Analyst.features).toContain(`${PLANS.Analyst.deepResearchPerMonth} Deep Research runs / month`);
+  });
+
+  it("translates each plan's credits into runs at the measured typical cost", () => {
+    for (const t of tiers) {
+      expect(t.features).toContain(creditsInRuns(PLANS[t.name].monthly));
+    }
+  });
+
+  it("never promises more runs than the credits buy", () => {
+    const credits = 4400;
+    const line = creditsInRuns(credits);
+    const [full, fast] = line.match(/[\d,]+/g)!.map((x) => Number(x.replace(/,/g, "")));
+    expect(full * TYPICAL_RUN_CREDITS.full).toBeLessThanOrEqual(credits);
+    expect(fast * TYPICAL_RUN_CREDITS.fast).toBeLessThanOrEqual(credits);
+    expect(line).toBe("Up to 23 full analyses or 880 quick answers");
+  });
+
+  it("uses the singular for exactly one run", () => {
+    expect(creditsInRuns(TYPICAL_RUN_CREDITS.full)).toMatch(/^Up to 1 full analysis or /);
   });
 
   it("never says Unlimited for anything that is metered, and drops removed perks", () => {

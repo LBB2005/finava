@@ -30,7 +30,13 @@ import * as admin from "firebase-admin";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase-admin";
 import { resolvePlan } from "@/lib/entitlements";
-import { jsonLimit, nextPaidPlan, TRIAL_DEEP_RESEARCH_CAP } from "@/lib/plans";
+import {
+  CREDIT_USD,
+  jsonLimit,
+  nextPaidPlan,
+  TRIAL_DEEP_RESEARCH_CAP,
+  type RunLane,
+} from "@/lib/plans";
 import { logger } from "@/lib/logger";
 
 const log = logger("usage");
@@ -44,14 +50,21 @@ import {
   makeRunContext,
   newRequestId,
   currentRunCredits,
+  currentLane,
+  attributeCall,
   type RunContext,
 } from "@/lib/runContext";
-export { usageStore, makeRunContext, newRequestId, currentRunCredits };
+export { usageStore, makeRunContext, newRequestId, currentRunCredits, currentLane };
 export type { RunContext };
 
-/** Run `fn` inside a fresh run context (userId/requestId/credits in scope). */
-export function withUsageContext<T>(userId: string, fn: () => T, requestId?: string): T {
-  return usageStore.run(makeRunContext(userId, requestId), fn);
+/** Run `fn` inside a fresh run context (userId/requestId/lane/credits in scope). */
+export function withUsageContext<T>(
+  userId: string,
+  fn: () => T,
+  requestId?: string,
+  lane?: RunLane
+): T {
+  return usageStore.run(makeRunContext(userId, requestId, lane), fn);
 }
 
 // ── Pricing ──────────────────────────────────────────────────────────────────
@@ -80,9 +93,10 @@ const MODEL_PRICING: Record<string, Price> = {
 // under-charge a user's allowance for a model we forgot to price.
 const FALLBACK_PRICE: Price = { in: 3, out: 15 };
 
-// 1 credit = a tenth of a cent of model spend. Keeps the displayed numbers
-// readable (a ~2k-in / 1k-out Sonnet chat ≈ 21 credits).
-export const CREDIT_USD = 0.001;
+// The USD value of one credit lives with the rest of the pricing data in
+// `@/lib/plans`; re-exported here for the metering call-sites that already
+// import from this module.
+export { CREDIT_USD };
 // Cached input tokens (Anthropic prompt cache) are ~10% the price of fresh input.
 const CACHE_READ_MULTIPLIER = 0.1;
 
@@ -199,11 +213,18 @@ export function recordUsage(input: RecordUsageInput): Promise<void> {
       ? flat
       : creditsFor(input.model, inputTokens, outputTokens, cacheRead);
 
-  // Accumulate into the in-run total so a long crew can be aborted before it
-  // blows its per-run cost cap. Hooked HERE (the single metering choke-point) so
-  // it catches both awaited (pendingWrites) and fire-and-forget recordUsage paths.
-  const store = usageStore.getStore();
-  if (store) store.credits.total += credits;
+  // Attribute the call to the run in scope: the running total is what lets a long
+  // crew abort before it blows its per-run cap, and the per-call entry is what
+  // the run_cost report breaks down. Hooked HERE (the single metering
+  // choke-point) so it catches both awaited (pendingWrites) and fire-and-forget
+  // recordUsage paths, and every paid provider that reports a flat cost.
+  attributeCall({
+    agent: input.agent,
+    model: input.model,
+    credits,
+    inputTokens,
+    outputTokens,
+  });
 
   const key = dayKey();
   const inc = admin.firestore.FieldValue.increment;

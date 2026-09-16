@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { usageStore } from "./runContext";
+import { makeRunContext, usageStore } from "./runContext";
 import { logger } from "./logger";
 
 function capture(fn: () => void): string[] {
@@ -49,7 +49,7 @@ describe("logger", () => {
 
   it("stamps the requestId from the active run context", () => {
     const lines = capture(() =>
-      usageStore.run({ userId: "u", requestId: "req-abc", credits: { total: 0 } }, () => {
+      usageStore.run(makeRunContext("u", "req-abc"), () => {
         logger("t").error("boom");
       })
     );

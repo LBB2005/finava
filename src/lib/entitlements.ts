@@ -24,6 +24,7 @@ import {
 
 export type EntitlementSource =
   | "admin" // ADMIN_UIDS / ADMIN_EMAILS — full access
+  | "beta_plan" // allowlisted tester an admin put on a real plan (W3-4)
   | "dev" // dev-bypass user in non-production
   | "subscription" // active/grace paid plan
   | "trial" // inside the 3-day no-card trial
@@ -78,23 +79,66 @@ function entitlement(
 }
 
 /**
+ * A tester's assigned plan, memoized.
+ *
+ * The admin path used to answer with no Firestore read at all, and during the
+ * private beta every signed-in account is an admin — so an uncached read here
+ * would add a round trip to every `resolvePlan()` call (and there are several per
+ * request). The TTL is short enough that assigning or clearing a plan takes
+ * effect while the admin is still watching, and long enough that a normal
+ * request pays for at most one read.
+ */
+const BETA_PLAN_TTL_MS = 60_000;
+const betaPlanCache = new Map<string, { at: number; plan: PlanName | null }>();
+
+async function adminBetaPlan(userId: string): Promise<PlanName | null> {
+  const hit = betaPlanCache.get(userId);
+  if (hit && Date.now() - hit.at < BETA_PLAN_TTL_MS) return hit.plan;
+  let plan: PlanName | null = null;
+  try {
+    const stored = (await db.collection("userSettings").doc(userId).get()).data()?.betaPlan;
+    if (typeof stored === "string" && PLANS[stored as PlanName]) plan = stored as PlanName;
+  } catch {
+    // Unreadable settings never cost an admin their access — the allowlist is
+    // the grant, and it doesn't depend on Firestore being up.
+    return null;
+  }
+  betaPlanCache.set(userId, { at: Date.now(), plan });
+  return plan;
+}
+
+/** Test seam / admin-write seam: drop a memoized tester-plan assignment. */
+export function forgetTesterPlan(userId?: string): void {
+  if (userId) betaPlanCache.delete(userId);
+  else betaPlanCache.clear();
+}
+
+/**
  * Resolve a user's effective entitlement.
  *
  * Precedence (highest wins):
- *   1. dev-bypass user / allowlisted admin (UID or verified email) → Quant (full
- *      access), BEFORE any Firestore read so local dev works with no doc.
- *   2. Active paid subscription (status active|trialing|past_due) → that plan.
+ *   1. dev-bypass user → Quant (full access), before any Firestore read so local
+ *      dev works with no doc.
+ *   2. Allowlisted admin (UID or verified email) → Quant, UNLESS an admin has put
+ *      them on a real plan for beta testing (`betaPlan`), in which case they live
+ *      inside that plan's allowances and caps like any subscriber.
+ *   3. Active paid subscription (status active|trialing|past_due) → that plan.
  *      Paid ALWAYS beats trial.
- *   3. Trial still running (trialEndsAt in the future) → Pro-level.
- *   4. Else → Free.
+ *   4. Trial still running (trialEndsAt in the future) → Pro-level.
+ *   5. Else → Free.
  */
 export async function resolvePlan(userId: string): Promise<ResolvedEntitlement> {
-  // 1. Admin / dev — no Firestore needed.
+  // 1. Dev bypass — no Firestore needed.
   if (userId === "dev-user" && process.env.NODE_ENV !== "production") {
     return entitlement("Quant", "dev");
   }
+  // 2. Admin. Full access, unless an admin assigned this tester a real plan so
+  //    they can see the product the way a paying customer does (W3-4).
   if (await isAdminUid(userId)) {
-    return entitlement("Quant", "admin");
+    const betaPlan = await adminBetaPlan(userId);
+    return betaPlan
+      ? entitlement(betaPlan, "beta_plan")
+      : entitlement("Quant", "admin");
   }
 
   let data: FirebaseFirestore.DocumentData | undefined;
@@ -112,7 +156,7 @@ export async function resolvePlan(userId: string): Promise<ResolvedEntitlement> 
   const trialEndsAt = (data?.trialEndsAt as string | undefined) ?? null;
   const pastDueSince = (data?.pastDueSince as string | undefined) ?? null;
 
-  // 2. Active paid subscription. A past_due (failing-card) subscription keeps
+  // 3. Active paid subscription. A past_due (failing-card) subscription keeps
   //    paid access only within the grace window — not indefinitely.
   if (
     storedPlan !== "Free" &&
@@ -126,12 +170,12 @@ export async function resolvePlan(userId: string): Promise<ResolvedEntitlement> 
     });
   }
 
-  // 3. Trial in progress.
+  // 4. Trial in progress.
   if (trialEndsAt && Date.parse(trialEndsAt) > Date.now()) {
     return entitlement(TRIAL_PLAN, "trial", { trialEndsAt, subscriptionStatus });
   }
 
-  // 4. Free floor.
+  // 5. Free floor.
   return entitlement(DEFAULT_PLAN, "free", { subscriptionStatus, trialEndsAt });
 }
 

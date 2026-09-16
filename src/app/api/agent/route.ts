@@ -12,6 +12,7 @@ import {
   usageStore,
   makeRunContext,
 } from "@/lib/usage";
+import { logRunCost } from "@/lib/usageRunCost";
 import type { AgentEvent } from "@/types/chat";
 import type { WaveRequest, SynthesizeRequest } from "@/lib/scoutTypes";
 
@@ -69,9 +70,17 @@ export async function POST(req: Request) {
     void recordDeepResearchRun(userId);
   }
 
+  // Which lane is spending. Picks the per-run cap and buckets the run_cost
+  // report: a discover shortlist, a full-analysis crew and a deep-research run
+  // all arrive on this route and cost wildly different amounts (W3-4).
+  // A `wave` call is a continuation of a discovery run, so it belongs to the
+  // discover lane even though the body carries no `discover` flag.
+  const lane =
+    wave || discover ? "discover" : deepResearch || tier === "deep" ? "deep" : "full";
+
   // Run the whole crew inside the usage context so every sub-agent generate()
   // call and the CEO's direct Anthropic turns are metered to this user.
-  return usageStore.run(makeRunContext(userId), () => {
+  return usageStore.run(makeRunContext(userId, undefined, lane), () => {
     const readable = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
@@ -114,6 +123,9 @@ export async function POST(req: Request) {
           console.error("[agent route error]", err);
           emit({ type: "error", message: msg });
         } finally {
+          // One run_cost line per run, at the only point where the run is
+          // actually over — the stream closing, not the handler returning.
+          logRunCost({ wave: !!wave });
           controller.close();
         }
       },

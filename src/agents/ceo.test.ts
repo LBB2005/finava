@@ -65,7 +65,7 @@ vi.mock("@/lib/usage", () => ({
 const resolvePlanMock = vi.fn(async (_id?: string) => ({
   source: "subscription",
   degraded: false,
-  config: { deepResearchPerRunCap: Infinity },
+  config: { perRunCap: { fast: Infinity, full: Infinity, deep: Infinity, discover: Infinity } },
 }));
 vi.mock("@/lib/entitlements", () => ({ resolvePlan: (id: string) => resolvePlanMock(id) }));
 
@@ -370,7 +370,7 @@ describe("runCeoAgent orchestration", () => {
     resolvePlanMock.mockResolvedValue({
       source: "subscription",
       degraded: false,
-      config: { deepResearchPerRunCap: 300 },
+      config: { perRunCap: { fast: 60, full: 300, deep: 300, discover: 300 } },
     });
     finalMessages.push(
       { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
@@ -383,7 +383,7 @@ describe("runCeoAgent orchestration", () => {
     // Broke before any synthesis stream() call, and told the user why.
     expect(streamSpy).not.toHaveBeenCalled();
     const final = events.find((e) => e.type === "final_response") as { content: string };
-    expect(final.content).toMatch(/usage limit/i);
+    expect(final.content).toMatch(/stopped at your plan's per-run limit/i);
   });
 
   it("in discover mode calls only the scout and never announces a crew", async () => {
@@ -613,7 +613,7 @@ describe("final_response replace flag", () => {
 
   it("marks the no-report fallback as replace: true", async () => {
     currentRunCreditsMock.mockReturnValue(999);
-    resolvePlanMock.mockResolvedValue({ source: "subscription", degraded: false, config: { deepResearchPerRunCap: 300 } });
+    resolvePlanMock.mockResolvedValue({ source: "subscription", degraded: false, config: { perRunCap: { fast: 60, full: 300, deep: 300, discover: 300 } } });
     const { runCeoAgent } = await import("./ceo");
     const events: AgentEvent[] = [];
     await runCeoAgent("analyze AAPL", "", (e) => events.push(e), { userId: "u1" });

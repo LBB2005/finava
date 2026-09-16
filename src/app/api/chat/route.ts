@@ -11,6 +11,7 @@ import { ChatRequestSchema } from "@/lib/schemas/chat";
 import { pageContextPrompt, type PageContext } from "@/lib/pageContext";
 import { getTemplateBlock } from "@/lib/templates.server";
 import { checkUsageLimit, recordUsage, makeRunContext } from "@/lib/usage";
+import { logRunCost } from "@/lib/usageRunCost";
 import { runTraced } from "@/lib/observability";
 import { userRateLimit } from "@/lib/rateLimit";
 import { EXTERNAL_DATA_RULE, fenceExternal } from "@/lib/externalContent";
@@ -180,7 +181,7 @@ export async function POST(req: Request) {
 
   // Run the whole stream inside the usage context so every model call it makes
   // (this chat message + the follow-up generate()) is metered to this user.
-  return runTraced(makeRunContext(userId), () => {
+  return runTraced(makeRunContext(userId, undefined, "fast"), () => {
     const startedAt = Date.now();
     const systemPrompt = `You are Finava, an expert AI financial research assistant. You help users research stocks, understand their portfolio, and make informed investment decisions of their own.
 
@@ -273,6 +274,9 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
           const msg = err instanceof Error ? err.message : "Stream error";
           send({ error: msg });
         } finally {
+          // One run_cost line per answer, at the only point where the run is
+          // actually over — the stream closing, not the handler returning.
+          logRunCost({ reusedData });
           controller.close();
         }
       },

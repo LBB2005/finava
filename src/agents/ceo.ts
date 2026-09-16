@@ -3,7 +3,7 @@ import { answerFollowupPrompt, parseFollowups } from "@/lib/chat/answerFollowups
 import { generate, AGENT_MODELS, type AgentKey } from "@/lib/llm";
 import { badgeBrands, type Brand } from "@/lib/models";
 import { recordUsage, currentRunCredits } from "@/lib/usage";
-import { resolvePlan } from "@/lib/entitlements";
+import { resolveRunCap } from "@/lib/usageRunCost";
 import { logger } from "@/lib/logger";
 import { agentTools, allTools, scoutTool } from "./tools/index";
 import { planCrew, recordAgentLatency, recordSynthesisLatency, synthesisMedianMs, type CrewAgent } from "./crewPlanner";
@@ -205,23 +205,19 @@ export interface CeoOptions {
   now?: () => number;
 }
 
-// Credit ceiling used when a user's plan cap can't be resolved (degraded read /
-// error). Bounds a single run to ~$0.30 so the backstop holds even during an
-// entitlements outage, rather than failing open to unbounded spend.
-const FALLBACK_RUN_CAP = 300;
+/**
+ * What the user reads when a run crosses its per-run credit cap.
+ *
+ * Named, not vague: the beta shipped "stopped early to stay within your usage
+ * limit", which testers read as an outage. A stop is a plan limit, it says which
+ * limit, and it says the answer above is partial rather than wrong.
+ */
+const RUN_CAPPED_NOTE =
+  "⚠️ Run stopped at your plan's per-run limit — the analysis above is partial, and some analysts may not have reported.";
 
-/** The per-run credit ceiling for a user (Infinity = uncapped: admin/dev). */
-async function resolveRunCap(userId?: string): Promise<number> {
-  if (!userId) return Infinity; // internal/no-user context — don't block
-  try {
-    const ent = await resolvePlan(userId);
-    if (ent.source === "admin" || ent.source === "dev") return Infinity;
-    if (ent.degraded) return FALLBACK_RUN_CAP; // couldn't read the plan — bound it
-    return ent.config.deepResearchPerRunCap ?? FALLBACK_RUN_CAP;
-  } catch {
-    return FALLBACK_RUN_CAP; // never disable the backstop on an infra blip
-  }
-}
+/** The same stop, when it happened before any answer had been drafted. */
+const RUN_CAPPED_EMPTY =
+  "Run stopped at your plan's per-run limit before a full answer could be compiled. Try a narrower question, or upgrade your plan for a higher limit.";
 
 export async function runCeoAgent(
   userPrompt: string,
@@ -480,10 +476,12 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
   // collect them here and flush before signalling "done".
   const pendingWrites: Promise<unknown>[] = [];
 
-  // Per-run cost ceiling. The crew aborts once accumulated spend crosses the
-  // user's plan cap, so one runaway run can't rack up unbounded COGS. The primary
-  // hard cap (checkUsageLimit) runs before the request; this is the in-run backstop.
-  const runCap = await resolveRunCap(userId);
+  // Per-run cost ceiling, per LANE: a discover shortlist and a deep-research crew
+  // are an order of magnitude apart, so one shared number either strangles the
+  // cheap lane or fails to bound the expensive one (W3-4). The crew stops once
+  // accumulated spend crosses the cap and ships what it has. The primary hard cap
+  // (checkUsageLimit) runs before the request; this is the in-run backstop.
+  const runCap = await resolveRunCap(userId, discover ? "discover" : deepResearch ? "deep" : "full");
   let costAborted = false;
 
   // The model sees only its planned crew (plus the scout, which is orchestration
@@ -782,7 +780,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
       type: "final_response",
       replace: true,
       content: costAborted
-        ? "Analysis was stopped early to stay within your usage limit before a full answer could be compiled. Try a narrower question, or upgrade your plan for a higher limit."
+        ? RUN_CAPPED_EMPTY
         : "I gathered data from several agents but ran out of analysis steps before compiling a final answer. Please try a narrower question or fewer tickers.",
     });
   } else {
@@ -818,8 +816,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
     }
 
     const TRUNC_NOTE = "\n\n_⚠️ This response reached the length limit and may be cut off._";
-    const COST_NOTE =
-      "\n\n_⚠️ Analysis was stopped early to stay within your usage limit; some agents may not have run._";
+    const COST_NOTE = `\n\n_${RUN_CAPPED_NOTE}_`;
     if (costAborted) finalResponse += COST_NOTE;
     if (truncated) finalResponse += TRUNC_NOTE;
     if (streamed) {
