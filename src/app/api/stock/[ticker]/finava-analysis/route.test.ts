@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
-import type { ScoreInputs } from "@/lib/finavaScore";
+import { tickerFactsFixture, scoreInputs as inputs } from "@/test/factsFixture";
+import { fact, missing } from "@/lib/facts/types";
 
 const deps = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -9,7 +10,7 @@ const deps = vi.hoisted(() => ({
   usageEnterWith: vi.fn(),
   generate: vi.fn(),
   getStockBundle: vi.fn(),
-  assembleScoreInputs: vi.fn(),
+  getTickerFacts: vi.fn(),
   saveVerdict: vi.fn(),
 }));
 
@@ -25,7 +26,7 @@ vi.mock("@/lib/llm", () => ({
   generate: deps.generate,
 }));
 vi.mock("@/lib/stockData", () => ({ getStockBundle: deps.getStockBundle }));
-vi.mock("@/lib/finavaInputs", () => ({ assembleScoreInputs: deps.assembleScoreInputs }));
+vi.mock("@/lib/facts/ticker", () => ({ getTickerFacts: deps.getTickerFacts }));
 vi.mock("@/lib/verdictStore", () => ({ saveVerdict: deps.saveVerdict }));
 
 // The scoring engine itself is NOT mocked — these tests assert that the route
@@ -36,24 +37,6 @@ function ctx(ticker: string) {
   return { params: Promise.resolve({ ticker }) };
 }
 
-/** A fully-populated input set, so every pillar has data unless a test blanks it. */
-function inputs(overrides: Partial<ScoreInputs> = {}): ScoreInputs {
-  return {
-    revenueYoY: 0.11, epsYoY: 0.14, revenueCagr3y: 0.09,
-    grossMargin: 45, operatingMargin: 30, netMargin: 25,
-    roe: 28, roa: 18, roic: 22,
-    debtToEquity: 1.1, currentRatio: 1.3, fcfConversion: 1.05,
-    price: 200, dcfFair: 215, peTTM: 30, peerPe: 26, psTTM: 7, peerPs: 6,
-    ratingSkew: 0.6, targetUpsidePct: null, estimateRevisionPct: null,
-    earningsSurprisePct: 0.04,
-    trendVs200: 0.08, ret3m: 0.06, relStrength6m: 0.04,
-    newsSentiment: 62, xSentiment: 58,
-    insiderFlow: 0.2,
-    beta: 1.2, annualizedVol: 0.24,
-    ...overrides,
-  };
-}
-
 /** Parse the SSE body back into the events the client would receive. */
 async function events(res: Response) {
   const body = await res.text();
@@ -61,6 +44,15 @@ async function events(res: Response) {
     .split("\n\n")
     .filter((chunk) => chunk.startsWith("data: "))
     .map((chunk) => JSON.parse(chunk.slice(6)));
+}
+
+/** Facts whose score comes from `inputs` through the real engine. */
+function factsFor(over: Parameters<typeof inputs>[0] = {}) {
+  const i = inputs(over);
+  return tickerFactsFixture("AAPL", {
+    price: fact(200, { source: "Finnhub quote", asOf: "2026-09-15T20:00:00.000Z", unit: "USD" }),
+    streetTarget: fact(225, { source: "Finnhub price target", asOf: "2026-09-15T20:00:00.000Z", unit: "USD" }),
+  }, i);
 }
 
 beforeEach(() => {
@@ -76,7 +68,7 @@ beforeEach(() => {
     sentiment: { score: 62 },
     insider: [{ direction: "buy", shares: 1000 }],
   });
-  deps.assembleScoreInputs.mockResolvedValue(inputs());
+  deps.getTickerFacts.mockResolvedValue(factsFor());
   deps.generate.mockResolvedValue(
     JSON.stringify({
       take: "Fundamentals carry the score; valuation is the drag.",
@@ -159,8 +151,8 @@ describe("POST /api/stock/[ticker]/finava-analysis", () => {
   });
 
   it("marks a pillar with no data instead of scoring it a neutral 50", async () => {
-    deps.assembleScoreInputs.mockResolvedValueOnce(
-      inputs({ ratingSkew: null, targetUpsidePct: null, estimateRevisionPct: null, earningsSurprisePct: null })
+    deps.getTickerFacts.mockResolvedValueOnce(
+      factsFor({ ratingSkew: null, targetUpsidePct: null, estimateRevisionPct: null, earningsSurprisePct: null })
     );
 
     const res = await POST(new Request("http://test.local"), ctx("AAPL"));
@@ -213,13 +205,22 @@ describe("POST /api/stock/[ticker]/finava-analysis", () => {
     expect(deps.saveVerdict).toHaveBeenCalledTimes(1);
   });
 
-  it("emits an error and persists nothing when input assembly fails", async () => {
-    deps.assembleScoreInputs.mockRejectedValueOnce(new Error("SEC down"));
-
-    const res = await POST(new Request("http://test.local"), ctx("AAPL"));
-    const evs = await events(res);
-
+  it("emits an error and persists nothing when facts fail to load", async () => {
+    deps.getTickerFacts.mockRejectedValueOnce(new Error("SEC down"));
+    const evs = await events(await POST(new Request("http://test.local"), ctx("AAPL")));
     expect(evs).toContainEqual({ type: "error", message: "Failed to compute the Finava Score." });
     expect(deps.saveVerdict).not.toHaveBeenCalled();
+  });
+
+  it("says so when there is not enough data to score, instead of streaming 50s", async () => {
+    deps.getTickerFacts.mockResolvedValueOnce(tickerFactsFixture("AAPL", { score: missing("Finava Score v2 (15 factors)", "No factor data available for this symbol") }));
+    const evs = await events(await POST(new Request("http://test.local"), ctx("AAPL")));
+    expect(evs.filter((e) => e.type === "signal")).toHaveLength(0);
+    expect(evs).toContainEqual({ type: "error", message: "Not enough data to compute the Finava Score for AAPL." });
+  });
+
+  it("asks facts for a fresh score on a user-requested run", async () => {
+    await events(await POST(new Request("http://test.local"), ctx("AAPL")));
+    expect(deps.getTickerFacts).toHaveBeenCalledWith("AAPL", { refreshDerived: true });
   });
 });
