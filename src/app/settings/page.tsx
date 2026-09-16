@@ -184,10 +184,10 @@ function Row({
 }) {
   return (
     <div
-      className="flex items-start justify-between gap-6 py-4"
+      className="settings-row flex items-start justify-between gap-6 py-4"
       style={{ borderBottom: "1px solid var(--color-border)" }}
     >
-      <div className="min-w-0">
+      <div className="settings-row-label min-w-0">
         <p className="text-[length:var(--text-sm)] font-semibold" style={{ color: danger ? "var(--color-bear)" : "var(--color-text)" }}>
           {label}
         </p>
@@ -200,7 +200,7 @@ function Row({
           </p>
         )}
       </div>
-      <div className="flex-shrink-0 flex items-center">{children}</div>
+      <div className="settings-row-control flex-shrink-0 flex items-center">{children}</div>
     </div>
   );
 }
@@ -672,7 +672,7 @@ function TemplatesSection() {
     <div>
       <Head title="Templates" description="Saved ways for Finava to respond. Pick one in the composer to shape any answer — tone, structure, and what to always include." />
 
-      <div className="grid mt-2" style={{ gridTemplateColumns: "minmax(0,1fr) 248px" }}>
+      <div className="settings-templates-grid mt-2">
         {/* Main pane — editor or empty state */}
         <div className="pr-7">
           {draft ? (
@@ -1596,17 +1596,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex h-full" style={{ background: "var(--color-bg)" }}>
-      {/* Left rail */}
-      <nav
-        className="flex-shrink-0 flex flex-col"
-        style={{
-          width: 232,
-          padding: "26px 14px 14px",
-          borderRight: "1px solid var(--color-border)",
-          background: "var(--color-sidebar)",
-        }}
-      >
+    <div className="settings-shell flex h-full" style={{ background: "var(--color-bg)" }}>
+      {/* Navigation — a left rail on desktop, a scrollable tab strip on a phone */}
+      <nav className="settings-rail flex-shrink-0 flex flex-col">
         <button
           onClick={exitSettings}
           className="settings-back inline-flex items-center gap-1.5 text-[length:var(--text-sm)] font-medium rounded-[var(--radius-sm)] transition-colors duration-100"
@@ -1619,35 +1611,37 @@ export default function SettingsPage() {
           Back to app
         </button>
         <div
-          className="text-[length:var(--text-display)] font-bold tracking-[-0.01em]"
-          style={{ fontFamily: "var(--font-serif)", color: "var(--color-text)", padding: "0 10px", marginBottom: 22 }}
+          className="settings-title text-[length:var(--text-display)] font-bold tracking-[-0.01em]"
+          style={{ fontFamily: "var(--font-serif)", color: "var(--color-text)" }}
         >
           Settings
         </div>
-        {NAV.map((g) => (
-          <div key={g.grp} className="mb-[18px]">
-            <div className="eyebrow-label" style={{ padding: "0 10px 7px", letterSpacing: "0.18em", color: "var(--color-muted)" }}>
-              {g.grp}
+        <div className="settings-groups">
+          {NAV.map((g) => (
+            <div key={g.grp} className="settings-group">
+              <div className="settings-group-label eyebrow-label" style={{ padding: "0 10px 7px", letterSpacing: "0.18em", color: "var(--color-muted)" }}>
+                {g.grp}
+              </div>
+              {g.items.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => nav(it.id)}
+                  className={`settings-nav-item${active === it.id ? " is-active" : ""} w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[var(--radius-md)] text-[length:var(--text-sm)] font-medium text-left mb-[1px] transition-colors duration-100`}
+                >
+                  <span className="flex-shrink-0" style={{ opacity: active === it.id ? 1 : 0.85 }}>
+                    <Icon name={it.icon} size={16} />
+                  </span>
+                  {it.label}
+                </button>
+              ))}
             </div>
-            {g.items.map((it) => (
-              <button
-                key={it.id}
-                onClick={() => nav(it.id)}
-                className={`settings-nav-item${active === it.id ? " is-active" : ""} w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[var(--radius-md)] text-[length:var(--text-sm)] font-medium text-left mb-[1px] transition-colors duration-100`}
-              >
-                <span className="flex-shrink-0" style={{ opacity: active === it.id ? 1 : 0.85 }}>
-                  <Icon name={it.icon} size={16} />
-                </span>
-                {it.label}
-              </button>
-            ))}
-          </div>
-        ))}
+          ))}
+        </div>
       </nav>
 
       {/* Content */}
-      <div ref={contentRef} className="flex-1 overflow-y-auto">
-        <div style={{ maxWidth: active === "templates" ? 1000 : 624, margin: "0 auto", padding: "40px 44px 64px" }}>
+      <div ref={contentRef} className="flex-1 min-w-0 overflow-y-auto">
+        <div className="settings-content" style={{ maxWidth: active === "templates" ? 1000 : 624 }}>
           {checkoutNotice && (
             <div
               className="mb-5 rounded-[var(--radius-md)] px-4 py-3 text-[length:var(--text-sm)] flex items-center justify-between"

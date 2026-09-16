@@ -9,16 +9,60 @@ import type { Fact, SlimScore } from "@/lib/facts/types";
 
 // Ranked rows are rebuilt as fresh objects on every 30s live-data poll, so a
 // plain memo never bails — compare the fields the row actually renders.
-const Row = memo(function Row({ s, fs, onOpen }: { s: RankedStock; fs: Fact<SlimScore> | undefined; onOpen: (t: string) => void }) {
+/** Chevron for the phone-only row disclosure. */
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+      style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 140ms ease" }}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+/** The columns dropped on a phone, shown in the expanded row instead. */
+function RowDetail({ price, chg, marketCap, cols }: {
+  price: number | null; chg: number | null; marketCap: number | null | undefined; cols: number;
+}) {
+  const up = (chg ?? 0) >= 0;
+  return (
+    <tr className="b-rowdetail">
+      <td colSpan={cols}>
+        <span className="b-rowdetail-grid">
+          <span><span className="b-dk">Last</span><span className="mono b-dv">{price != null && price > 0 ? price.toFixed(2) : "—"}</span></span>
+          <span>
+            <span className="b-dk">Chg</span>
+            <span className="mono b-dv" style={{ color: chg == null ? "var(--color-muted)" : up ? "var(--color-bull)" : "var(--color-bear)" }}>
+              {chg == null ? "—" : fmtPct1(chg)}
+            </span>
+          </span>
+          <span><span className="b-dk">Mkt Cap</span><span className="mono b-dv">{fmtMktCap(marketCap)}</span></span>
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+const Row = memo(function Row({ s, fs, onOpen, expanded, onToggle, cols }: {
+  s: RankedStock;
+  fs: Fact<SlimScore> | undefined;
+  onOpen: (t: string) => void;
+  expanded: boolean;
+  onToggle: (t: string) => void;
+  cols: number;
+}) {
   const up = s.chg >= 0;
   return (
+    <>
     <tr
       className={"b-row" + (s.rank <= 3 ? " top3" : "")}
       onClick={() => onOpen(s.ticker)}
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter") onOpen(s.ticker); }}
     >
-      <td className="mono" style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: s.rank <= 3 ? "var(--color-accent)" : "var(--color-muted)" }}>
+      <td className="mono b-col-low" style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: s.rank <= 3 ? "var(--color-accent)" : "var(--color-muted)" }}>
         {String(s.rank).padStart(2, "0")}
       </td>
       <td>
@@ -27,15 +71,31 @@ const Row = memo(function Row({ s, fs, onOpen }: { s: RankedStock; fs: Fact<Slim
           <span className="b-rowname">{s.name}</span>
         </span>
       </td>
-      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-text)" }}>{s.price.toFixed(2)}</td>
-      <td className="mono num" style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: up ? "var(--color-bull)" : "var(--color-bear)" }}>{fmtPct1(s.chg)}</td>
-      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>{fmtMktCap(s.marketCap)}</td>
+      <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-text)" }}>{s.price.toFixed(2)}</td>
+      <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: up ? "var(--color-bull)" : "var(--color-bear)" }}>{fmtPct1(s.chg)}</td>
+      <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>{fmtMktCap(s.marketCap)}</td>
       <td><FactScoreCell fact={fs} /></td>
       <td style={{ textAlign: "center" }}><FactGradeCell fact={fs} /></td>
+      <td className="b-col-more">
+        <button
+          type="button"
+          className="b-more std-focus"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Hide" : "Show"} price and market cap for ${s.ticker}`}
+          onClick={(e) => { e.stopPropagation(); onToggle(s.ticker); }}
+        >
+          <Chevron open={expanded} />
+        </button>
+      </td>
     </tr>
+    {expanded && <RowDetail price={s.price} chg={s.chg} marketCap={s.marketCap} cols={cols} />}
+    </>
   );
 }, (prev, next) =>
   prev.onOpen === next.onOpen &&
+  prev.expanded === next.expanded &&
+  prev.onToggle === next.onToggle &&
+  prev.cols === next.cols &&
   prev.s.ticker === next.s.ticker &&
   prev.s.rank === next.s.rank &&
   prev.s.price === next.s.price &&
@@ -50,18 +110,19 @@ const Row = memo(function Row({ s, fs, onOpen }: { s: RankedStock; fs: Fact<Slim
 function UnrankedRow({ s, onOpen }: { s: Stock; onOpen: (t: string) => void }) {
   return (
     <tr className="b-row" onClick={() => onOpen(s.ticker)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(s.ticker); }}>
-      <td className="mono" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>—</td>
+      <td className="mono b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>—</td>
       <td>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <span className="tk" style={{ fontSize: "var(--text-sm)" }}>{s.ticker}</span>
           <span className="b-rowname">{s.name}</span>
         </span>
       </td>
-      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-text)" }}>{s.price > 0 ? s.price.toFixed(2) : "—"}</td>
-      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>{s.price > 0 ? fmtPct1(s.chg) : "—"}</td>
-      <td className="mono num" style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>{fmtMktCap(s.marketCap)}</td>
+      <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-text)" }}>{s.price > 0 ? s.price.toFixed(2) : "—"}</td>
+      <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>{s.price > 0 ? fmtPct1(s.chg) : "—"}</td>
+      <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>{fmtMktCap(s.marketCap)}</td>
       <td style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)", fontStyle: "italic" }}>Not enough data</td>
       <td style={{ textAlign: "center", color: "var(--color-muted)" }}>—</td>
+      <td className="b-col-more" />
     </tr>
   );
 }
@@ -95,6 +156,11 @@ export default function BoardLeaderboard({
   const more = Math.min(expandTo, total) - collapsed;
   const status = boardStatusLabel(loading);
   const onOpen = useCallback((t: string) => router.push(`/stock/${t}`), [router]);
+  // Under 640px the board keeps Ticker / Score / Grade and folds Last, Chg and
+  // Mkt Cap into a per-row disclosure, rather than clipping them off the card.
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const onToggle = useCallback((t: string) => setOpenRow((cur) => (cur === t ? null : t)), []);
+  const COL_COUNT = 8;
 
   return (
     <div className="b-board">
@@ -124,17 +190,28 @@ export default function BoardLeaderboard({
         <table className="b-table">
           <thead>
             <tr>
-              <th style={{ width: 32 }} title="Rank by factor composite for this horizon">#</th>
-              <th style={{ width: 198 }}>Ticker</th>
-              <th className="num" style={{ width: 78 }}>Last</th>
-              <th className="num" style={{ width: 64 }}>Chg</th>
-              <th className="num" style={{ width: 84 }}>Mkt Cap</th>
-              <th style={{ minWidth: 132 }}>Finava Score</th>
+              <th className="b-col-low" style={{ width: 32 }} title="Rank by factor composite for this horizon">#</th>
+              <th className="b-th-tk">Ticker</th>
+              <th className="num b-col-low" style={{ width: 78 }}>Last</th>
+              <th className="num b-col-low" style={{ width: 64 }}>Chg</th>
+              <th className="num b-col-low" style={{ width: 84 }}>Mkt Cap</th>
+              <th className="b-th-score">Finava Score</th>
               <th style={{ textAlign: "center", width: 46 }}>Grd</th>
+              <th className="b-col-more" style={{ width: 34 }} />
             </tr>
           </thead>
           <tbody>
-            {shown.map((s) => <Row key={s.ticker} s={s} fs={slim.map.get(s.ticker)?.score} onOpen={onOpen} />)}
+            {shown.map((s) => (
+              <Row
+                key={s.ticker}
+                s={s}
+                fs={slim.map.get(s.ticker)?.score}
+                onOpen={onOpen}
+                expanded={openRow === s.ticker}
+                onToggle={onToggle}
+                cols={COL_COUNT}
+              />
+            ))}
             {shownUnranked.map((s) => <UnrankedRow key={s.ticker} s={s} onOpen={onOpen} />)}
           </tbody>
         </table>
