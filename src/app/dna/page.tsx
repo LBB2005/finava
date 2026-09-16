@@ -29,7 +29,7 @@ export default function DnaPage() {
 
   function askFinava() {
     reset();
-    setPendingMessage("Walk me through my Investor DNA — where's my edge, and what's my biggest blind spot?");
+    setPendingMessage("Walk me through my Investor DNA: what my holdings suggest about my style, how my positions have done against the S&P 500, and what's still too early to tell.");
     router.push("/chat");
   }
 
@@ -71,7 +71,7 @@ export default function DnaPage() {
                   {dna.coverage.uncovered.length > 8 ? "…" : ""}
                 </p>
               )}
-              <TraitRecord traits={dna.traitRecord} />
+              <TraitRecord traits={dna.traitRecord} benchmark={dna.benchmark} />
               <Tendencies tendencies={dna.tendencies} />
             </>
           )}
