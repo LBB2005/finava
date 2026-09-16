@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
-import { useFactorUniverse } from "@/hooks/useFactorUniverse";
+import { useTickerFactsSlim } from "@/hooks/useTickerFacts";
 import { useChatStore } from "@/stores/chatStore";
 import { buildPortfolioSnapshot } from "@/lib/pageContext";
 import { useToast } from "@/hooks/useToast";
@@ -14,7 +14,6 @@ import EditHoldingModal from "@/components/portfolio/EditHoldingModal";
 import ConfirmDialog from "@/components/portfolio/ConfirmDialog";
 import ChatContextButton from "@/components/chat/ChatContextButton";
 import PageHeader from "@/components/layout/PageHeader";
-import { scoreForTicker } from "@/lib/compositeScore";
 
 
 // Allocation palette — navy→lighter-blue ramp from the design kit
@@ -161,9 +160,9 @@ export default function PortfolioPage() {
   }
 
   const { quoteMap, error: quotesError, isLoading: quotesLoading } = useQuotes(holdings.map((h) => h.ticker));
-  // Real scored universe (S&P 500, live factors). A holding outside it has no
-  // score and renders "—" — we never fabricate one.
-  const { universe } = useFactorUniverse();
+  // The facts layer's cached Finava Score (the number the stock page shows). A
+  // holding nobody has scored yet renders "—" — we never fabricate one.
+  const slimScores = useTickerFactsSlim(holdings.map((h) => h.ticker));
   const { setPendingMessage, reset } = useChatStore();
 
   useEffect(() => {
@@ -196,8 +195,10 @@ export default function PortfolioPage() {
     const cost = h.avgCost * h.shares;
     const gainLoss = price > 0 ? mv - cost : 0;
     const gainLossPct = cost > 0 && price > 0 ? (gainLoss / cost) * 100 : 0;
-    // "—" until the factor universe covers this ticker — never a fabricated score.
-    return { holding: h, quote, mv, pct: 0, gainLoss, gainLossPct, score: scoreForTicker(universe, h.ticker) };
+    // The facts layer's cached Finava Score (W3-1) — "—" until this ticker has
+    // been scored, never a fabricated one.
+    const score = slimScores.map.get(h.ticker.toUpperCase())?.score.value?.total ?? null;
+    return { holding: h, quote, mv, pct: 0, gainLoss, gainLossPct, score };
   });
 
   const equityValue = rows.reduce((s, r) => s + r.mv, 0);

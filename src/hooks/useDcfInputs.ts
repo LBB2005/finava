@@ -1,23 +1,17 @@
 "use client";
-// The one SWR contract for GET /api/stock/[ticker]/dcf. The rail and the DCF
-// chapter share this key — a single hook guarantees they also share one
-// fetcher/shape (two different fetchers on the same key poison each other's
-// SWR cache). Returns the unwrapped DcfInputs; 404 = insufficient data.
-
-import useSWR from "swr";
+// DCF inputs for the rail and the DCF chapter, from the facts layer, so the
+// sliders start from exactly the inputs behind facts.dcf. User tweaks stay local.
+import { useTickerFacts } from "@/hooks/useTickerFacts";
 import type { DcfInputs } from "@/lib/dcf";
 
-const fetcher = (url: string) =>
-  fetch(url).then(async (r) => {
-    const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
-    return body.inputs as DcfInputs;
-  });
-
-export function useDcfInputs(ticker: string | null) {
-  return useSWR<DcfInputs>(
-    ticker ? `/api/stock/${encodeURIComponent(ticker.toUpperCase())}/dcf` : null,
-    fetcher,
-    { revalidateOnFocus: false, shouldRetryOnError: false, dedupingInterval: 300_000 }
-  );
+export function useDcfInputs(ticker: string | null): { data: DcfInputs | undefined; error: string | undefined; isLoading: boolean; asOf: string | undefined } {
+  const f = useTickerFacts(ticker);
+  const dcf = f.data?.dcf;
+  const pending = f.isLoading || (f.computing && !dcf?.value);
+  return {
+    data: dcf?.value?.inputs,
+    error: pending ? undefined : dcf && !dcf.value ? dcf.note ?? "DCF is unavailable for this symbol." : f.error?.message,
+    isLoading: pending,
+    asOf: dcf?.asOf,
+  };
 }

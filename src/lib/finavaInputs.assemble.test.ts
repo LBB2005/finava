@@ -12,6 +12,7 @@ const deps = vi.hoisted(() => ({
   getCompanyFacts: vi.fn(),
   extractFinancialMetrics: vi.fn(),
   extractFundamentalTimeSeries: vi.fn(),
+  extractCurrentSharesOutstanding: vi.fn(() => null),
   suggestedWaccFromBeta: vi.fn(() => 0.09),
   defaultFairValue: vi.fn(() => 210),
   getGrokSentiment: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/edgar", () => ({
   getCompanyFacts: deps.getCompanyFacts,
   extractFinancialMetrics: deps.extractFinancialMetrics,
   extractFundamentalTimeSeries: deps.extractFundamentalTimeSeries,
+  extractCurrentSharesOutstanding: deps.extractCurrentSharesOutstanding,
 }));
 vi.mock("@/lib/dcf", () => ({
   suggestedWaccFromBeta: deps.suggestedWaccFromBeta,
@@ -276,5 +278,19 @@ describe("assembleScoreInputs — failure isolation", () => {
     expect(deps.defaultFairValue).toHaveBeenCalledWith(
       expect.objectContaining({ currentPrice: null }),
     );
+  });
+  it("uses precomputed DCF parts and skips the filing fetch", async () => {
+    const out = await assembleScoreInputs("AAPL", 200, null, null, "Apple", {
+      dcf: { dcfFair: 171, fcfConversion: 0.9, revenueCagr3y: 0.05 },
+    });
+    expect(out.dcfFair).toBe(171);
+    expect(out.fcfConversion).toBe(0.9);
+    expect(out.revenueCagr3y).toBe(0.05);
+    expect(deps.getCikByTicker).not.toHaveBeenCalled();
+  });
+
+  it("overrides peTTM with the canonical P/E when given, including null", async () => {
+    expect((await assembleScoreInputs("AAPL", 200, null, null, "Apple", { peTTM: 33.1 })).peTTM).toBe(33.1);
+    expect((await assembleScoreInputs("AAPL", 200, null, null, "Apple", { peTTM: null })).peTTM).toBeNull();
   });
 });

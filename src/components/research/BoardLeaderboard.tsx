@@ -3,7 +3,9 @@ import { memo, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fmtPct1, fmtMktCap, type HorizonKey, type RankedStock, type Stock } from "@/lib/research";
 import { boardRanking, boardStatusLabel } from "@/lib/verdict";
-import { GradeBadge, ShowMore } from "./primitives";
+import { FactGradeCell, FactScoreCell, ShowMore } from "./primitives";
+import { useTickerFactsSlim } from "@/hooks/useTickerFacts";
+import type { Fact, SlimScore } from "@/lib/facts/types";
 
 // Ranked rows are rebuilt as fresh objects on every 30s live-data poll, so a
 // plain memo never bails — compare the fields the row actually renders.
@@ -43,8 +45,9 @@ function RowDetail({ price, chg, marketCap, cols }: {
   );
 }
 
-const Row = memo(function Row({ s, onOpen, expanded, onToggle, cols }: {
+const Row = memo(function Row({ s, fs, onOpen, expanded, onToggle, cols }: {
   s: RankedStock;
+  fs: Fact<SlimScore> | undefined;
   onOpen: (t: string) => void;
   expanded: boolean;
   onToggle: (t: string) => void;
@@ -71,13 +74,8 @@ const Row = memo(function Row({ s, onOpen, expanded, onToggle, cols }: {
       <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-text)" }}>{s.price.toFixed(2)}</td>
       <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: up ? "var(--color-bull)" : "var(--color-bear)" }}>{fmtPct1(s.chg)}</td>
       <td className="mono num b-col-low" style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)" }}>{fmtMktCap(s.marketCap)}</td>
-      <td>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <div className="b-score-track"><div style={{ width: s.score + "%", height: "100%", borderRadius: 999, background: "var(--color-accent)" }} /></div>
-          <span className="serif" style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-text)", width: 22, textAlign: "right" }}>{s.score}</span>
-        </div>
-      </td>
-      <td style={{ textAlign: "center" }}><GradeBadge grade={s.grade} size="sm" /></td>
+      <td><FactScoreCell fact={fs} /></td>
+      <td style={{ textAlign: "center" }}><FactGradeCell fact={fs} /></td>
       <td className="b-col-more">
         <button
           type="button"
@@ -103,8 +101,9 @@ const Row = memo(function Row({ s, onOpen, expanded, onToggle, cols }: {
   prev.s.price === next.s.price &&
   prev.s.chg === next.s.chg &&
   prev.s.marketCap === next.s.marketCap &&
-  prev.s.score === next.s.score &&
-  prev.s.grade === next.s.grade
+  prev.fs?.value?.total === next.fs?.value?.total &&
+  prev.fs?.value?.grade === next.fs?.value?.grade &&
+  prev.fs?.note === next.fs?.note
 );
 
 /** A name whose factor profile is a placeholder: listed, never ranked or scored. */
@@ -152,6 +151,8 @@ export default function BoardLeaderboard({
   const shown = rows.slice(0, limit);
   const shownUnranked = notEnoughData.slice(0, Math.max(0, limit - shown.length));
   const total = rows.length + notEnoughData.length;
+  // Rank is the factor composite for this horizon; the score shown is the facts layer's.
+  const slim = useTickerFactsSlim(shown.map((s) => s.ticker));
   const more = Math.min(expandTo, total) - collapsed;
   const status = boardStatusLabel(loading);
   const onOpen = useCallback((t: string) => router.push(`/stock/${t}`), [router]);
@@ -189,7 +190,7 @@ export default function BoardLeaderboard({
         <table className="b-table">
           <thead>
             <tr>
-              <th className="b-col-low" style={{ width: 32 }}>#</th>
+              <th className="b-col-low" style={{ width: 32 }} title="Rank by factor composite for this horizon">#</th>
               <th className="b-th-tk">Ticker</th>
               <th className="num b-col-low" style={{ width: 78 }}>Last</th>
               <th className="num b-col-low" style={{ width: 64 }}>Chg</th>
@@ -204,6 +205,7 @@ export default function BoardLeaderboard({
               <Row
                 key={s.ticker}
                 s={s}
+                fs={slim.map.get(s.ticker)?.score}
                 onOpen={onOpen}
                 expanded={openRow === s.ticker}
                 onToggle={onToggle}

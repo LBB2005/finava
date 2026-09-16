@@ -8,25 +8,10 @@ import useSWR from "swr";
 import { useQuotes } from "@/hooks/useQuotes";
 import { useFinava } from "@/hooks/useFinava";
 import { useVerdictCache, verdictAge, verdictIsStale } from "@/hooks/useVerdictCache";
-import { useDcfInputs } from "@/hooks/useDcfInputs";
+import { useTickerFacts } from "@/hooks/useTickerFacts";
 import { authFetcher } from "@/lib/authFetch";
-import { stanceFromScore } from "@/lib/finava";
-import { defaultFairValue } from "@/lib/dcf";
-import type { FactorScores } from "@/lib/research";
-
-const jsonFetcher = (url: string) =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  });
-
-interface ScoreResponse {
-  ticker: string;
-  f: FactorScores;
-  score: number;
-  grade: string;
-  asOf: string;
-}
+import { stanceFromScore, verdictLabel } from "@/lib/finava";
+import { factTitle } from "@/lib/facts/format";
 
 interface LensResponse {
   line: string | null;
@@ -107,12 +92,13 @@ export default function IntelligenceRail({ ticker, onOpenAnalysis, onOpenDcf }: 
   const sym = ticker.toUpperCase();
 
   // ── Deterministic cells ────────────────────────────────────────────────────
-  const score = useSWR<ScoreResponse>(`/api/stock/${encodeURIComponent(sym)}/score`, jsonFetcher, {
-    revalidateOnFocus: false,
-    shouldRetryOnError: false,
-    dedupingInterval: 300_000,
-  });
-  const dcf = useDcfInputs(sym);
+  // Score and fair value both come from the facts layer: the same numbers the
+  // Finava tab, Research board and watchlist show.
+  const facts = useTickerFacts(sym);
+  const scoreFact = facts.data?.score;
+  const dcfFact = facts.data?.dcf;
+  const scorePending = facts.isLoading || (facts.computing && !scoreFact?.value);
+  const dcfPending = facts.isLoading || (facts.computing && !dcfFact?.value);
   const lens = useSWR<LensResponse>(`/api/dna/lens?ticker=${encodeURIComponent(sym)}`, authFetcher, {
     revalidateOnFocus: false,
     shouldRetryOnError: false,
@@ -126,12 +112,14 @@ export default function IntelligenceRail({ ticker, onOpenAnalysis, onOpenDcf }: 
   const { quoteMap } = useQuotes([sym]);
   const livePrice = quoteMap.get(sym)?.price ?? null;
 
-  const fairValue = dcf.data ? defaultFairValue(dcf.data) : null;
-  const fvPrice = livePrice ?? dcf.data?.currentPrice ?? null;
+  const fairValue = dcfFact?.value?.fairValue ?? null;
+  const fvPrice = livePrice ?? facts.data?.price.value ?? null;
   const upsidePct =
     fairValue != null && fvPrice != null && fvPrice > 0
       ? ((fairValue - fvPrice) / fvPrice) * 100
       : null;
+  // One stance: from the canonical score. A cached narrative can be older than the score.
+  const canonicalScore = scoreFact?.value?.total ?? null;
 
   const keyed = (fn: () => void) => (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -154,21 +142,21 @@ export default function IntelligenceRail({ ticker, onOpenAnalysis, onOpenDcf }: 
         <span className="intel-tile"><TileIcon kind="score" /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="eyebrow-label" style={{ color: "var(--color-muted)" }}>Finava Score</div>
-          {score.isLoading ? (
+          {scorePending ? (
             <div className="skeleton" style={{ width: 72, height: 22, marginTop: 4 }} />
-          ) : score.data ? (
-            <div className="serif" style={{ fontSize: "var(--text-display)", fontWeight: 800, color: "var(--color-text)", lineHeight: 1.15 }}>
-              {score.data.score}{" "}
-              <span style={{ fontSize: "var(--text-sm)", color: gradeColor(score.data.grade) }}>{score.data.grade}</span>
+          ) : scoreFact?.value ? (
+            <div className="serif" title={factTitle(scoreFact)} style={{ fontSize: "var(--text-display)", fontWeight: 800, color: "var(--color-text)", lineHeight: 1.15 }}>
+              {scoreFact.value.total}{" "}
+              <span style={{ fontSize: "var(--text-sm)", color: gradeColor(scoreFact.value.grade) }}>{scoreFact.value.grade}</span>
             </div>
           ) : (
-            <div>
+            <div title={scoreFact ? factTitle(scoreFact) : undefined}>
               <div className="serif" style={{ fontSize: "var(--text-display)", fontWeight: 800, color: "var(--color-muted)", lineHeight: 1.15 }}>—</div>
-              <div className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>Not yet scored</div>
+              <div className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>{scoreFact?.note ?? "Not yet scored"}</div>
             </div>
           )}
         </div>
-        {score.data && <span className="intel-jump">→</span>}
+        {scoreFact?.value && <span className="intel-jump">→</span>}
       </div>
 
       {/* ── AI Verdict ── */}
@@ -181,15 +169,15 @@ export default function IntelligenceRail({ ticker, onOpenAnalysis, onOpenDcf }: 
               <span
                 className={
                   "pill " +
-                  (stanceFromScore(verdict.score) === "bullish"
+                  (stanceFromScore(canonicalScore ?? verdict.score) === "bullish"
                     ? "pill-bull"
-                    : stanceFromScore(verdict.score) === "bearish"
+                    : stanceFromScore(canonicalScore ?? verdict.score) === "bearish"
                       ? "pill-bear"
                       : "pill-warn") +
                   (finava.status === "streaming" ? " model-badge-lit" : "")
                 }
               >
-                {verdict.stance}
+                {canonicalScore != null ? verdictLabel(canonicalScore) : verdict.stance}
               </span>
               <span
                 className="mono"
@@ -248,10 +236,10 @@ export default function IntelligenceRail({ ticker, onOpenAnalysis, onOpenDcf }: 
         <span className="intel-tile"><TileIcon kind="value" /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="eyebrow-label" style={{ color: "var(--color-muted)" }}>Fair value · DCF</div>
-          {dcf.isLoading ? (
+          {dcfPending ? (
             <div className="skeleton" style={{ width: 88, height: 20, marginTop: 4 }} />
           ) : fairValue != null ? (
-            <div className="serif" style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-text)", lineHeight: 1.2 }}>
+            <div className="serif" title={dcfFact ? factTitle(dcfFact) : undefined} style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-text)", lineHeight: 1.2 }}>
               ${fmt(fairValue, fairValue >= 100 ? 0 : 2)}{" "}
               {upsidePct != null && (
                 <span style={{ fontSize: "var(--text-meta)", color: upsidePct >= 0 ? "var(--color-bull)" : "var(--color-bear)" }}>
@@ -263,7 +251,7 @@ export default function IntelligenceRail({ ticker, onOpenAnalysis, onOpenDcf }: 
           ) : (
             <div>
               <div className="serif" style={{ fontSize: "var(--text-lg)", fontWeight: 800, color: "var(--color-muted)", lineHeight: 1.2 }}>—</div>
-              <div className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>Insufficient data</div>
+              <div className="mono" style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>{dcfFact?.note ?? "Insufficient data"}</div>
             </div>
           )}
         </div>
