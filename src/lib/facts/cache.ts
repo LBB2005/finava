@@ -11,6 +11,8 @@
 // Failures and nulls are never cached (the W1-2 rule): the next caller retries.
 
 import { isMarketOpen, lastCloseDate } from "@/lib/marketSession";
+import { db } from "@/lib/firebase-admin";
+import { hasValue, SCORE_VERSION, DCF_VERSION, type Fact, type ScoreFact, type DcfFact } from "./types";
 
 export type TtlKind = "quote" | "day";
 
@@ -37,6 +39,7 @@ const inflight = () => (g.__factsInflight ??= new Map());
 export function clearFactsMemo() {
   store().clear();
   inflight().clear();
+  derivedMirror().clear();
 }
 
 export function isFresh(e: MemoEntryMeta, kind: TtlKind, now: Date = new Date(), maxAgeSec?: number): boolean {
@@ -76,4 +79,61 @@ export async function memo<T>(
   })().finally(() => inflight().delete(key));
   inflight().set(key, p);
   return p;
+}
+
+// ── Tier 2: score + DCF in Firestore ──────────────────────────────────────────
+
+export interface Derived {
+  score: Fact<ScoreFact> | null;
+  dcf: Fact<DcfFact> | null;
+}
+
+interface DerivedDoc {
+  score?: Fact<ScoreFact>;
+  scoreAt?: number;
+  dcf?: Fact<DcfFact>;
+  dcfAt?: number;
+}
+
+const derivedMirror = () =>
+  ((g as typeof g & { __factsDerived?: Map<string, DerivedDoc> }).__factsDerived ??= new Map());
+
+function pickDerived(doc: DerivedDoc | undefined, now: Date, maxAgeSec?: number): Derived {
+  const ok = (at: number | undefined) =>
+    at != null && isFresh({ at, openAtFetch: true, closeDate: "" }, "day", now, maxAgeSec);
+  return {
+    score: doc?.score && ok(doc.scoreAt) && doc.score.value?.version === SCORE_VERSION ? doc.score : null,
+    dcf: doc?.dcf && ok(doc.dcfAt) && doc.dcf.value?.version === DCF_VERSION ? doc.dcf : null,
+  };
+}
+
+export async function readDerived(ticker: string, opts: MemoOptions = {}): Promise<Derived> {
+  const sym = ticker.toUpperCase();
+  const now = (opts.now ?? (() => new Date()))();
+  const mirrored = pickDerived(derivedMirror().get(sym), now, opts.maxAgeSec);
+  if (mirrored.score && mirrored.dcf) return mirrored;
+  try {
+    const snap = await db.collection("factsCache").doc(sym).get();
+    const doc = snap.exists ? (snap.data() as DerivedDoc) : undefined;
+    if (doc) derivedMirror().set(sym, doc);
+    return pickDerived(doc, now, opts.maxAgeSec);
+  } catch (err) {
+    console.error("[facts cache] read failed", sym, err);
+    return mirrored;
+  }
+}
+
+/** Persist successful computes only. Never throws. */
+export async function writeDerived(ticker: string, d: Derived, now: Date = new Date()): Promise<void> {
+  const sym = ticker.toUpperCase();
+  const patch: DerivedDoc = {};
+  if (hasValue(d.score)) Object.assign(patch, { score: d.score, scoreAt: now.getTime() });
+  if (hasValue(d.dcf)) Object.assign(patch, { dcf: d.dcf, dcfAt: now.getTime() });
+  if (!patch.score && !patch.dcf) return;
+  derivedMirror().set(sym, { ...derivedMirror().get(sym), ...patch });
+  try {
+    await db.collection("factsCache").doc(sym).set(patch as Record<string, unknown>, { merge: true });
+  } catch (err) {
+    console.error("[facts cache] write failed", sym, err);
+  }
 }
