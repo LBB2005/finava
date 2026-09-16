@@ -8,9 +8,10 @@
  * the p50 / p90 / max per lane that `PER_RUN_CAP` and the plan allowances in
  * `src/lib/plans.ts` are then set from.
  *
- * ⚠️ IT SPENDS REAL MONEY. Roughly $11 for the full 30-prompt set (fast is
- * pennies; deep research is most of it). Run `--dry` first — it prints the plan
- * and the estimate without calling anything.
+ * ⚠️ IT SPENDS REAL MONEY. The Sep 2026 run cost $4.33 for the full 30-prompt
+ * set (fast is pennies; deep research is half of it). Run `--dry` first — it
+ * prints the plan and the estimate without calling anything. Budget ~60 min:
+ * runs are serial and a deep run takes 5+ minutes.
  *
  * How it works: the server appends one JSONL row per run to `$RUN_COST_LOG`
  * (see `logRunCost` in src/lib/usageRunCost.ts). Prompts are driven strictly
@@ -94,17 +95,28 @@ const PROMPTS: Record<Lane, string[]> = {
 const PORTFOLIO_CONTEXT = "NVDA 10 shares, AAPL 5 shares, MSFT 8 shares";
 
 /**
- * Rough $/run per lane, used only for the pre-flight estimate in `--dry`. These
- * are the guesses this script exists to replace — once it has run, the measured
- * table in docs/pricing/run-cost-2026-09.md is the number to trust.
+ * $/run per lane for the pre-flight estimate in `--dry`: the p90s measured in
+ * Sep 2026 (docs/pricing/run-cost-2026-09.md), so the estimate errs high.
  */
-const ESTIMATE_USD: Record<Lane, number> = { fast: 0.01, full: 0.4, discover: 0.15, deep: 1.2 };
+const ESTIMATE_USD: Record<Lane, number> = { fast: 0.0064, full: 0.2231, discover: 0.0908, deep: 0.5213 };
 
-/** A deep-research run can legitimately take most of the route's 300 s budget. */
-const REQUEST_TIMEOUT_MS = 330_000;
+/**
+ * Client-side ceiling per run. Deliberately well past the route's 300 s
+ * `maxDuration`: the dev server doesn't enforce that limit, and the Sep 2026
+ * measurement found deep-research runs taking 310–335 s. A client timeout below
+ * the real run length doesn't stop the run — it just loses its cost row.
+ */
+const REQUEST_TIMEOUT_MS = 480_000;
 
 /** How long to wait for the server's cost row to land after the stream closes. */
 const COST_ROW_WAIT_MS = 8_000;
+
+/**
+ * After a client-side failure the server is usually still running the crew.
+ * Wait this long for its row, so it's counted against THIS prompt instead of
+ * landing in the next prompt's window and being attributed to the wrong run.
+ */
+const ORPHAN_ROW_WAIT_MS = 180_000;
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 function arg(name: string): string | undefined {
@@ -166,8 +178,12 @@ async function rowsSince(path: string, from: number): Promise<CostRow[]> {
  * file append is not awaited, so the client can see the last SSE byte a beat
  * before the row lands. Polls, then gives up rather than hanging the batch.
  */
-async function awaitRows(path: string, from: number): Promise<CostRow[]> {
-  const deadline = Date.now() + COST_ROW_WAIT_MS;
+async function awaitRows(
+  path: string,
+  from: number,
+  waitMs: number = COST_ROW_WAIT_MS
+): Promise<CostRow[]> {
+  const deadline = Date.now() + waitMs;
   for (;;) {
     const rows = await rowsSince(path, from);
     if (rows.length > 0) return rows;
@@ -246,7 +262,10 @@ async function drive(lane: Lane, prompt: string): Promise<{ ms: number; error?: 
 async function runOne(lane: Lane, prompt: string): Promise<RunResult> {
   const from = await fileSize(COST_LOG!);
   const { ms, error } = await drive(lane, prompt);
-  const rows = error ? [] : await awaitRows(COST_LOG!, from);
+  // A client-side failure (timeout, dropped connection) doesn't stop the run on
+  // the server. Wait for its row either way so it can't leak into the next
+  // prompt's window; it is still excluded from the stats below.
+  const rows = await awaitRows(COST_LOG!, from, error ? ORPHAN_ROW_WAIT_MS : COST_ROW_WAIT_MS);
 
   const credits = rows.reduce((n, r) => n + (r.credits ?? 0), 0);
   const usd = rows.reduce((n, r) => n + (r.usd ?? 0), 0);

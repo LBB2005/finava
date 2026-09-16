@@ -1,0 +1,762 @@
+{
+  "measuredAt": "2026-09-16",
+  "source": "scripts/measure-run-cost.ts against a local dev server (main @ e7c6590 + this branch), server-side run_cost rows",
+  "creditUsd": 0.001,
+  "totalUsd": 4.332,
+  "stats": {
+    "fast": {
+      "runs": 10,
+      "creditsP50": 5.27,
+      "creditsP90": 6.35,
+      "creditsMax": 7.08,
+      "creditsMin": 2.28,
+      "secondsP50": 7.5,
+      "secondsP90": 11.4,
+      "secondsMax": 11.5
+    },
+    "full": {
+      "runs": 10,
+      "creditsP50": 188.1,
+      "creditsP90": 223.11,
+      "creditsMax": 242.23,
+      "creditsMin": 71.24,
+      "secondsP50": 210.8,
+      "secondsP90": 230.6,
+      "secondsMax": 247.4
+    },
+    "discover": {
+      "runs": 5,
+      "creditsP50": 87.55,
+      "creditsP90": 90.78,
+      "creditsMax": 90.78,
+      "creditsMin": 34.04,
+      "secondsP50": 47.8,
+      "secondsP90": 92.8,
+      "secondsMax": 92.8
+    },
+    "deep": {
+      "runs": 5,
+      "creditsP50": 446.23,
+      "creditsP90": 521.29,
+      "creditsMax": 521.29,
+      "creditsMin": 303.95,
+      "secondsP50": 333.5,
+      "secondsP90": 335.0,
+      "secondsMax": 335.0
+    }
+  },
+  "runs": [
+    {
+      "lane": "fast",
+      "prompt": "is it too late to buy NVDA?",
+      "runId": "0bceae1a",
+      "credits": 7.08,
+      "usd": 0.0071,
+      "durationS": 11.4,
+      "calls": 2,
+      "inputTokens": 3011,
+      "outputTokens": 814,
+      "byModel": {
+        "claude-haiku-4-5": 5.7,
+        "anthropic/claude-haiku-4.5": 1.38
+      },
+      "byAgent": {
+        "chat": 5.7,
+        "chatFollowups": 1.38
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "is AMD a buy right now?",
+      "runId": "b31513e4",
+      "credits": 5.65,
+      "usd": 0.0057,
+      "durationS": 11.5,
+      "calls": 2,
+      "inputTokens": 2567,
+      "outputTokens": 616,
+      "byModel": {
+        "claude-haiku-4-5": 4.53,
+        "anthropic/claude-haiku-4.5": 1.12
+      },
+      "byAgent": {
+        "chat": 4.53,
+        "chatFollowups": 1.12
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "should I worry about TSLA's margins?",
+      "runId": "3f7d5d3d",
+      "credits": 4.68,
+      "usd": 0.0047,
+      "durationS": 6.9,
+      "calls": 2,
+      "inputTokens": 2364,
+      "outputTokens": 464,
+      "byModel": {
+        "claude-haiku-4-5": 3.74,
+        "anthropic/claude-haiku-4.5": 0.94
+      },
+      "byAgent": {
+        "chat": 3.74,
+        "chatFollowups": 0.94
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "thoughts on PLTR at this price",
+      "runId": "61700774",
+      "credits": 5.91,
+      "usd": 0.0059,
+      "durationS": 9.7,
+      "calls": 2,
+      "inputTokens": 2618,
+      "outputTokens": 658,
+      "byModel": {
+        "claude-haiku-4-5": 4.7,
+        "anthropic/claude-haiku-4.5": 1.21
+      },
+      "byAgent": {
+        "chat": 4.7,
+        "chatFollowups": 1.21
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "what's going on with COIN today",
+      "runId": "6fd6faa9",
+      "credits": 5.27,
+      "usd": 0.0053,
+      "durationS": 7.5,
+      "calls": 2,
+      "inputTokens": 2467,
+      "outputTokens": 560,
+      "byModel": {
+        "claude-haiku-4-5": 4.26,
+        "anthropic/claude-haiku-4.5": 1.01
+      },
+      "byAgent": {
+        "chat": 4.26,
+        "chatFollowups": 1.01
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "is SOFI overvalued",
+      "runId": "fa8ca1f5",
+      "credits": 6.28,
+      "usd": 0.0063,
+      "durationS": 9.3,
+      "calls": 2,
+      "inputTokens": 2849,
+      "outputTokens": 686,
+      "byModel": {
+        "claude-haiku-4-5": 5.07,
+        "anthropic/claude-haiku-4.5": 1.21
+      },
+      "byAgent": {
+        "chat": 5.07,
+        "chatFollowups": 1.21
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "analyze MSFT",
+      "runId": "71900d7f",
+      "credits": 6.35,
+      "usd": 0.0064,
+      "durationS": 8.8,
+      "calls": 2,
+      "inputTokens": 2684,
+      "outputTokens": 734,
+      "byModel": {
+        "claude-haiku-4-5": 5.13,
+        "anthropic/claude-haiku-4.5": 1.22
+      },
+      "byAgent": {
+        "chat": 5.13,
+        "chatFollowups": 1.22
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "what's a P/E ratio?",
+      "runId": "c305f3e4",
+      "credits": 2.47,
+      "usd": 0.0025,
+      "durationS": 5.1,
+      "calls": 2,
+      "inputTokens": 1649,
+      "outputTokens": 164,
+      "byModel": {
+        "claude-haiku-4-5": 1.95,
+        "anthropic/claude-haiku-4.5": 0.52
+      },
+      "byAgent": {
+        "chat": 1.95,
+        "chatFollowups": 0.52
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "how risky is my portfolio?",
+      "runId": "b53c4bb1",
+      "credits": 3.34,
+      "usd": 0.0033,
+      "durationS": 5.5,
+      "calls": 2,
+      "inputTokens": 1796,
+      "outputTokens": 308,
+      "byModel": {
+        "claude-haiku-4-5": 2.65,
+        "anthropic/claude-haiku-4.5": 0.69
+      },
+      "byAgent": {
+        "chat": 2.65,
+        "chatFollowups": 0.69
+      }
+    },
+    {
+      "lane": "fast",
+      "prompt": "is this a buy?",
+      "runId": "938aafcf",
+      "credits": 2.28,
+      "usd": 0.0023,
+      "durationS": 2.8,
+      "calls": 2,
+      "inputTokens": 1624,
+      "outputTokens": 132,
+      "byModel": {
+        "claude-haiku-4-5": 1.8,
+        "anthropic/claude-haiku-4.5": 0.48
+      },
+      "byAgent": {
+        "chat": 1.8,
+        "chatFollowups": 0.48
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "full analysis of NVDA",
+      "runId": "e7439abf",
+      "credits": 169.69,
+      "usd": 0.1697,
+      "durationS": 189.4,
+      "calls": 6,
+      "inputTokens": 14447,
+      "outputTokens": 10183,
+      "byModel": {
+        "claude-sonnet-4-6": 163.18,
+        "anthropic/claude-haiku-4.5": 6.3,
+        "google/gemini-2.5-flash-lite": 0.21
+      },
+      "byAgent": {
+        "ceo": 163.18,
+        "skeptic": 4.52,
+        "chatFollowups": 1.78,
+        "technical": 0.21
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "give me a deep dive on TSLA",
+      "runId": "28479791",
+      "credits": 217.88,
+      "usd": 0.2179,
+      "durationS": 226.1,
+      "calls": 9,
+      "inputTokens": 20981,
+      "outputTokens": 14119,
+      "byModel": {
+        "claude-sonnet-4-6": 178.5,
+        "openai/gpt-5.5": 28.42,
+        "anthropic/claude-haiku-4.5": 6.95,
+        "google/gemini-2.5-flash": 3.39,
+        "google/gemini-2.5-flash-lite": 0.62
+      },
+      "byAgent": {
+        "ceo": 178.5,
+        "analyst": 28.42,
+        "skeptic": 5.13,
+        "news": 3.39,
+        "chatFollowups": 1.82,
+        "fundamentals": 0.36,
+        "technical": 0.26
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "run the crew on MSFT",
+      "runId": "b0e86113",
+      "credits": 71.24,
+      "usd": 0.0712,
+      "durationS": 48.4,
+      "calls": 11,
+      "inputTokens": 21979,
+      "outputTokens": 5083,
+      "byModel": {
+        "claude-sonnet-4-6": 30.53,
+        "openai/gpt-5.5": 30.34,
+        "google/gemini-2.5-flash": 5.86,
+        "anthropic/claude-haiku-4.5": 3.69,
+        "google/gemini-2.5-flash-lite": 0.82
+      },
+      "byAgent": {
+        "ceo": 30.53,
+        "analyst": 30.34,
+        "news": 5.86,
+        "skeptic": 3.28,
+        "fundamentals": 0.53,
+        "chatFollowups": 0.41,
+        "technical": 0.29
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "research report on SOFI please",
+      "runId": "a0e0b4ad",
+      "credits": 119.81,
+      "usd": 0.1198,
+      "durationS": 99.3,
+      "calls": 9,
+      "inputTokens": 19997,
+      "outputTokens": 7739,
+      "byModel": {
+        "claude-sonnet-4-6": 80.76,
+        "openai/gpt-5.5": 28.57,
+        "anthropic/claude-haiku-4.5": 6.45,
+        "google/gemini-2.5-flash": 3.39,
+        "google/gemini-2.5-flash-lite": 0.64
+      },
+      "byAgent": {
+        "ceo": 80.76,
+        "analyst": 28.57,
+        "skeptic": 4.82,
+        "news": 3.39,
+        "chatFollowups": 1.63,
+        "earnings": 0.37,
+        "technical": 0.27
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "comprehensive analysis of GOOGL",
+      "runId": "c2cc2161",
+      "credits": 223.11,
+      "usd": 0.2231,
+      "durationS": 223.4,
+      "calls": 9,
+      "inputTokens": 21744,
+      "outputTokens": 14070,
+      "byModel": {
+        "claude-sonnet-4-6": 182.95,
+        "openai/gpt-5.5": 28.85,
+        "anthropic/claude-haiku-4.5": 7.21,
+        "google/gemini-2.5-flash": 3.39,
+        "google/gemini-2.5-flash-lite": 0.71
+      },
+      "byAgent": {
+        "ceo": 182.95,
+        "analyst": 28.85,
+        "skeptic": 5.37,
+        "news": 3.39,
+        "chatFollowups": 1.84,
+        "fundamentals": 0.47,
+        "technical": 0.24
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "full analysis of AMD",
+      "runId": "d60d2c19",
+      "credits": 191.7,
+      "usd": 0.1917,
+      "durationS": 230.6,
+      "calls": 7,
+      "inputTokens": 18486,
+      "outputTokens": 12052,
+      "byModel": {
+        "claude-sonnet-4-6": 181.94,
+        "anthropic/claude-haiku-4.5": 6.88,
+        "google/gemini-2.5-flash": 2.68,
+        "google/gemini-2.5-flash-lite": 0.2
+      },
+      "byAgent": {
+        "ceo": 181.94,
+        "skeptic": 5.02,
+        "news": 2.68,
+        "chatFollowups": 1.86,
+        "technical": 0.2
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "deep dive on PLTR",
+      "runId": "5e263424",
+      "credits": 213.49,
+      "usd": 0.2135,
+      "durationS": 210.8,
+      "calls": 9,
+      "inputTokens": 21473,
+      "outputTokens": 13485,
+      "byModel": {
+        "claude-sonnet-4-6": 174.21,
+        "openai/gpt-5.5": 28.36,
+        "anthropic/claude-haiku-4.5": 6.87,
+        "google/gemini-2.5-flash": 3.33,
+        "google/gemini-2.5-flash-lite": 0.72
+      },
+      "byAgent": {
+        "ceo": 174.21,
+        "analyst": 28.36,
+        "skeptic": 4.97,
+        "news": 3.33,
+        "chatFollowups": 1.9,
+        "fundamentals": 0.5,
+        "technical": 0.22
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "complete research report on AAPL",
+      "runId": "832c87ab",
+      "credits": 188.1,
+      "usd": 0.1881,
+      "durationS": 222.8,
+      "calls": 8,
+      "inputTokens": 18793,
+      "outputTokens": 12763,
+      "byModel": {
+        "claude-sonnet-4-6": 177.75,
+        "anthropic/claude-haiku-4.5": 6.38,
+        "google/gemini-2.5-flash": 3.39,
+        "google/gemini-2.5-flash-lite": 0.58
+      },
+      "byAgent": {
+        "ceo": 177.75,
+        "skeptic": 4.62,
+        "news": 3.39,
+        "chatFollowups": 1.76,
+        "earnings": 0.34,
+        "technical": 0.24
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "full analysis of COIN",
+      "runId": "d2e0017f",
+      "credits": 131.95,
+      "usd": 0.1319,
+      "durationS": 109.6,
+      "calls": 9,
+      "inputTokens": 21068,
+      "outputTokens": 7911,
+      "byModel": {
+        "claude-sonnet-4-6": 93.44,
+        "openai/gpt-5.5": 27.58,
+        "anthropic/claude-haiku-4.5": 6.9,
+        "google/gemini-2.5-flash": 3.4,
+        "google/gemini-2.5-flash-lite": 0.63
+      },
+      "byAgent": {
+        "ceo": 93.44,
+        "analyst": 27.58,
+        "skeptic": 5.17,
+        "news": 3.4,
+        "chatFollowups": 1.73,
+        "fundamentals": 0.42,
+        "technical": 0.21
+      }
+    },
+    {
+      "lane": "full",
+      "prompt": "comprehensive analysis of META",
+      "runId": "fbde7b01",
+      "credits": 242.23,
+      "usd": 0.2422,
+      "durationS": 247.4,
+      "calls": 9,
+      "inputTokens": 21962,
+      "outputTokens": 15602,
+      "byModel": {
+        "claude-sonnet-4-6": 202.76,
+        "openai/gpt-5.5": 28.87,
+        "anthropic/claude-haiku-4.5": 6.55,
+        "google/gemini-2.5-flash": 3.38,
+        "google/gemini-2.5-flash-lite": 0.67
+      },
+      "byAgent": {
+        "ceo": 202.76,
+        "analyst": 28.87,
+        "skeptic": 4.67,
+        "news": 3.38,
+        "chatFollowups": 1.88,
+        "fundamentals": 0.46,
+        "technical": 0.21
+      }
+    },
+    {
+      "lane": "discover",
+      "prompt": "find cheap energy stocks",
+      "runId": "8f28c839",
+      "credits": 34.04,
+      "usd": 0.034,
+      "durationS": 92.8,
+      "calls": 5,
+      "inputTokens": 3508,
+      "outputTokens": 1913,
+      "byModel": {
+        "claude-sonnet-4-6": 25.76,
+        "anthropic/claude-sonnet-4.6": 6.47,
+        "anthropic/claude-haiku-4.5": 1.81
+      },
+      "byAgent": {
+        "ceo": 25.76,
+        "scoutSelect": 6.47,
+        "chatFollowups": 1.39,
+        "screenParse": 0.42
+      }
+    },
+    {
+      "lane": "discover",
+      "prompt": "best AI plays right now",
+      "runId": "8326e3e8",
+      "credits": 88.69,
+      "usd": 0.0887,
+      "durationS": 47.8,
+      "calls": 5,
+      "inputTokens": 20174,
+      "outputTokens": 2211,
+      "byModel": {
+        "anthropic/claude-sonnet-4.6": 57.8,
+        "claude-sonnet-4-6": 29.19,
+        "anthropic/claude-haiku-4.5": 1.7
+      },
+      "byAgent": {
+        "scoutSelect": 57.8,
+        "ceo": 29.19,
+        "chatFollowups": 1.37,
+        "screenParse": 0.33
+      }
+    },
+    {
+      "lane": "discover",
+      "prompt": "which stocks have low debt and high growth?",
+      "runId": "6ef6f85b",
+      "credits": 87.55,
+      "usd": 0.0876,
+      "durationS": 46.8,
+      "calls": 5,
+      "inputTokens": 20264,
+      "outputTokens": 2138,
+      "byModel": {
+        "anthropic/claude-sonnet-4.6": 57.83,
+        "claude-sonnet-4-6": 27.9,
+        "anthropic/claude-haiku-4.5": 1.82
+      },
+      "byAgent": {
+        "scoutSelect": 57.83,
+        "ceo": 27.9,
+        "chatFollowups": 1.45,
+        "screenParse": 0.37
+      }
+    },
+    {
+      "lane": "discover",
+      "prompt": "ideas for dividend income",
+      "runId": "34638d09",
+      "credits": 90.78,
+      "usd": 0.0908,
+      "durationS": 52.8,
+      "calls": 5,
+      "inputTokens": 20177,
+      "outputTokens": 2380,
+      "byModel": {
+        "anthropic/claude-sonnet-4.6": 58.35,
+        "claude-sonnet-4-6": 30.56,
+        "anthropic/claude-haiku-4.5": 1.87
+      },
+      "byAgent": {
+        "scoutSelect": 58.35,
+        "ceo": 30.56,
+        "chatFollowups": 1.33,
+        "screenParse": 0.54
+      }
+    },
+    {
+      "lane": "discover",
+      "prompt": "undervalued semiconductor names",
+      "runId": "194b40a3",
+      "credits": 42.64,
+      "usd": 0.0426,
+      "durationS": 46.5,
+      "calls": 5,
+      "inputTokens": 5581,
+      "outputTokens": 2076,
+      "byModel": {
+        "claude-sonnet-4-6": 28.91,
+        "anthropic/claude-sonnet-4.6": 11.91,
+        "anthropic/claude-haiku-4.5": 1.82
+      },
+      "byAgent": {
+        "ceo": 28.91,
+        "scoutSelect": 11.91,
+        "chatFollowups": 1.4,
+        "screenParse": 0.42
+      }
+    },
+    {
+      "lane": "deep",
+      "prompt": "deep research on NVDA's competitive position",
+      "runId": "6cf037d9",
+      "credits": 446.23,
+      "usd": 0.4462,
+      "durationS": 333.5,
+      "calls": 13,
+      "inputTokens": 31668,
+      "outputTokens": 21220,
+      "byModel": {
+        "openai/gpt-5.5": 175.18,
+        "claude-sonnet-4-6": 133.98,
+        "anthropic/claude-sonnet-4.6": 125.37,
+        "anthropic/claude-haiku-4.5": 7.77,
+        "google/gemini-2.5-flash": 3.83,
+        "google/gemini-2.5-flash-lite": 0.1
+      },
+      "byAgent": {
+        "ceo": 133.98,
+        "comparables": 128.89,
+        "risk": 91.45,
+        "dcf": 80.21,
+        "skeptic": 5.68,
+        "macro": 3.83,
+        "chatFollowups": 2.09,
+        "earnings": 0.1
+      }
+    },
+    {
+      "lane": "deep",
+      "prompt": "deep research on TSLA's margin trajectory",
+      "runId": "9bc61249",
+      "credits": 460.66,
+      "usd": 0.4607,
+      "durationS": 310.4,
+      "calls": 11,
+      "inputTokens": 38630,
+      "outputTokens": 24352,
+      "byModel": {
+        "claude-sonnet-4-6": 241.88,
+        "openai/gpt-5.5": 152.83,
+        "anthropic/claude-sonnet-4.6": 48.74,
+        "anthropic/claude-haiku-4.5": 8.58,
+        "google/gemini-2.5-flash": 8.25,
+        "google/gemini-2.5-flash-lite": 0.38
+      },
+      "byAgent": {
+        "ceo": 241.88,
+        "dcf": 82.39,
+        "comparables": 70.44,
+        "risk": 48.74,
+        "skeptic": 6.77,
+        "macro": 4.86,
+        "news": 3.39,
+        "chatFollowups": 1.81,
+        "earnings": 0.38
+      }
+    },
+    {
+      "lane": "deep",
+      "prompt": "deep research on the AI capex cycle and who benefits",
+      "runId": "8e2e17cf",
+      "credits": 437.46,
+      "usd": 0.4375,
+      "durationS": 333.7,
+      "calls": 18,
+      "inputTokens": 65685,
+      "outputTokens": 23448,
+      "byModel": {
+        "claude-sonnet-4-6": 172,
+        "openai/gpt-5.5": 138.03,
+        "anthropic/claude-sonnet-4.6": 104.61,
+        "google/gemini-2.5-flash": 12.6,
+        "anthropic/claude-haiku-4.5": 8.34,
+        "google/gemini-2.5-flash-lite": 1.88
+      },
+      "byAgent": {
+        "analyst": 175.62,
+        "ceo": 172,
+        "scoutSelect": 67.02,
+        "news": 8,
+        "skeptic": 5.91,
+        "macro": 4.6,
+        "chatFollowups": 1.89,
+        "fundamentals": 1.22,
+        "technical": 0.66,
+        "screenParse": 0.54
+      }
+    },
+    {
+      "lane": "deep",
+      "prompt": "deep research on SOFI's path to profitability",
+      "runId": "864c292e",
+      "credits": 303.95,
+      "usd": 0.304,
+      "durationS": 333.3,
+      "calls": 10,
+      "inputTokens": 22864,
+      "outputTokens": 17308,
+      "byModel": {
+        "openai/gpt-5.5": 126.83,
+        "claude-sonnet-4-6": 114.13,
+        "anthropic/claude-sonnet-4.6": 46.67,
+        "anthropic/claude-haiku-4.5": 8.68,
+        "google/gemini-2.5-flash": 7.14,
+        "google/gemini-2.5-flash-lite": 0.5
+      },
+      "byAgent": {
+        "ceo": 114.13,
+        "dcf": 69.39,
+        "comparables": 57.44,
+        "risk": 46.67,
+        "skeptic": 6.91,
+        "macro": 3.76,
+        "news": 3.38,
+        "chatFollowups": 1.77,
+        "fundamentals": 0.5
+      }
+    },
+    {
+      "lane": "deep",
+      "prompt": "deep research on AMD vs NVDA in data centre",
+      "runId": "a85abf9f",
+      "credits": 521.29,
+      "usd": 0.5213,
+      "durationS": 335.0,
+      "calls": 15,
+      "inputTokens": 36668,
+      "outputTokens": 24964,
+      "byModel": {
+        "openai/gpt-5.5": 290.88,
+        "claude-sonnet-4-6": 143.11,
+        "anthropic/claude-sonnet-4.6": 70.23,
+        "google/gemini-2.5-flash": 8.5,
+        "anthropic/claude-haiku-4.5": 7.7,
+        "google/gemini-2.5-flash-lite": 0.87
+      },
+      "byAgent": {
+        "dcf": 185.4,
+        "ceo": 143.11,
+        "comparables": 92.91,
+        "risk": 48.17,
+        "analyst": 34.63,
+        "skeptic": 5.85,
+        "macro": 4.96,
+        "news": 3.54,
+        "chatFollowups": 1.85,
+        "earnings": 0.54,
+        "technical": 0.33
+      }
+    }
+  ]
+}

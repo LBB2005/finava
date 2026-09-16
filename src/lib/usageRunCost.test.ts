@@ -178,4 +178,58 @@ describe("logRunCost", () => {
     const { logRunCost } = await import("./usageRunCost");
     expect(logRunCost()).toBeNull();
   });
+
+  it("flags a run that finished over its lane's cap", async () => {
+    const { logRunCost } = await import("./usageRunCost");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    inRun("fast", [{ agent: "chat", model: "claude-haiku-4-5", credits: PER_RUN_CAP.fast + 1 }], () =>
+      logRunCost()
+    );
+    const warned = warn.mock.calls.map((c) => JSON.parse(c[0] as string));
+    log.mockRestore();
+    warn.mockRestore();
+    expect(warned).toEqual([
+      expect.objectContaining({ msg: "run_cost_over_cap", lane: "fast", cap: PER_RUN_CAP.fast }),
+    ]);
+  });
+
+  it("stays quiet for a run inside its cap", async () => {
+    const { logRunCost } = await import("./usageRunCost");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    inRun("full", [{ agent: "ceo", model: "claude-sonnet-4-6", credits: 188 }], () => logRunCost());
+    const calls = warn.mock.calls.length;
+    log.mockRestore();
+    warn.mockRestore();
+    expect(calls).toBe(0);
+  });
+
+  it("writes a JSONL row with the full breakdown when RUN_COST_LOG is set", async () => {
+    const { mkdtemp, readFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const file = join(await mkdtemp(join(tmpdir(), "runcost-")), "rows.jsonl");
+    vi.stubEnv("RUN_COST_LOG", file);
+    const { logRunCost } = await import("./usageRunCost");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    inRun("discover", [{ agent: "scout", model: "claude-sonnet-4-6", credits: 88 }], () =>
+      logRunCost({ wave: false })
+    );
+    log.mockRestore();
+
+    // The append is fire-and-forget; poll briefly for it.
+    let text = "";
+    for (let i = 0; i < 40 && !text; i++) {
+      text = await readFile(file, "utf8").catch(() => "");
+      if (!text) await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(JSON.parse(text.trim())).toMatchObject({
+      runId: "run-abc",
+      lane: "discover",
+      credits: 88,
+      byAgent: { scout: 88 },
+      wave: false,
+    });
+  });
 });

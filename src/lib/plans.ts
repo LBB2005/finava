@@ -10,8 +10,11 @@
  *
  * To change pricing, limits, or what a tier unlocks, edit THIS file only.
  *
- * NOTE: the credit/limit numbers are cost-weighted placeholders — TUNE them
- * against real usage before launch (same convention as `usage.ts`).
+ * The credit numbers are set from a measurement, not guessed: per-run costs
+ * from `scripts/measure-run-cost.ts` (30 real runs, Sep 2026), and allowances
+ * sized so a subscriber who uses 100% of their credits still leaves a ≥ 70%
+ * gross margin. The working is in `docs/pricing/run-cost-2026-09.md` — re-run
+ * the script and update that doc before changing a number here.
  */
 
 // ── Tiers ─────────────────────────────────────────────────────────────────────
@@ -104,15 +107,40 @@ export function creditsToUsd(credits: number): number {
  * differentiator: every plan gets the same lane caps, and what actually separates
  * the tiers is how many runs their monthly credit allowance buys.
  *
- * Numbers are ~1.5x the measured p90 of each lane (see the measurement in
- * `docs/pricing/run-cost-2026-09.md`, and `scripts/measure-run-cost.ts` to re-run
- * it). PLACEHOLDER until that measurement lands.
+ * Each cap is ~1.5x the lane's measured p90, rounded up to a round number, so a
+ * normal run never sees it and only a runaway does. Measured Sep 2026 (credits):
+ *
+ *   lane      p50    p90    max    → cap
+ *   fast      5.3    6.4    7.1    → 20   (see below)
+ *   full      188    223    242    → 350
+ *   discover  88     91     91     → 150
+ *   deep      446    521    521    → 800
+ *
+ * `fast` is the one exception to 1.5x p90 (which would be 10): the lane is a
+ * single Haiku answer bounded by max_tokens at ~16 credits, and a legitimately
+ * long answer must not read as a runaway. It has no mid-run abort point either,
+ * so its cap is a monitoring threshold (`run_cost_over_cap`), not a kill-switch.
+ *
+ * The old single cap was 300 credits on every tier. Deep research's MEDIAN run
+ * is 446 — every deep run a paying customer started would have been cut off.
  */
 export const PER_RUN_CAP: Record<RunLane, number> = {
-  fast: 60, // MEASURE
-  full: 900, // MEASURE
-  deep: 2500, // MEASURE
-  discover: 600, // MEASURE
+  fast: 20,
+  full: 350,
+  deep: 800,
+  discover: 150,
+};
+
+/**
+ * What a typical run costs, per lane — the measured p50 in credits. Used to turn
+ * an abstract credit allowance into something a buyer can picture ("≈ 26 full
+ * analyses a month"). Measured Sep 2026; see docs/pricing/run-cost-2026-09.md.
+ */
+export const TYPICAL_RUN_CREDITS: Record<RunLane, number> = {
+  fast: 5,
+  full: 190,
+  deep: 450,
+  discover: 90,
 };
 
 // ── The plan table ────────────────────────────────────────────────────────────
@@ -120,10 +148,13 @@ export const PLANS: Record<PlanName, PlanConfig> = {
   Free: {
     label: "Free",
     price: { monthly: "$0", annual: "$0" },
-    daily: 60, // TUNE
-    weekly: 200, // TUNE
-    monthly: 400, // TUNE — ~ a thin conversion taste
-    deepResearchPerMonth: 2, // TUNE — "2 crew runs to feel the wow"
+    // Worst case $0.60/mo per free account: room for one deep run (~450) or
+    // three full analyses, which is the "feel the crew" moment. Two deep runs
+    // (the old number) never fit inside the old 400-credit month.
+    daily: 250,
+    weekly: 600,
+    monthly: 600,
+    deepResearchPerMonth: 1,
     perRunCap: PER_RUN_CAP,
     capabilities: {
       plaidLinking: false,
@@ -135,10 +166,15 @@ export const PLANS: Record<PlanName, PlanConfig> = {
   Analyst: {
     label: "Analyst",
     price: { monthly: "$20", annual: "$200" },
-    daily: 400, // TUNE
-    weekly: 1500, // TUNE
-    monthly: 4000, // TUNE
-    deepResearchPerMonth: 30, // TUNE — "30 / month (5 / day)"
+    // 4,400 credits = $4.40 max model spend. At 100% use: 73.6% margin monthly,
+    // 70.5% annual (the binding case — $200/yr is $16.67/mo). Daily fits one
+    // deep run (~520 worst case) plus normal chat.
+    daily: 800,
+    weekly: 2000,
+    monthly: 4400,
+    // 30 deep runs (~13,500 credits) could never fit in the month; 8 (~3,600)
+    // leaves room for the fast answers and full analyses around them.
+    deepResearchPerMonth: 8,
     perRunCap: PER_RUN_CAP,
     capabilities: {
       plaidLinking: true,
@@ -154,10 +190,11 @@ export const PLANS: Record<PlanName, PlanConfig> = {
   Pro: {
     label: "Pro",
     price: { monthly: "$60", annual: "$600" },
-    daily: 1200, // TUNE
-    weekly: 5000, // TUNE
-    monthly: 15000, // TUNE
-    deepResearchPerMonth: Infinity, // fair-use (backstopped by daily/weekly credits)
+    // 13,500 credits = $13.50. At 100% use: 74.1% monthly, 70.0% annual.
+    daily: 2000,
+    weekly: 6000,
+    monthly: 13500,
+    deepResearchPerMonth: Infinity, // limited only by credits (~30 deep runs/month)
     perRunCap: PER_RUN_CAP,
     capabilities: {
       plaidLinking: true,
@@ -173,9 +210,11 @@ export const PLANS: Record<PlanName, PlanConfig> = {
   Quant: {
     label: "Quant",
     price: { monthly: "$100", annual: "$1000" },
-    daily: 3000, // TUNE
-    weekly: 12000, // TUNE
-    monthly: 40000, // TUNE
+    // Was 40,000 — a 57% margin at full use. 22,500 credits = $22.50: 74.3%
+    // monthly, 70.1% annual. Not sold today, but it is what admins resolve to.
+    daily: 3000,
+    weekly: 10000,
+    monthly: 22500,
     deepResearchPerMonth: Infinity,
     perRunCap: PER_RUN_CAP,
     capabilities: {

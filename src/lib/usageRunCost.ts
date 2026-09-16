@@ -18,7 +18,7 @@
  * a route that only wants the run_cost line at the end of a stream doesn't drag
  * the Admin SDK into its module graph.
  */
-import { creditsToUsd, perRunCapFor, type RunLane } from "@/lib/plans";
+import { creditsToUsd, PER_RUN_CAP, perRunCapFor, type RunLane } from "@/lib/plans";
 import { usageStore, type RunCall } from "@/lib/runContext";
 import { logger } from "@/lib/logger";
 
@@ -139,6 +139,18 @@ export function logRunCost(extra: Record<string, unknown> = {}): RunCostReport |
       topAgent: topSpender(byAgent),
       ...extra,
     });
+    // A run that finished over its lane's cap. The crew lanes stop themselves at
+    // the cap, so this mostly catches the fast lane (no mid-run abort point) and
+    // the overshoot of a crew round that was already in flight when the cap was
+    // crossed. Compared against the shared table: it is the same on every tier.
+    if (report.credits > PER_RUN_CAP[report.lane]) {
+      log.warn("run_cost_over_cap", {
+        runId: report.runId,
+        lane: report.lane,
+        credits: report.credits,
+        cap: PER_RUN_CAP[report.lane],
+      });
+    }
     void writeCostRow({ ...report, ...extra });
   } catch (e) {
     log.warn("run_cost report failed", { err: e instanceof Error ? e.message : String(e) });

@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CREDIT_USD,
   DEFAULT_PLAN,
+  PER_RUN_CAP,
   PLANS,
   PLAN_ORDER,
+  RUN_LANES,
+  TYPICAL_RUN_CREDITS,
+  creditsToUsd,
+  perRunCapFor,
   jsonLimit,
   nextPaidPlan,
   planConfig,
@@ -55,6 +61,65 @@ describe("the plan table", () => {
     expect(PLANS.Analyst.stripe.purchasable).toBe(true);
     expect(PLANS.Pro.stripe.purchasable).toBe(true);
     expect(PLANS.Quant.stripe.purchasable).toBe(false);
+  });
+});
+
+describe("per-run caps", () => {
+  it("gives every lane a cap above what a typical run costs", () => {
+    for (const lane of RUN_LANES) {
+      expect(PER_RUN_CAP[lane], lane).toBeGreaterThan(TYPICAL_RUN_CREDITS[lane]);
+    }
+  });
+
+  it("keeps the lanes in their measured cost order", () => {
+    expect(PER_RUN_CAP.fast).toBeLessThan(PER_RUN_CAP.discover);
+    expect(PER_RUN_CAP.discover).toBeLessThan(PER_RUN_CAP.full);
+    expect(PER_RUN_CAP.full).toBeLessThan(PER_RUN_CAP.deep);
+  });
+
+  it("no longer cuts off a median deep-research run (the old flat 300 did)", () => {
+    for (const p of PLAN_ORDER) {
+      expect(perRunCapFor(PLANS[p], "deep")).toBeGreaterThan(TYPICAL_RUN_CREDITS.deep);
+    }
+  });
+
+  it("falls back to the shared table for a config with no per-lane caps", () => {
+    expect(perRunCapFor(null, "full")).toBe(PER_RUN_CAP.full);
+    expect(perRunCapFor({ perRunCap: undefined as never }, "deep")).toBe(PER_RUN_CAP.deep);
+  });
+});
+
+describe("gross margin floor", () => {
+  // Stripe's standard card rate. The floor is checked at 100% utilisation — a
+  // subscriber who spends every credit — so it holds without guessing usage.
+  const stripeFee = (usd: number) => usd * 0.029 + 0.3;
+  const dollars = (s: string) => Number(s.replace(/[^0-9.]/g, ""));
+
+  for (const p of ["Analyst", "Pro", "Quant"] as PlanName[]) {
+    it(`${p} keeps >= 70% gross margin at full use, monthly and annual`, () => {
+      const cfg = PLANS[p];
+      const modelCost = creditsToUsd(cfg.monthly);
+      const monthly = dollars(cfg.price.monthly);
+      const annualPerMonth = dollars(cfg.price.annual) / 12;
+
+      const monthlyMargin = 1 - (modelCost + stripeFee(monthly)) / monthly;
+      const annualMargin = 1 - (modelCost + stripeFee(dollars(cfg.price.annual)) / 12) / annualPerMonth;
+      expect(monthlyMargin).toBeGreaterThanOrEqual(0.7);
+      expect(annualMargin).toBeGreaterThanOrEqual(0.7);
+    });
+  }
+
+  it("prices credits at a tenth of a cent", () => {
+    expect(CREDIT_USD).toBe(0.001);
+    expect(creditsToUsd(4400)).toBe(4.4);
+  });
+
+  it("only promises Deep Research runs the monthly credits can actually pay for", () => {
+    for (const p of PLAN_ORDER) {
+      const { deepResearchPerMonth, monthly } = PLANS[p];
+      if (!Number.isFinite(deepResearchPerMonth)) continue;
+      expect(deepResearchPerMonth * TYPICAL_RUN_CREDITS.deep, p).toBeLessThanOrEqual(monthly);
+    }
   });
 });
 
