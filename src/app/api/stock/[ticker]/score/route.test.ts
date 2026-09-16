@@ -1,59 +1,44 @@
+// src/app/api/stock/[ticker]/score/route.test.ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { tickerFactsFixture } from "@/test/factsFixture";
+import { missing } from "@/lib/facts/types";
 
-const deps = vi.hoisted(() => ({
-  rateLimitGuard: vi.fn(),
-  getFactorUniverse: vi.fn(),
-}));
-
+const deps = vi.hoisted(() => ({ rateLimitGuard: vi.fn(), getTickerFacts: vi.fn() }));
 vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
-vi.mock("@/lib/factorUniverse", () => ({ getFactorUniverse: deps.getFactorUniverse }));
+vi.mock("@/lib/facts/ticker", () => ({ getTickerFacts: deps.getTickerFacts }));
 
 import { GET } from "./route";
-
-function ctx(ticker: string) {
-  return { params: Promise.resolve({ ticker }) };
-}
-
-const STOCK = {
-  ticker: "NVDA",
-  name: "NVIDIA",
-  sector: "Tech",
-  price: 199,
-  chg: 2.2,
-  f: { mom: 82, growth: 94, quality: 91, analyst: 76, value: 38, health: 88 },
-  mv: { week: 1, month: 4, year: 40 },
-};
+const ctx = (ticker: string) => ({ params: Promise.resolve({ ticker }) });
 
 beforeEach(() => {
   vi.clearAllMocks();
   deps.rateLimitGuard.mockResolvedValue(null);
-  deps.getFactorUniverse.mockResolvedValue({
-    stocks: [STOCK],
-    asOf: "2026-08-07T12:00:00.000Z",
-    coverage: { total: 1, fundamentals: 1, analyst: 1 },
-  });
 });
 
 describe("GET /api/stock/[ticker]/score", () => {
-  it("returns pillars + composite score + grade for a universe ticker", async () => {
-    const res = await GET(new Request("http://t"), ctx("nvda"));
+  it("returns the canonical facts score, grade, pillars and as-of", async () => {
+    const f = tickerFactsFixture("NVDA");
+    deps.getTickerFacts.mockResolvedValue(f);
+    const body = await (await GET(new Request("http://t"), ctx("nvda"))).json();
+    expect(body).toEqual({
+      ticker: "NVDA", score: f.score.value!.total, grade: f.score.value!.grade, pillars: f.score.value!.pillars,
+      confidence: f.score.value!.confidence, asOf: f.score.asOf, version: f.score.value!.version, note: null,
+    });
+  });
+
+  it("returns a null score with the note rather than a stand-in", async () => {
+    deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("SPY", { score: missing("Finava Score v2 (15 factors)", "No factor data available for this symbol", "2026-09-15") }));
+    const res = await GET(new Request("http://t"), ctx("SPY"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.ticker).toBe("NVDA");
-    expect(body.f).toEqual(STOCK.f);
-    expect(typeof body.score).toBe("number");
-    expect(body.score).toBeGreaterThan(0);
-    expect(typeof body.grade).toBe("string");
-    expect(body.asOf).toBe("2026-08-07T12:00:00.000Z");
+    expect(body.score).toBeNull();
+    expect(body.grade).toBeNull();
+    expect(body.note).toBe("No factor data available for this symbol");
   });
 
-  it("404s outside the universe and 400s on a blank ticker", async () => {
-    expect((await GET(new Request("http://t"), ctx("ZZZZ"))).status).toBe(404);
+  it("400s a blank ticker and 502s a loader failure", async () => {
     expect((await GET(new Request("http://t"), ctx("  "))).status).toBe(400);
-  });
-
-  it("502s when the factor engine fails", async () => {
-    deps.getFactorUniverse.mockRejectedValueOnce(new Error("engine down"));
-    expect((await GET(new Request("http://t"), ctx("NVDA"))).status).toBe(502);
+    deps.getTickerFacts.mockRejectedValueOnce(new Error("boom"));
+    expect((await GET(new Request("http://t"), ctx("AAPL"))).status).toBe(502);
   });
 });
