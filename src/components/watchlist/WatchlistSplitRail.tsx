@@ -128,6 +128,8 @@ function SignalChip({ sig }: { sig: Signal }) {
 
 const COLS = ["Ticker", "Finava", "Last", "Day", "Mkt Cap"] as const;
 const RIGHT_COLS = new Set(["Last", "Day", "Mkt Cap"]);
+/** Dropped under 640px so Ticker / Score / Last / Day stay legible on a phone. */
+const LOW_PRIORITY_COLS = new Set<string>(["Mkt Cap"]);
 
 function fmtCap(cap: number | null): string {
   if (cap == null) return "—";
@@ -142,11 +144,11 @@ function TableHead() {
         {COLS.map((h) => (
           <th
             key={h}
-            className="mono"
+            className={"mono wl-cell" + (LOW_PRIORITY_COLS.has(h) ? " wl-col-low" : "")}
             style={{
               textAlign: RIGHT_COLS.has(h) ? "right" : "left",
               fontSize: "var(--text-micro)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
-              color: "var(--color-muted)", padding: "8px 12px",
+              color: "var(--color-muted)",
               borderBottom: "1px solid var(--color-border)",
               whiteSpace: "nowrap",
             }}
@@ -195,44 +197,44 @@ function TableRow({ data, isLast, onRemove, onClick }: {
       }}
     >
       {/* Ticker chip + company name — mirrors the portfolio holdings table */}
-      <td style={{ padding: "8px 12px" }}>
+      <td className="wl-cell">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
             fontSize: "var(--text-meta)", fontWeight: 700, letterSpacing: "0.04em",
             color: "var(--color-accent)", background: "var(--color-accent-light)",
             padding: "3px 7px", borderRadius: "var(--radius-xs)",
           }}>{data.ticker}</span>
-          <span style={{
+          <span className="wl-rowname" style={{
             fontSize: "var(--text-sm)", color: "var(--color-text-secondary)",
-            maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>
             {data.name}
           </span>
         </div>
       </td>
       {/* Finava score pill — "—" until the factor universe has this ticker */}
-      <td style={{ padding: "8px 12px" }}>
+      <td className="wl-cell">
         {data.f
           ? <ScorePill score={data.score} />
           : <span className="mono" style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>—</span>}
       </td>
       {/* Last price */}
-      <td className="mono" style={{ textAlign: "right", fontSize: "var(--text-sm)", color: "var(--color-text)", padding: "8px 12px", fontVariantNumeric: "tabular-nums" }}>
+      <td className="mono wl-cell" style={{ textAlign: "right", fontSize: "var(--text-sm)", color: "var(--color-text)", fontVariantNumeric: "tabular-nums" }}>
         {fmtPrice}
       </td>
       {/* Day % */}
-      <td className="mono" style={{
-        textAlign: "right", padding: "8px 12px",
+      <td className="mono wl-cell" style={{
+        textAlign: "right",
         fontSize: "var(--text-sm)", fontWeight: 600, fontVariantNumeric: "tabular-nums",
         color: data.changePct == null ? "var(--color-muted)" : up ? "var(--color-bull)" : "var(--color-bear)",
       }}>
         {fmtChange}
       </td>
       {/* Market cap */}
-      <td className="mono" style={{ textAlign: "right", fontSize: "var(--text-sm)", color: "var(--color-text)", padding: "8px 12px", fontVariantNumeric: "tabular-nums" }}>
+      <td className="mono wl-cell wl-col-low" style={{ textAlign: "right", fontSize: "var(--text-sm)", color: "var(--color-text)", fontVariantNumeric: "tabular-nums" }}>
         {fmtCap(data.marketCap)}
       </td>
-      <td style={{ padding: "8px 10px", textAlign: "right" }}>
+      <td className="wl-cell wl-cell-x" style={{ textAlign: "right" }}>
         <button
           aria-label={`Remove ${data.ticker}`}
           onClick={(e) => { e.stopPropagation(); onRemove(data.ticker); }}
@@ -512,7 +514,7 @@ export default function WatchlistSplitRail() {
           </div>
         ) : (
           // Split rail layout
-          <div style={{ height: "100%", overflowY: "auto", scrollbarGutter: "stable both-edges", padding: "var(--content-pad-top) var(--page-gutter) var(--content-pad-bottom)", display: "grid", gridTemplateColumns: "minmax(0,1fr) 268px", gap: 16, alignItems: "start" }}>
+          <div className="wl-split" style={{ height: "100%", overflowY: "auto", scrollbarGutter: "stable both-edges", padding: "var(--content-pad-top) var(--page-gutter) var(--content-pad-bottom)", gap: 16 }}>
             {/* Table — same card chrome as the portfolio holdings table */}
             <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
               <div style={{

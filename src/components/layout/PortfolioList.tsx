@@ -1,6 +1,9 @@
 "use client";
+import { useState } from "react";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
+import EditHoldingModal from "@/components/portfolio/EditHoldingModal";
+import type { Holding } from "@/types/portfolio";
 import HoldingCard from "./HoldingCard";
 
 interface Props {
@@ -9,7 +12,8 @@ interface Props {
 }
 
 export default function PortfolioList({ compact = false }: Props) {
-  const { holdings, isLoading, removeHolding, plaidConnected } = usePortfolio();
+  const { holdings, isLoading, removeHolding, updateHolding, plaidConnected } = usePortfolio();
+  const [editing, setEditing] = useState<Holding | null>(null);
   const tickers = holdings.map((h) => h.ticker);
   const { quoteMap } = useQuotes(tickers);
 
@@ -51,12 +55,27 @@ export default function PortfolioList({ compact = false }: Props) {
               quote={quote}
               portfolioPct={pct}
               onRemove={removeHolding}
+              onEdit={plaidConnected ? undefined : setEditing}
               compact={compact}
               readOnly={plaidConnected}
             />
           );
         })}
       </div>
+      {/* Brokerage-synced positions are rebuilt on every sync, so they can't be
+          edited here — say so rather than showing controls that won't stick. */}
+      {plaidConnected && (
+        <p className="empty-note" style={{ padding: "8px 16px 2px" }}>
+          Synced from your brokerage — read-only here.
+        </p>
+      )}
+      {editing && (
+        <EditHoldingModal
+          holding={editing}
+          onSave={(patch) => updateHolding(editing.id, patch)}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }

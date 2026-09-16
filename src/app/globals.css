@@ -349,6 +349,166 @@ body {
   }
 }
 
+/* ── Holdings management ─────────────────────────────────────────────────────
+   Edit / remove controls on a holding row. Revealed on hover for pointer users,
+   but always visible where there is no hover (touch) or when a control inside
+   has keyboard focus — a hover-only affordance is why holdings read as
+   un-editable on a phone. */
+.holding-actions {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+tr:hover > td > .holding-actions,
+tr:focus-within > td > .holding-actions,
+.group:hover .holding-actions,
+.holding-actions:focus-within,
+.pf-stack-row:focus-within .holding-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .holding-actions { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .holding-actions { transition: none; }
+}
+
+/* Seeded demo book — a label, not decoration. */
+.pf-sample-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--color-warn);
+  border-radius: var(--radius-md);
+  background: var(--color-warn-bg);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+/* ── Holdings book: table on desktop, stacked rows on a phone ────────────────
+   Six numeric columns can't fit 375px, and the card clips overflow — so under
+   640px the same rows render stacked instead. Exactly one of the two is ever
+   displayed, so there is no duplicate content for assistive tech. */
+.pf-holdings-stack { display: none; }
+
+/* The swap keys off the card's own width, not the viewport: the holdings card
+   shares a row with the allocation donut and sits beside the app sidebar, so it
+   can be ~370px wide on a 1024px laptop — narrower than a phone's full-bleed
+   card. A container query catches every one of those cases. */
+.pf-holdings-card {
+  container-type: inline-size;
+  container-name: pfholdings;
+}
+@container pfholdings (max-width: 560px) {
+  .pf-holdings-table { display: none; }
+  .pf-holdings-stack { display: block; }
+  .pf-holdings-hint { display: none; }
+}
+/* Fallback for engines without container queries. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 640px) {
+    .pf-holdings-table { display: none; }
+    .pf-holdings-stack { display: block; }
+    .pf-holdings-hint { display: none; }
+  }
+}
+
+.pf-stack-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 14px;
+  cursor: pointer;
+}
+.pf-stack-line1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pf-stack-tk {
+  font-size: var(--text-meta);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+  padding: 3px 7px;
+  border-radius: var(--radius-xs);
+  flex-shrink: 0;
+}
+.pf-stack-mv {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pf-stack-line2 {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.pf-stack-k {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-right: 5px;
+}
+.pf-stack-v {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Watchlist split rail ────────────────────────────────────────────────────
+   Table and rail side by side on desktop. The rail's 268px was a fixed track,
+   so on a phone the table was squeezed to a ~37px sliver — under 768px the two
+   stack instead (list on top, detail below). */
+.wl-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 268px;
+  align-items: start;
+}
+.wl-rowname {
+  max-width: 180px;
+}
+.wl-cell { padding: 8px 12px; }
+.wl-cell-x { padding-left: 10px; padding-right: 10px; }
+@media (max-width: 768px) {
+  /* Flex, not a one-column grid: the table card is `overflow:hidden`, which
+     lets an auto grid row collapse under its own content and overlap the rail
+     below it. A flex column sizes both cards from their content. */
+  .wl-split {
+    display: flex;
+    flex-direction: column;
+    /* Overrides the inline `align-items:start` the grid layout needs — in a
+       column flex that is the cross axis, and would shrink both cards to their
+       content width instead of the full column. */
+    align-items: stretch;
+  }
+  .wl-split > * {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+}
+@media (max-width: 640px) {
+  /* Market cap is the least load-bearing column; drop it before the table
+     starts clipping the price and day move. Tighter cell padding and a shorter
+     name buy back the rest, so all four remaining columns fit at 375px. */
+  .wl-col-low { display: none; }
+  .wl-rowname { max-width: 72px; }
+  .wl-cell { padding-left: 7px; padding-right: 7px; }
+  .wl-cell-x { padding-left: 4px; padding-right: 6px; }
+}
+
 /* Settings action button (was imperative hover; the old JS also had a
    mouse-leave bug that reset non-danger buttons to transparent instead of
    their surface background — CSS fixes that for free). */
@@ -397,6 +557,104 @@ body {
   background: var(--color-surface);
   color: var(--color-text);
 }
+
+/* ── Settings shell ──────────────────────────────────────────────────────────
+   A 232px left rail on desktop. Under 768px that rail squeezed the content to a
+   ~70px column, so it becomes a horizontally scrollable tab strip above
+   full-width content instead. */
+/* The settings shell sits inside two nested `flex-1` columns that have no
+   `min-width: 0`, so at tablet widths the tab strip's min-content width pushed
+   the whole route past the viewport and the right-hand settings content was
+   clipped. Relaxed here, scoped with `:has()` to the settings route only, so no
+   other page's layout changes. */
+.settings-shell,
+main:has(> .settings-shell),
+:has(> main > .settings-shell) {
+  min-width: 0;
+}
+.settings-rail {
+  width: 232px;
+  padding: 26px 14px 14px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-sidebar);
+}
+.settings-title {
+  padding: 0 10px;
+  margin-bottom: 22px;
+}
+.settings-group {
+  margin-bottom: 18px;
+}
+.settings-content {
+  margin: 0 auto;
+  min-width: 0;
+  padding: 40px 44px 64px;
+}
+.settings-templates-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+}
+
+@media (max-width: 768px) {
+  .settings-shell {
+    flex-direction: column;
+  }
+  .settings-rail {
+    width: 100%;
+    padding: 14px 0 0;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .settings-title {
+    padding: 0 var(--page-gutter);
+    margin-bottom: 10px;
+  }
+  .settings-back {
+    margin-left: calc(var(--page-gutter) - 8px) !important;
+  }
+  /* `display:contents` lifts the items out of their group boxes so every tab
+     sits on one scrolling row; the group headings have no room here. */
+  .settings-groups {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 0 var(--page-gutter) 8px;
+  }
+  .settings-groups::-webkit-scrollbar { display: none; }
+  .settings-group { display: contents; }
+  .settings-group-label { display: none; }
+  .settings-nav-item {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    margin-bottom: 0;
+  }
+  .settings-content {
+    max-width: none !important;
+    padding: 24px var(--page-gutter) 64px;
+  }
+  /* A label column and a control column don't both fit at 375px — the label
+     was wrapping one word per line while the control ran off-screen. Stack. */
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .settings-row-control {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .settings-row-control::-webkit-scrollbar { display: none; }
+  .settings-templates-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-templates-grid > * {
+    padding-right: 0;
+  }
+}
+
 
 /* Sidebar user-widget trigger (was imperative hover with open-state guard).
    .is-open is declared after :hover so the open state holds on equal specificity. */
@@ -1739,6 +1997,73 @@ html:has(.landing-root) { scroll-behavior: smooth; }
 @media (max-width: 640px) {
   .research-root.vB1 .b1-hero { grid-template-columns: 1fr; }
   .research-root.vB1 .b1-px { border-left: none; border-top: 1px solid var(--color-border); }
+}
+
+/* ── Leaderboard: priority columns ───────────────────────────────────────────
+   Seven columns need ~580px; the board card is ~319px on a phone, so Score and
+   Grade used to be clipped off the right edge. Under 640px the board keeps
+   Ticker, Finava Score and Grade, and folds rank, Last, Chg and Mkt Cap into a
+   per-row disclosure. */
+.b-col-more { display: none; }
+.b-rowdetail { display: none; }
+
+/* Column widths live here, not inline, so the narrow-width rules below can
+   relax them instead of being outranked by a style attribute. */
+.research-root .b-table .b-th-tk { width: 198px; }
+.research-root .b-table .b-th-score { min-width: 132px; }
+
+.research-root .b-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.research-root .b-more:hover { color: var(--color-accent); background: var(--color-accent-light); }
+
+.research-root .b-rowdetail > td {
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+.b-rowdetail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+.b-dk {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-right: 6px;
+}
+.b-dv {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .research-root .b-table .b-col-low { display: none; }
+  .b-col-more { display: table-cell; }
+  .b-rowdetail { display: table-row; }
+  .research-root .b-rowname { max-width: 84px; }
+  .research-root .b-table .b-th-tk { width: auto; }
+  .research-root .b-table .b-th-score { min-width: 92px; }
+  .research-root .b-score-track { min-width: 34px; }
+  .research-root .b-table th,
+  .research-root .b-table td { padding-left: 7px; padding-right: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .research-root .b-more svg { transition: none; }
 }
 
 /* ── Print / Export PDF ──────────────────────────────────────────────────────
