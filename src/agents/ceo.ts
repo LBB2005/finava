@@ -934,6 +934,8 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
       // Memory, style and follow-ups learn from the report the reader saw.
       finalResponse = cited.text();
       if (cited.unknownIds().length) log.warn("report cited facts that were not in the block", { ids: cited.unknownIds() });
+      // What the check compared, for the eval's mismatch rate (W4-3).
+      emit({ type: "number_check", ...cited.counts() });
     }
 
     // Persist ticker memory + investing style from the FINAL (revised) report.

@@ -246,6 +246,24 @@ describe("createCitationStream", () => {
     expect(out.join("")).toBe("x".repeat(60));
   });
 
+  it("counts what it checked, for the eval's mismatch rate", () => {
+    const s = createCitationStream(INDEX, () => {});
+    s.push("P/E 53.2x [F:AAPL.pe], price $231.45 [F:AAPL.price].\n");
+    s.push("Earnings 2026-10-30 [F:AAPL.nextEarnings], margin 44% [F:AAPL.grossMargin].\n");
+    s.flush();
+    // Two numeric citations compared, one of them wrong. A text fact and an
+    // unknown ID are not comparisons, so neither counts.
+    expect(s.counts()).toEqual({ checked: 2, mismatched: 1 });
+  });
+
+  it("counts a re-attributed number as checked, not mismatched", () => {
+    const s = createCitationStream(INDEX, () => {});
+    // The revenue figure, cited to the price fact: kept, and credited to revenue.
+    s.push("Revenue was $391.04B [F:AAPL.price].\n");
+    s.flush();
+    expect(s.counts()).toEqual({ checked: 1, mismatched: 0 });
+  });
+
   it("starts over on a whole-answer replacement", () => {
     const out: string[] = [];
     const s = createCitationStream(INDEX, (t) => out.push(t));

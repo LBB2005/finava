@@ -178,6 +178,10 @@ export type AgentEvent =
   // never left showing "complete" for work that never happened.
   | { type: "skeptic_status"; status: "skipped" | "failed"; reason: string }
   | { type: "followups"; questions: string[] }
+  // W4-1's post-generation number check, reported so the eval (W4-3) can score
+  // the mismatch rate: how many cited numbers were compared with a fact, and how
+  // many did not match and were replaced.
+  | { type: "number_check"; checked: number; mismatched: number }
   | { type: "text_delta"; content: string }
   // ── Discovery funnel ──
   | { type: "discover_clarify"; question: string; chips: string[] }
