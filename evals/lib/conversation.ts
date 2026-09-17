@@ -23,6 +23,7 @@ import {
 } from "@/lib/chat/requests";
 import { applyFinalResponse, collectAgentStream } from "@/lib/chat/stream";
 import { discoverToMarkdown } from "@/lib/chat/discoverText";
+import { isFundQuestion } from "@/lib/capabilityCheck";
 import { fullAnalysisPrompt } from "@/lib/chat/escalation";
 import { INTENTS, type Intent } from "@/lib/chat/intent";
 import { RunRegistry, stoppedMessage } from "@/lib/chat/runControl";
@@ -217,6 +218,11 @@ export class Conversation {
       this.pendingClarify = { originalPrompt: text };
       this.commit(turn, { content: question, mode: "fast", followups: chips });
       return;
+    }
+    // ChatEngine: Discover screens individual stocks, so a fund question goes to
+    // the fast lane instead of the stock scout (W4-1).
+    if (intent === "discover" && isFundQuestion(combined, prior.filter((m) => m.role === "user").map((m) => m.content))) {
+      intent = "fast";
     }
     if (intent === "discover") return this.discoverLane(turn, fetcher, combined, prior, ctrl, opts);
     if (intent === "full_analysis") return this.agentLane(turn, fetcher, combined, prior, false, ctrl, opts);
