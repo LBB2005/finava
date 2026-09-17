@@ -14,6 +14,8 @@ export interface Fact<T> {
   asOf: string;
   period?: string;
   note?: string;
+  /** A primary source a reader can open (a filing index, an article). */
+  url?: string;
 }
 
 export interface FactMeta {
@@ -25,6 +27,7 @@ export interface FactMeta {
   note?: string;
   /** Used only when the value turns out to be missing. */
   missingNote?: string;
+  url?: string;
 }
 
 /** Bump when the score engine changes: cached docs of another version are misses. */
@@ -40,8 +43,13 @@ function isAbsent(v: unknown): boolean {
 
 /** A fact. A null or non-finite value becomes a missing fact that keeps the source. */
 export function fact<T>(value: T | null, meta: FactMeta): Fact<T> {
-  if (isAbsent(value)) return missing<T>(meta.source, meta.missingNote ?? meta.note ?? "No value returned by the source", meta.asOf);
+  if (isAbsent(value)) {
+    const m = missing<T>(meta.source, meta.missingNote ?? meta.note ?? "No value returned by the source", meta.asOf);
+    if (meta.url) m.url = meta.url;
+    return m;
+  }
   const out: Fact<T> = { value, source: meta.source, asOf: meta.asOf };
+  if (meta.url) out.url = meta.url;
   if (meta.unit) out.unit = meta.unit;
   if (meta.period) out.period = meta.period;
   if (meta.note) out.note = meta.note;

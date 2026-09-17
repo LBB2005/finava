@@ -1,12 +1,14 @@
 "use client";
 import React from "react";
 import type { KeyNumberRow } from "@/lib/answerFormat";
+import { sourceLink } from "@/lib/facts/citations";
 
 /**
  * The numbers behind the verdict, with where each came from and when. Source
  * and as-of ride as small muted chips so the figure stays the loud thing, and a
  * missing number renders as a styled "Unavailable" — never an error, never a
- * plausible stand-in.
+ * plausible stand-in. When the number came from a fact with a primary source
+ * (a filing index, a Form 4 list), its source chip links there.
  */
 export default function KeyNumbers({ rows }: { rows: KeyNumberRow[] }) {
   if (!rows.length) return null;
@@ -48,7 +50,7 @@ export default function KeyNumbers({ rows }: { rows: KeyNumberRow[] }) {
               {row.metric}
             </span>
 
-            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0, maxWidth: "100%" }}>
               {row.unavailable ? (
                 <span
                   style={{
@@ -77,8 +79,8 @@ export default function KeyNumbers({ rows }: { rows: KeyNumberRow[] }) {
               )}
 
               {(row.source || row.asOf) && (
-                <span style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
-                  {row.source && <Chip>{row.source}</Chip>}
+                <span style={{ display: "inline-flex", gap: 5, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0, maxWidth: "100%" }}>
+                  {row.source && <SourceChip source={row.source} />}
                   {row.asOf && <Chip muted>{row.asOf}</Chip>}
                 </span>
               )}
@@ -90,19 +92,41 @@ export default function KeyNumbers({ rows }: { rows: KeyNumberRow[] }) {
   );
 }
 
-function Chip({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
+function SourceChip({ source }: { source: string }) {
+  const { label, href } = sourceLink(source);
+  if (!href) return <Chip>{label}</Chip>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="std-focus"
+      title={`Open source: ${label}`}
+      style={{ textDecoration: "none", borderRadius: 999, display: "inline-flex", minWidth: 0, maxWidth: "100%" }}
+    >
+      <Chip linked>{label} ↗</Chip>
+    </a>
+  );
+}
+
+function Chip({ children, muted, linked }: { children: React.ReactNode; muted?: boolean; linked?: boolean }) {
   return (
     <span
       style={{
         fontSize: "var(--text-micro)",
         fontWeight: 600,
         letterSpacing: "0.02em",
-        color: muted ? "var(--color-muted)" : "var(--color-text-secondary)",
+        color: muted ? "var(--color-muted)" : linked ? "var(--color-accent)" : "var(--color-text-secondary)",
         background: muted ? "transparent" : "var(--color-surface)",
         border: `1px solid ${muted ? "transparent" : "var(--color-border)"}`,
         borderRadius: 999,
         padding: "1px 7px",
         whiteSpace: "nowrap",
+        // A long source name truncates rather than pushing the figure off a phone screen.
+        display: "inline-block",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        maxWidth: "100%",
         fontVariantNumeric: "tabular-nums",
       }}
     >

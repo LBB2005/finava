@@ -13,7 +13,20 @@ const deps = vi.hoisted(() => ({
   getQuickContext: vi.fn(),
   loadTurnData: vi.fn(),
   saveTurnData: vi.fn(),
+  loadDnaSummary: vi.fn(),
+  loadChatFacts: vi.fn(),
+  getExperienceLevel: vi.fn(),
 }));
+
+vi.mock("@/lib/facts/chatFacts", () => ({
+  loadChatFacts: deps.loadChatFacts,
+}));
+
+vi.mock("@/lib/experienceLevel.server", () => ({
+  getExperienceLevel: deps.getExperienceLevel,
+}));
+
+vi.mock("@/lib/investorDnaStore", () => ({ loadDnaSummary: deps.loadDnaSummary }));
 
 vi.mock("@/lib/withRoute", () => ({
   withAuthRaw: deps.withAuthRaw,
@@ -61,6 +74,8 @@ vi.mock("@/lib/turnData", async (orig) => ({
 
 import { POST } from "./route";
 import { UNAVAILABLE, type QuickContext } from "@/lib/quickContext";
+import { tickerFactsFixture } from "@/test/factsFixture";
+import { insiderFacts } from "@/lib/facts/precomputed";
 
 /** A QuickContext shaped like a real one, with every fact filled. */
 function quickContext(over: Partial<QuickContext> = {}): QuickContext {
@@ -137,6 +152,9 @@ beforeEach(() => {
   deps.getQuickContext.mockResolvedValue(quickContext());
   deps.loadTurnData.mockResolvedValue(null);
   deps.saveTurnData.mockResolvedValue(undefined);
+  deps.loadDnaSummary.mockResolvedValue(null);
+  deps.loadChatFacts.mockResolvedValue({ input: { tickers: [] }, dropped: [] });
+  deps.getExperienceLevel.mockResolvedValue("intermediate");
 });
 
 describe("POST /api/chat", () => {
@@ -198,6 +216,23 @@ describe("POST /api/chat", () => {
     expect(streamArg.system[0].text).toContain("## User's Current Portfolio\nNVDA: 5 shares");
     expect(streamArg.system[0].text).toContain("Use bullet points.");
     expect(streamArg.messages).toEqual([{ role: "user", content: "Analyze NVDA" }]);
+  });
+
+  it("gives the model the user's Investor DNA, labelled as inferred", async () => {
+    deps.loadDnaSummary.mockResolvedValueOnce("## Investor DNA (inferred from your holdings; the user did not state any of this)\nStyle: Momentum rider.");
+
+    const res = await POST(chatRequest({ messages: [{ role: "user", content: "What about AAPL?" }] }));
+    await res.text();
+
+    expect(deps.loadDnaSummary).toHaveBeenCalledWith("user_123");
+    expect(systemPrompt()).toContain("## Investor DNA (inferred from your holdings");
+    expect(systemPrompt()).toContain("Style: Momentum rider.");
+  });
+
+  it("answers without a DNA block when the user has none", async () => {
+    const res = await POST(chatRequest({ messages: [{ role: "user", content: "What about AAPL?" }] }));
+    await res.text();
+    expect(systemPrompt()).not.toContain("Investor DNA");
   });
 
   it("tells the model today's date, what Finava costs, and where the advice line is", async () => {
@@ -459,5 +494,136 @@ describe("POST /api/chat — reformat follow-ups reuse the last turn's data", ()
     await (await followUp("so yes or no?", fresh())).text();
     const reuseTokens = deps.stream.mock.calls.at(-1)![0].max_tokens as number;
     expect(reuseTokens).toBeLessThan(2048);
+  });
+});
+
+// W4-1: the model never does arithmetic. It quotes facts by ID, and the route
+// checks every cited number before the reader sees it.
+describe("POST /api/chat — answers cite facts", () => {
+  // A queued stored turn left unused by an earlier test must not leak in here.
+  beforeEach(() => {
+    deps.loadTurnData.mockReset().mockResolvedValue(null);
+  });
+
+  function ask(content: string, over: Record<string, unknown> = {}) {
+    deps.withAuthRaw.mockReturnValueOnce(async () => ({
+      userId: "user_123",
+      body: { messages: [{ role: "user", content }], portfolioContext: "", ...over },
+    }));
+    return POST(chatRequest({ messages: [{ role: "user", content: "x" }] }));
+  }
+
+  function streams(...deltas: string[]) {
+    deps.stream.mockReturnValueOnce(
+      makeAnthropicStream(deltas.map((text) => ({ type: "content_block_delta", delta: { type: "text_delta", text } })))
+    );
+  }
+
+  const withFacts = () =>
+    deps.getQuickContext.mockResolvedValueOnce(quickContext({ factsInput: { tickers: [tickerFactsFixture("AAPL")] } }));
+
+  it("hands the model a facts block with stable IDs and the citation rule", async () => {
+    withFacts();
+    await (await ask("is AAPL a buy right now?")).text();
+    const system = systemPrompt();
+    expect(system).toContain("[F:AAPL.price] AAPL price = $182.50");
+    expect(system).toContain("[F:AAPL.pctFrom52wHigh]");
+    expect(system).toMatch(/Never calculate/);
+  });
+
+  it("replaces a wrong cited number and strips the IDs before streaming it", async () => {
+    withFacts();
+    streams("## Answer\nThe P/E is 9", "9.9x [F:AAPL.pe] and the price $182.50 [F:AAPL.price].\n");
+    const out = await (await ask("is AAPL expensive?")).text();
+    const text = out
+      .split("\n")
+      .filter((l) => l.startsWith("data: {\"text\""))
+      .map((l) => JSON.parse(l.slice(6)).text)
+      .join("");
+    expect(text).toBe("## Answer\nThe P/E is 51.3x and the price $182.50.\n");
+    expect(out).not.toContain("[F:");
+    // The follow-up chips are drawn from the corrected answer.
+    expect(deps.generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: expect.stringContaining("The P/E is 51.3x") }));
+  });
+
+  it("still delivers the checked text it was holding when the model stream fails", async () => {
+    withFacts();
+    deps.stream.mockReturnValueOnce({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "P/E is 51.3x [F:AAPL.pe]" } };
+        throw new Error("stream exploded");
+      },
+      finalMessage: vi.fn(),
+    });
+    const out = await (await ask("is AAPL expensive?")).text();
+    expect(out).toContain('"text":"P/E is 51.3x"');
+    expect(out.indexOf('"text":"P/E is 51.3x"')).toBeLessThan(out.indexOf('"error":"stream exploded"'));
+  });
+
+  it("loads insider facts for an insider question, so a $1.0M buy is quoted as $1.0M", async () => {
+    const pfe = insiderFacts("PFE", { data: [{ name: "Bourla Albert", change: 38_000, transactionPrice: 26.32, transactionDate: "2026-08-04", transactionCode: "P" }] }, "2026-09-15T20:00:00.000Z");
+    deps.getQuickContext.mockResolvedValueOnce(quickContext({ ticker: "PFE", tickers: ["PFE"], factsInput: { tickers: [] } }));
+    deps.loadChatFacts.mockResolvedValueOnce({ input: { insider: [pfe] }, dropped: [] });
+    streams("Pfizer's CEO bought $10.3M [F:PFE.insider.largestBuy] of stock.");
+    const out = await (await ask("did Pfizer's CEO buy PFE shares?")).text();
+    expect(deps.loadChatFacts).toHaveBeenCalledWith(expect.objectContaining({ tickers: ["PFE"], insider: true }));
+    expect(systemPrompt()).toContain("[F:PFE.insider.largestBuy] PFE largest insider buy: Bourla Albert, 38,000 shares @ $26.32 on 2026-08-04 = $1.0M");
+    expect(out).toContain("bought $1.0M of stock");
+    expect(out).not.toContain("$10.3M");
+  });
+
+  it("loads the user's portfolio facts only for a question about their book", async () => {
+    await (await ask("what's my downside on GOOGL?", { portfolioContext: "GOOGL: 100 shares" })).text();
+    expect(deps.loadChatFacts).toHaveBeenCalledWith(expect.objectContaining({ portfolioUserId: "user_123" }));
+
+    deps.loadChatFacts.mockClear();
+    await (await ask("is AMD a buy?", { portfolioContext: "GOOGL: 100 shares" })).text();
+    expect(deps.loadChatFacts).not.toHaveBeenCalled();
+  });
+
+  it("leads with the data it can't get instead of estimating it", async () => {
+    await (await ask("what's the implied volatility on AAPL?")).text();
+    expect(systemPrompt()).toContain("I can't get options-chain and implied-volatility data for AAPL, so here's what I can tell you");
+  });
+
+  it("does not claim price targets are missing when the ticker has one", async () => {
+    withFacts();
+    await (await ask("what's the price target on AAPL?")).text();
+    expect(systemPrompt()).not.toContain("I can't get analyst price targets");
+  });
+
+  it("answers an ETF question about funds, never with stock picks", async () => {
+    await (await ask("which etf should a beginner look at with $100 a month?")).text();
+    expect(systemPrompt()).toContain("Discover screens individual stocks");
+    expect(systemPrompt()).toMatch(/never present individual stocks/);
+  });
+
+  it("writes for the reader's experience level", async () => {
+    deps.getExperienceLevel.mockResolvedValueOnce("beginner");
+    await (await ask("is AAPL a buy?")).text();
+    expect(deps.getExperienceLevel).toHaveBeenCalledWith("user_123");
+    expect(systemPrompt()).toMatch(/Skip technical-analysis indicators/);
+  });
+
+  it("keeps citing facts on a reformat that reuses the stored turn", async () => {
+    deps.loadTurnData.mockResolvedValueOnce({
+      quickContext: quickContext({ factsInput: { tickers: [tickerFactsFixture("AAPL")] } }),
+      storedAt: new Date(Date.now() - 30_000).toISOString(),
+    });
+    deps.withAuthRaw.mockReturnValueOnce(async () => ({
+      userId: "user_123",
+      body: {
+        messages: [
+          { role: "user", content: "is AAPL a buy right now?" },
+          { role: "assistant", content: "## Answer\nIt is expensive." },
+          { role: "user", content: "so yes or no?" },
+        ],
+        portfolioContext: "",
+        conversationId: "conv_1",
+      },
+    }));
+    await (await POST(chatRequest({ messages: [] }))).text();
+    expect(deps.getQuickContext).not.toHaveBeenCalled();
+    expect(systemPrompt()).toContain("[F:AAPL.price]");
   });
 });

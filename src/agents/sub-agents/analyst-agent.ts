@@ -46,9 +46,23 @@ export async function runAnalystAgent(input: unknown): Promise<string> {
       const currentPrice =
         quoteRes.status === "fulfilled" ? quoteRes.value?.price ?? null : null;
 
+      // Computed here, not by the model (W4-1): the consensus score and the upside.
+      const counts = [rec?.strongBuy, rec?.buy, rec?.hold, rec?.sell, rec?.strongSell].map((n) => n ?? 0);
+      const totalAnalysts = counts.reduce((a, b) => a + b, 0);
+      const consensusScore = totalAnalysts
+        ? Math.round(((counts[0] * 2 + counts[1] - counts[3] - counts[4] * 2) / totalAnalysts) * 100) / 100
+        : null;
+      const upsidePct =
+        typeof pt?.targetMean === "number" && pt.targetMean > 0 && typeof currentPrice === "number" && currentPrice > 0
+          ? Math.round((pt.targetMean / currentPrice - 1) * 1000) / 10
+          : null;
+
       return {
         ticker,
         currentPrice,
+        totalAnalysts,
+        consensusScore,
+        upsidePct,
         // Finnhub recommendation trend (most recent period)
         strongBuy: rec?.strongBuy ?? null,
         buy: rec?.buy ?? null,
@@ -93,18 +107,17 @@ Raw analyst data (structured feed — recommendation counts are reliable; target
 ${JSON.stringify(data, null, 2)}
 \`\`\`
 ${webTargets ? `
-Price targets were unavailable from the structured feed, so the block below is web-sourced consensus. Use it ONLY to fill the Avg Target / Range / Upside columns. Treat numbers as approximate and append " (web)" to any target value you take from it.
+Price targets were unavailable from the structured feed, so the block below is web-sourced consensus. Use it ONLY to fill the Avg Target / Range columns. Treat numbers as approximate and append " (web)" to any target value you take from it. Upside % stays "N/A" for a web-sourced target — do not calculate it.
 
 ${fenceExternal("perplexity consensus price targets", webTargets)}
 ` : ""}
 
-For each ticker, compute and present:
-1. **Consensus Rating**: Derive from strongBuy/buy/hold/sell/strongSell counts. Express as a weighted score and map to: Strong Buy / Buy / Hold / Sell / Strong Sell.
-   Formula: score = (strongBuy×2 + buy×1 + hold×0 + sell×−1 + strongSell×−2) / totalAnalysts
-2. **Analyst Count**: Total number of analysts covering the stock.
+Every derived number is already computed in the data above — quote it; never do arithmetic yourself. For each ticker, present:
+1. **Consensus Rating**: map \`consensusScore\` (−2 to +2; weights strongBuy +2, buy +1, hold 0, sell −1, strongSell −2) to Strong Buy (≥1.5) / Buy (≥0.5) / Hold (> −0.5) / Sell (> −1.5) / Strong Sell.
+2. **Analyst Count**: \`totalAnalysts\`.
 3. **Avg Price Target**: Use targetMean if present; otherwise use the web-sourced average above (append " (web)").
 4. **Target Range**: Low – High (from the feed, or the web-sourced range).
-5. **Upside %**: (avg target − currentPrice) / currentPrice × 100, using whichever avg target you have. Flag if > 30% as potentially aggressive.
+5. **Upside %**: \`upsidePct\` as given ("N/A" when null). Flag if > 30% as potentially aggressive.
 6. **Rating Distribution**: brief "10 Buy / 5 Hold / 2 Sell" summary.
 
 **Output format:**

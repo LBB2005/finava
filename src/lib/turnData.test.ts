@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = vi.hoisted(() => ({
   docs: new Map<string, Record<string, unknown>>(),
@@ -67,6 +67,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   store.docs.clear();
   resetTurnDataCache();
+  // The fixtures are stamped at NOW; without a pinned clock they expire a day
+  // after NOW and the storage tests fail on the calendar, not on the code.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("isReusable", () => {

@@ -10,6 +10,7 @@ import { generate } from "@/lib/llm";
 import { getSkillsPrompt } from "@/agents/skills";
 import { getInsiderTransactions } from "@/lib/finnhub";
 import { searchRecentForm4, type Form4Filing } from "@/lib/edgar";
+import { insiderSummary, type InsiderRow } from "@/lib/facts/precomputed";
 
 const USER_AGENT = "Finava App liamblackshawbrown@gmail.com";
 
@@ -225,9 +226,9 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
 
         const purchases = dated.filter((t: { transactionCode: string }) => t.transactionCode === "P");
         const sales = dated.filter((t: { transactionCode: string }) => t.transactionCode === "S");
-        const value = (rows: Array<{ change?: number; transactionPrice?: number }>) =>
-          rows.reduce((sum, t) => sum + Math.abs(t.change ?? 0) * (t.transactionPrice ?? 0), 0);
-        const fmt = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString()}`);
+        // Shares × price is done here, once, so no model ever multiplies (W4-1).
+        const totals = insiderSummary(transactions as InsiderRow[]);
+        const fmt = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v).toLocaleString("en-US")}`);
 
         finnhubData[ticker] = {
           window: dates.length
@@ -237,8 +238,8 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
           activity: {
             purchases: purchases.length,
             sales: sales.length,
-            totalBuyValue: fmt(value(purchases)),
-            totalSellValue: fmt(value(sales)),
+            totalBuyValue: fmt(totals.buys.value),
+            totalSellValue: fmt(totals.sells.value),
             ratio:
               sales.length > 0
                 ? `${(purchases.length / sales.length).toFixed(1)}x buy/sell`
@@ -246,7 +247,10 @@ export async function runInsiderAgent(input: unknown): Promise<string> {
                   ? "All purchases"
                   : "No transactions",
           },
-          notable: dated.slice(0, 8),
+          notable: dated.slice(0, 8).map((t: { change?: number; transactionPrice?: number }) => ({
+            ...t,
+            value: t.transactionPrice ? fmt(Math.abs(t.change ?? 0) * t.transactionPrice) : "Unavailable",
+          })),
         };
       } catch {
         finnhubData[ticker] = { error: "Could not fetch Finnhub insider data" };
@@ -276,6 +280,6 @@ Write a structured analysis covering:
 4. **Conviction Assessment**: Rate insider conviction as HIGH / MODERATE / LOW / NONE for each ticker with reasoning.
 5. **Red Flags**: Any concerning patterns (heavy selling, CEO/CFO liquidating positions)?
 
-Be direct and specific with dollar amounts and names.`,
+Be direct and specific with dollar amounts and names. Every dollar value above (each row's "value", totalBuyValue, totalSellValue, and each Form 4 purchase total) is computed in code — quote it exactly. Never multiply shares by price or recompute a total yourself.`,
   });
 }

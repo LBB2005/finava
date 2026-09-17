@@ -8,7 +8,9 @@
 
 import { db } from "@/lib/firebase-admin";
 import { getFactorUniverse } from "@/lib/factorUniverse";
-import { computeInvestorDna, type DnaHolding } from "@/lib/investorDna";
+import { getCandles } from "@/lib/finnhub";
+import { buildDnaSummary, computeInvestorDna, DNA_VERSION, type DnaHolding } from "@/lib/investorDna";
+import { resolvePositionHistory } from "@/lib/investorDnaHistory";
 import { ETF_PROFILES } from "@/lib/extraUniverse";
 import type { InvestorDNA } from "@/types/dna";
 
@@ -26,18 +28,45 @@ export async function deriveAndCacheDna(userId: string): Promise<InvestorDNA | n
 
   const holdings = holdingsSnap.docs.map((d) => d.data() as DnaHolding);
   const universe = await getFactorUniverse();
-  const dna = computeInvestorDna(holdings, universe.stocks, ETF_PROFILES);
+  const history = await resolvePositionHistory(holdings, universe.stocks, {
+    dailyCloses: async (ticker, from, to) => {
+      const r = await getCandles(ticker, "D", from, to);
+      return r.s === "ok" ? { t: r.t, c: r.c } : { t: [], c: [] };
+    },
+  });
+  const dna = computeInvestorDna(holdings, universe.stocks, ETF_PROFILES, { history });
   if (dna) {
     await dnaDoc(userId).set(dna).catch((e) => console.error("[investorDna] cache write", e));
   }
   return dna;
 }
 
-/** Read the cached snapshot (fast path for the Lens); null if never derived. */
+/**
+ * Read the cached snapshot (fast path for the Lens); null if never derived, or
+ * if it predates the current shape (older snapshots claimed unbenchmarked edges).
+ */
 export async function readCachedDna(userId: string): Promise<InvestorDNA | null> {
   try {
     const snap = await dnaDoc(userId).get();
-    return snap.exists ? (snap.data() as InvestorDNA) : null;
+    if (!snap.exists) return null;
+    const dna = snap.data() as InvestorDNA;
+    return dna.version === DNA_VERSION ? dna : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The compact inferred-profile block for chat and the crew. Cache-only: the
+ * chat path never pays for a factor-universe compute. Null when DNA is turned
+ * off, never derived, or anything fails.
+ */
+export async function loadDnaSummary(userId: string): Promise<string | null> {
+  try {
+    const settings = await db.collection("userSettings").doc(userId).get();
+    if (settings.data()?.allowInvestorDNA === false) return null;
+    const dna = await readCachedDna(userId);
+    return dna ? buildDnaSummary(dna) : null;
   } catch {
     return null;
   }

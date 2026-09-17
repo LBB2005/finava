@@ -13,10 +13,10 @@ const skill: AgentSkill = {
   ],
 
   promptEnhancements: [
-    "Always calculate position-level concentration as % of total portfolio — flag anything >20% as HIGH concentration risk",
+    "Always state position-level concentration from the computed weights you are given (never recompute them) — flag anything >20% as HIGH concentration risk",
     "Identify sector overlap: if >40% of the portfolio is in one sector, call it out explicitly",
     "Distinguish between volatility risk (price swings) and fundamental risk (business model deterioration)",
-    "Always provide a 'worst-case scenario' paragraph — what does a 30% drawdown look like for this portfolio?",
+    "Always provide a 'worst-case scenario' paragraph — what a 30% drawdown looks like for this portfolio, using only the computed dollar changes and weighted beta you are given",
     "Rate each holding's risk level (Low / Medium / High / Very High) with a one-line reason",
     "End with an overall portfolio risk rating and the single highest-priority risk to address",
   ],

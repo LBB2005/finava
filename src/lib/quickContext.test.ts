@@ -92,6 +92,15 @@ describe("getQuickContext", () => {
     expect(qc.dropped).not.toContain("score");
   });
 
+  it("keeps the raw facts for the citation block, and each article's link", async () => {
+    deps.getCompanyNews.mockResolvedValue([{ ...NEWS[0], url: "https://www.reuters.com/a" }, NEWS[1]]);
+    const qc = await getQuickContext({ tickers: ["NVDA"] });
+    expect(qc.factsInput?.tickers?.[0].ticker).toBe("NVDA");
+    expect(qc.headlines[0].url).toBe("https://www.reuters.com/a");
+    // A non-URL is not a link.
+    expect(qc.headlines[1].url).toBeUndefined();
+  });
+
   it("returns the 5 latest dated headlines, newest first", async () => {
     const qc = await getQuickContext({ tickers: ["NVDA"] });
     expect(qc.headlines).toHaveLength(5);

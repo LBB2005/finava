@@ -53,6 +53,16 @@ describe("runRiskAgent", () => {
     expect(p).toContain("% of portfolio");
   });
 
+  it("states each position's dollar change at −10/−20/−30%, so the model never works it out", async () => {
+    vi.stubEnv("FINNHUB_API_KEY", "key");
+    getSnapshots.mockResolvedValue([{ ticker: "AAPL", price: 180, changePct: 1.5 }]);
+    const { runRiskAgent } = await import("./risk-agent");
+    await runRiskAgent({ tickers: ["AAPL"] }, [{ ticker: "AAPL", shares: 10 }]);
+    const p = lastPrompt().prompt;
+    // 10 × $180 = $1,800.
+    expect(p).toContain("AAPL $1,800 → −10%: -$180 · −20%: -$360 · −30%: -$540");
+  });
+
   it("reports 'Could not fetch market data' when the data fetch throws", async () => {
     vi.stubEnv("FINNHUB_API_KEY", "key");
     getSnapshots.mockRejectedValue(new Error("rate limited"));
