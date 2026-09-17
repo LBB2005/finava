@@ -56,3 +56,6 @@ next-env.d.ts
 
 # Local-only: financial model kept out of the public repo
 finava-financial-model.xlsx
+
+# eval outputs (paid runs, local only)
+/evals/results/

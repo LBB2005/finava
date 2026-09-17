@@ -1,0 +1,228 @@
+data: {"type":"crew_plan","agents":["valuation","insider","fundamentals"],"etaSeconds":150}
+
+data: {"type":"agent_start","agent":"run_dcf_agent"}
+
+data: {"type":"agent_progress","agent":"valuation","status":"running"}
+
+data: {"type":"agent_complete","agent":"run_dcf_agent","result":"DCF range $140–$195."}
+
+data: {"type":"agent_progress","agent":"valuation","status":"done","ms":41000}
+
+data: {"type":"ceo_compiling"}
+
+data: {"type":"skeptic_start"}
+
+data: {"type":"skeptic_complete","critique":"The draft cited a P/E without a source."}
+
+data: {"type":"final_response","content":"## Answer\nNVDA still"}
+
+data: {"type":"final_response","content":" screens as"}
+
+data: {"type":"final_response","content":" a high-quality"}
+
+data: {"type":"final_response","content":" business, but a"}
+
+data: {"type":"final_response","content":"t 38× forward e"}
+
+data: {"type":"final_response","content":"a"}
+
+data: {"type":"final_response","content":"rning"}
+
+data: {"type":"final_response","content":"s — about 22"}
+
+data: {"type":"final_response","content":"% above its 5-yea"}
+
+data: {"type":"final_response","content":"r median — most of "}
+
+data: {"type":"final_response","content":"the dat"}
+
+data: {"type":"final_response","content":"a-centre growth alrea"}
+
+data: {"type":"final_response","content":"dy l"}
+
+data: {"type":"final_response","content":"ooks"}
+
+data: {"type":"final_response","content":" pri"}
+
+data: {"type":"final_response","content":"ced in. Th"}
+
+data: {"type":"final_response","content":"e case "}
+
+data: {"type":"final_response","content":"for buying now rests on"}
+
+data: {"type":"final_response","content":" estimates"}
+
+data: {"type":"final_response","content":" continuing to rise"}
+
+data: {"type":"final_response","content":".\n\n## Key numbers\n| Met"}
+
+data: {"type":"final_response","content":"ric | Value | "}
+
+data: {"type":"final_response","content":"Source | "}
+
+data: {"type":"final_response","content":"As o"}
+
+data: {"type":"final_response","content":"f "}
+
+data: {"type":"final_response","content":"|\n|"}
+
+data: {"type":"final_response","content":"---|---|--"}
+
+data: {"type":"final_response","content":"-|---|\n| Price | "}
+
+data: {"type":"final_response","content":"$182.40 | Polygon | 2"}
+
+data: {"type":"final_response","content":"026"}
+
+data: {"type":"final_response","content":"-09-11 close"}
+
+data: {"type":"final_response","content":" |\n| Forward P/E | "}
+
+data: {"type":"final_response","content":"38.1× | F"}
+
+data: {"type":"final_response","content":"acts layer | 2026-0"}
+
+data: {"type":"final_response","content":"9-11 |\n| Data-centre re"}
+
+data: {"type":"final_response","content":"venue (FY"}
+
+data: {"type":"final_response","content":"2026) | $115."}
+
+data: {"type":"final_response","content":"2B | SEC 10-K "}
+
+data: {"type":"final_response","content":"| 2026-02-25 |\n|"}
+
+data: {"type":"final_response","content":" Option"}
+
+data: {"type":"final_response","content":"s implied move "}
+
+data: {"type":"final_response","content":"| Unava"}
+
+data: {"type":"final_response","content":"ilable | — | — |\n\n#"}
+
+data: {"type":"final_response","content":"# Bull case\n- Dat"}
+
+data: {"type":"final_response","content":"a-centre "}
+
+data: {"type":"final_response","content":"revenue "}
+
+data: {"type":"final_response","content":"grew 3 years in a "}
+
+data: {"type":"final_response","content":"row.\n- Gross margi"}
+
+data: {"type":"final_response","content":"n held above 70% throu"}
+
+data: {"type":"final_response","content":"gh the "}
+
+data: {"type":"final_response","content":"Blackwell ramp."}
+
+data: {"type":"final_response","content":"\n\n## Bear case\n- Val"}
+
+data: {"type":"final_response","content":"uation leaves l"}
+
+data: {"type":"final_response","content":"ittle roo"}
+
+data: {"type":"final_response","content":"m"}
+
+data: {"type":"final_response","content":" for a gui"}
+
+data: {"type":"final_response","content":"dan"}
+
+data: {"type":"final_response","content":"ce miss.\n-"}
+
+data: {"type":"final_response","content":" Top-4 hypersca"}
+
+data: {"type":"final_response","content":"lers are ~46% of re"}
+
+data: {"type":"final_response","content":"venu"}
+
+data: {"type":"final_response","content":"e.\n\n## What"}
+
+data: {"type":"final_response","content":" would change t"}
+
+data: {"type":"final_response","content":"he view\n- A capex "}
+
+data: {"type":"final_response","content":"cut from two or more hy"}
+
+data: {"type":"final_response","content":"perscalers.\n\n## "}
+
+data: {"type":"final_response","content":"Confidence & gaps\nMedi"}
+
+data: {"type":"final_response","content":"um — no"}
+
+data: {"type":"final_response","content":" options data for"}
+
+data: {"type":"final_response","content":" this ticker.\n"}
+
+data: {"type":"final_response","content":"\n## Details\n#"}
+
+data: {"type":"final_response","content":"## V"}
+
+data: {"type":"final_response","content":"aluation agent\nDCF"}
+
+data: {"type":"final_response","content":" fair value range $140"}
+
+data: {"type":"final_response","content":"–$"}
+
+data: {"type":"final_response","content":"195 (base $16"}
+
+data: {"type":"final_response","content":"8) — the "}
+
+data: {"type":"final_response","content":"market p"}
+
+data: {"type":"final_response","content":"ric"}
+
+data: {"type":"final_response","content":"e sits "}
+
+data: {"type":"final_response","content":"near the "}
+
+data: {"type":"final_response","content":"top of"}
+
+data: {"type":"final_response","content":" the "}
+
+data: {"type":"final_response","content":"ran"}
+
+data: {"type":"final_response","content":"ge.\n\n### I"}
+
+data: {"type":"final_response","content":"nsider activi"}
+
+data: {"type":"final_response","content":"ty"}
+
+data: {"type":"final_response","content":"\nForm 4: 1"}
+
+data: {"type":"final_response","content":"4 sales, 0 op"}
+
+data: {"type":"final_response","content":"en-market buys in the l"}
+
+data: {"type":"final_response","content":"as"}
+
+data: {"type":"final_response","content":"t 90 days (≈ $"}
+
+data: {"type":"final_response","content":"412M, mostly 10b5-"}
+
+data: {"type":"final_response","content":"1 plans).\n\n*T"}
+
+data: {"type":"final_response","content":"his is research, no"}
+
+data: {"type":"final_response","content":"t personal"}
+
+data: {"type":"final_response","content":"i"}
+
+data: {"type":"final_response","content":"zed investment advice"}
+
+data: {"type":"final_response","content":". Past performance"}
+
+data: {"type":"final_response","content":" does not gu"}
+
+data: {"type":"final_response","content":"arantee future "}
+
+data: {"type":"final_response","content":"results"}
+
+data: {"type":"final_response","content":".*"}
+
+data: {"type":"final_response","content":"\n\n_⚠️ This response reached the length limit and may be cut off._"}
+
+data: {"type":"followups","questions":["What would a capex cut do to the numbers?","Compare with AMD"]}
+
+data: {"type":"done"}
+
