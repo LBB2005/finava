@@ -111,6 +111,8 @@ export interface VerifyResult {
   mismatches: Mismatch[];
   unknownIds: string[];
   reattributed: Reattribution[];
+  /** Cited numbers actually compared with a fact — the denominator of the mismatch rate. */
+  checked: number;
 }
 
 export interface VerifyOptions {
@@ -173,6 +175,7 @@ function verifyInline(
         ? matchingSibling(parsed, id, index)
         : null;
       resolved.push(sibling ?? entry);
+      if (last && parsed) out.checked++;
       if (sibling) {
         const r = { from: id, to: sibling.id, written: last![0].trim() };
         out.reattributed.push(r);
@@ -248,7 +251,7 @@ function sweepCitations(line: string): string {
 
 /** Verify and strip every citation in a finished (or line-complete) piece of text. */
 export function verifyCitations(text: string, index: Map<string, FactEntry>, opts: VerifyOptions = {}): VerifyResult {
-  const out: VerifyResult = { text: "", mismatches: [], unknownIds: [], reattributed: [] };
+  const out: VerifyResult = { text: "", mismatches: [], unknownIds: [], reattributed: [], checked: 0 };
   if (!text.includes("[F:")) return { ...out, text };
   out.text = text
     .split("\n")
@@ -273,6 +276,8 @@ export interface CitationStream {
   text(): string;
   mismatches(): Mismatch[];
   unknownIds(): string[];
+  /** What the run checked, for the eval's mismatch rate (W4-3's `number_check`). */
+  counts(): { checked: number; mismatched: number };
 }
 
 /**
@@ -290,12 +295,14 @@ export function createCitationStream(
   let acc = "";
   const mismatches: Mismatch[] = [];
   const unknown: string[] = [];
+  let checked = 0;
 
   const check = (chunk: string) => {
     if (!chunk) return;
     const r = verifyCitations(chunk, index, opts);
     mismatches.push(...r.mismatches);
     unknown.push(...r.unknownIds);
+    checked += r.checked;
     acc += r.text;
     if (r.text) emit(r.text);
   };
@@ -325,12 +332,14 @@ export function createCitationStream(
       const r = verifyCitations(full, index, opts);
       mismatches.push(...r.mismatches);
       unknown.push(...r.unknownIds);
+      checked += r.checked;
       acc = r.text;
       return r.text;
     },
     text: () => acc,
     mismatches: () => [...mismatches],
     unknownIds: () => [...unknown],
+    counts: () => ({ checked, mismatched: mismatches.length }),
   };
 }
 

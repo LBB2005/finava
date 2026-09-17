@@ -935,6 +935,22 @@ describe("W4-1: the report cites facts", () => {
     expect(types.lastIndexOf("final_response")).toBeLessThan(types.indexOf("done"));
   });
 
+  it("reports what the number check compared, so the eval can score it", async () => {
+    extractTickersMock.mockReturnValue(["NVDA"]);
+    loadChatFactsMock.mockResolvedValue({ input: { tickers: [tickerFactsFixture("NVDA")] }, dropped: [] });
+    finalMessages.push(
+      { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
+      { stop_reason: "end_turn", content: [text("NVDA trades at 15.1x [F:NVDA.pe], price $182.50 [F:NVDA.price].")], usage: {} },
+    );
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("analyze NVDA", "", (e) => events.push(e));
+    expect(events).toContainEqual({ type: "number_check", checked: 2, mismatched: 1 });
+    // It lands before the run says it is done.
+    const types = events.map((e) => e.type);
+    expect(types.indexOf("number_check")).toBeLessThan(types.indexOf("done"));
+  });
+
   it("loads the user's portfolio facts when the run carries holdings", async () => {
     finalMessages.push({ stop_reason: "end_turn", content: [text("ok")], usage: {} });
     const { runCeoAgent } = await import("./ceo");

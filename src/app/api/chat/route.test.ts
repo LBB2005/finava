@@ -560,6 +560,18 @@ describe("POST /api/chat — answers cite facts", () => {
     expect(out.indexOf('"text":"P/E is 51.3x"')).toBeLessThan(out.indexOf('"error":"stream exploded"'));
   });
 
+  it("reports what the number check compared, so the eval can score it", async () => {
+    withFacts();
+    streams("The P/E is 99.9x [F:AAPL.pe] and the price $182.50 [F:AAPL.price].\n");
+    const out = await (await ask("is AAPL expensive?")).text();
+    expect(out).toContain('data: {"type":"number_check","checked":2,"mismatched":1}');
+  });
+
+  it("reports nothing to check when the turn had no facts", async () => {
+    const out = await (await ask("what is an ETF?")).text();
+    expect(out).not.toContain("number_check");
+  });
+
   it("loads insider facts for an insider question, so a $1.0M buy is quoted as $1.0M", async () => {
     const pfe = insiderFacts("PFE", { data: [{ name: "Bourla Albert", change: 38_000, transactionPrice: 26.32, transactionDate: "2026-08-04", transactionCode: "P" }] }, "2026-09-15T20:00:00.000Z");
     deps.getQuickContext.mockResolvedValueOnce(quickContext({ ticker: "PFE", tickers: ["PFE"], factsInput: { tickers: [] } }));

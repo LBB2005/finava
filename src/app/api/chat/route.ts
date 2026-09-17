@@ -351,6 +351,8 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
             answerText = cited.text();
             const unknown = cited.unknownIds();
             if (unknown.length) log.warn("answer cited facts that were not in the block", { ids: unknown });
+            // What the check compared, for the eval's mismatch rate (W4-3).
+            send({ type: "number_check", ...cited.counts() });
           }
           // Meter this chat message's token usage against the user's allowance.
           try {
