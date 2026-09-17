@@ -7,6 +7,14 @@
  * real P&L from the user's own positions (`avgCost` vs. live price) crossed with
  * the factor engine.
  *
+ * Honesty rules (beta readout, W4-2):
+ * - Returns are compared with SPY (and the sector ETF where mapped) over each
+ *   position's own holding window. Excess, not raw, is what a trait shows.
+ * - Traits are bucketed on factors as of the entry date when those exist.
+ *   Today's factors applied to an old purchase are look-ahead, so a trait built
+ *   on them is labelled and never claims an edge.
+ * - "Edge" passes `EDGE_GATE` or it isn't said.
+ *
  * The thin Firestore wrappers (`deriveAndCacheDna` / `readCachedDna`) live in
  * `@/lib/investorDnaStore` so this engine stays free of infra imports and is
  * trivially unit-testable. See `@/types/dna` and the design plan for the story.
@@ -19,12 +27,29 @@ import {
   type Stock,
 } from "@/lib/research";
 import type {
+  BenchmarkSummary,
   InvestorDNA,
   TraitRecord,
+  TraitVerdict,
   Tendency,
   CoverageInfo,
   LensLine,
 } from "@/types/dna";
+
+/** Bump when the snapshot shape changes; older cached snapshots are recomputed. */
+export const DNA_VERSION = 2;
+
+/**
+ * The significance gate. A trait is only called an edge (or a blind spot) with
+ * at least `minPositions` benchmarked positions, a median holding window of at
+ * least `minMonths`, and a value-weighted excess return vs SPY of at least
+ * `minExcessPts` percentage points either way. Deliberately simple: this is a
+ * "don't say it on a handful of trades" floor, not a statistical test.
+ */
+export const EDGE_GATE = { minPositions: 8, minMonths: 6, minExcessPts: 5 } as const;
+
+const DAY_MS = 86_400_000;
+const MONTH_DAYS = 30.44;
 
 const FACTOR_KEYS = FACTORS.map((f) => f.key);
 const LABEL_BY_KEY: Record<FactorKey, string> = Object.fromEntries(
@@ -40,7 +65,94 @@ export interface DnaHolding {
   shares: number;
   avgCost: number;
   sector?: string | null;
+  /** When the holding entered Finava. The fallback start of its holding window. */
+  createdAt?: string;
+  /** The real purchase date, when a source provides one. */
+  acquiredAt?: string;
 }
+
+/**
+ * One position's holding window, resolved by the store from price history.
+ * Every number here is measured; `null` means it couldn't be.
+ */
+export interface PositionHistory {
+  /** ISO start of the window. */
+  windowStart: string;
+  /** "purchase" = real purchase date; "added" = the day it was added to Finava. */
+  basis: "purchase" | "added";
+  /** The position's own return over the window. */
+  returnPct: number | null;
+  spyReturnPct: number | null;
+  sectorEtf: string | null;
+  sectorReturnPct: number | null;
+  /** Factor scores as of `windowStart`; null when no point-in-time factors exist. */
+  entryFactors: FactorScores | null;
+}
+
+export interface DnaOptions {
+  /** Keyed by ticker (any symbology; normalized on lookup). */
+  history?: Record<string, PositionHistory>;
+  now?: Date;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+/** Whole months, with "under a month" instead of "0 months". */
+export const monthsLabel = (m: number) => (Math.round(m) < 1 ? "under a month" : plural(Math.round(m), "month"));
+const pts = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(Math.round(n))} pts`;
+
+/** The significance gate for one trait. Pure; see `EDGE_GATE`. */
+export function gateTrait(input: {
+  positions: number;
+  months: number | null;
+  excessPct: number | null;
+  pointInTime: boolean;
+}): { verdict: TraitVerdict; line: string } {
+  const { positions, months, excessPct, pointInTime } = input;
+  if (excessPct === null || positions === 0 || months === null) {
+    return { verdict: "unbenchmarked", line: "Benchmark unavailable — no price history for these positions." };
+  }
+  if (positions < EDGE_GATE.minPositions || months < EDGE_GATE.minMonths) {
+    return {
+      verdict: "too-early",
+      line: `Too early to tell — ${plural(positions, "position")}, ${monthsLabel(months)}.`,
+    };
+  }
+  if (!pointInTime) {
+    return {
+      verdict: "not-point-in-time",
+      line: `${pts(excessPct)} vs SPY, based on current factors (not point-in-time) — no edge claim.`,
+    };
+  }
+  const span = `across ${plural(positions, "position")}, ${monthsLabel(months)}`;
+  if (excessPct >= EDGE_GATE.minExcessPts) return { verdict: "edge", line: `Edge: ${pts(excessPct)} vs SPY ${span}.` };
+  if (excessPct <= -EDGE_GATE.minExcessPts) return { verdict: "blind-spot", line: `Lagging: ${pts(excessPct)} vs SPY ${span}.` };
+  return { verdict: "no-clear-edge", line: `No clear edge: ${pts(excessPct)} vs SPY, within ±${EDGE_GATE.minExcessPts}.` };
+}
+
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const a = [...xs].sort((x, y) => x - y);
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+}
+
+/** Value-weighted mean of `pick` over contributors where it's measured; null when none are. */
+function weighted(cs: Contributor[], pick: (c: Contributor) => number | null): number | null {
+  let w = 0, sum = 0;
+  for (const c of cs) {
+    const v = pick(c);
+    if (v === null || !Number.isFinite(v)) continue;
+    w += c.value;
+    sum += c.value * v;
+  }
+  return w > 0 ? sum / w : null;
+}
+
+const excessSpy = (c: Contributor) =>
+  c.hist && c.hist.returnPct !== null && c.hist.spyReturnPct !== null ? c.hist.returnPct - c.hist.spyReturnPct : null;
+const excessSector = (c: Contributor) =>
+  c.hist && c.hist.returnPct !== null && c.hist.sectorReturnPct !== null ? c.hist.returnPct - c.hist.sectorReturnPct : null;
+const roundOrNull = (n: number | null) => (n === null ? null : Math.round(n));
 
 /** Curated ETF tilt profile (no track record — ETFs shape archetype/tilt only). */
 export interface EtfTilt {
@@ -48,7 +160,6 @@ export interface EtfTilt {
   f: FactorScores;
 }
 
-const signed = (n: number) => (n >= 0 ? "+" : "") + Math.round(n) + "%";
 const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 
 /** Punctuation-insensitive ticker key so BRK.B / BRK-B / BRKB all match. */
@@ -62,6 +173,9 @@ interface Contributor {
   sector: string;
   value: number;
   returnPct: number | null; // null = ETF tilt (excluded from the track record)
+  hist?: PositionHistory;
+  /** Months since the window start; null when there's no window. */
+  months?: number | null;
 }
 
 /** Named investor identity from the dominant factor(s). */
@@ -129,7 +243,12 @@ export function computeInvestorDna(
   holdings: DnaHolding[],
   universe: Stock[],
   etfProfiles: Record<string, EtfTilt> = {},
+  options: DnaOptions = {},
 ): InvestorDNA | null {
+  const now = options.now ?? new Date();
+  const historyByTicker = new Map(
+    Object.entries(options.history ?? {}).map(([k, v]) => [normalizeTicker(k), v])
+  );
   const byTicker = new Map(universe.map((s) => [normalizeTicker(s.ticker), s]));
   const etfByTicker = new Map(
     Object.entries(etfProfiles).map(([k, v]) => [normalizeTicker(k), v])
@@ -145,11 +264,15 @@ export function computeInvestorDna(
 
     const stock = byTicker.get(norm);
     if (stock) {
+      const hist = historyByTicker.get(norm);
+      const startMs = hist ? Date.parse(hist.windowStart) : NaN;
       stockContribs.push({
         f: stock.f,
         sector: stock.sector || "Unknown",
         value: h.shares * stock.price,
         returnPct: h.avgCost > 0 ? ((stock.price - h.avgCost) / h.avgCost) * 100 : 0,
+        hist,
+        months: Number.isFinite(startMs) ? (now.getTime() - startMs) / DAY_MS / MONTH_DAYS : null,
       });
       continue;
     }
@@ -180,15 +303,19 @@ export function computeInvestorDna(
     dnaVector[k] = Math.round(w / totalValue);
   }
 
-  // 2 — traitRecord: real P&L on stock picks heavily exposed to each factor.
+  // 2 — traitRecord: each factor's bucket, benchmarked and gated. Bucket on
+  // entry-date factors when a position has them; otherwise today's, flagged.
   const traitRecord: TraitRecord[] = [];
   for (const k of FACTOR_KEYS) {
-    const bucket = stockContribs.filter((c) => c.f[k] >= HIGH_EXPOSURE);
+    const bucket = stockContribs.filter((c) => (c.hist?.entryFactors ?? c.f)[k] >= HIGH_EXPOSURE);
     if (bucket.length === 0) continue;
     const bucketValue = bucket.reduce((sum, c) => sum + c.value, 0);
-    const avgReturnPct = bucketValue > 0
-      ? bucket.reduce((sum, c) => sum + c.value * (c.returnPct ?? 0), 0) / bucketValue
-      : 0;
+    const avgReturnPct = weighted(bucket, (c) => c.returnPct) ?? 0;
+    const benched = bucket.filter((c) => excessSpy(c) !== null);
+    const excessVsSpyPct = weighted(benched, excessSpy);
+    const months = median(benched.map((c) => c.months).filter((m): m is number => m != null));
+    const pointInTime = bucket.every((c) => !!c.hist?.entryFactors);
+    const gate = gateTrait({ positions: benched.length, months, excessPct: excessVsSpyPct, pointInTime });
     traitRecord.push({
       factor: k,
       label: LABEL_BY_KEY[k],
@@ -197,9 +324,31 @@ export function computeInvestorDna(
       hits: bucket.filter((c) => (c.returnPct ?? 0) > 0).length,
       total: bucket.length,
       sample: bucket.length < 3 ? "thin" : "real",
+      excessVsSpyPct: roundOrNull(excessVsSpyPct),
+      excessVsSectorPct: roundOrNull(weighted(benched, excessSector)),
+      benchmarked: benched.length,
+      beatBenchmark: benched.filter((c) => (excessSpy(c) ?? 0) > 0).length,
+      months: roundOrNull(months),
+      pointInTime,
+      verdict: gate.verdict,
+      verdictLine: gate.line,
     });
   }
-  traitRecord.sort((a, b) => b.avgReturnPct - a.avgReturnPct);
+  traitRecord.sort((a, b) =>
+    (b.excessVsSpyPct ?? -Infinity) - (a.excessVsSpyPct ?? -Infinity) || b.exposurePct - a.exposurePct
+  );
+
+  const benchedAll = stockContribs.filter((c) => excessSpy(c) !== null);
+  const bases = new Set(benchedAll.map((c) => c.hist!.basis));
+  const benchmark: BenchmarkSummary = {
+    excessVsSpyPct: roundOrNull(weighted(benchedAll, excessSpy)),
+    excessVsSectorPct: roundOrNull(weighted(benchedAll, excessSector)),
+    benchmarked: benchedAll.length,
+    total: stockContribs.length,
+    beatSpy: benchedAll.filter((c) => (excessSpy(c) ?? 0) > 0).length,
+    typicalHoldingMonths: roundOrNull(median(benchedAll.map((c) => c.months).filter((m): m is number => m != null))),
+    basis: bases.size === 0 ? null : bases.size > 1 ? "mixed" : [...bases][0],
+  };
 
   // 3 — tendencies: sector concentration + factor tilt.
   const sectorValue = new Map<string, number>();
@@ -230,11 +379,10 @@ export function computeInvestorDna(
   ];
 
   // 4 — identity line (deterministic balanced read).
-  const edge = traitRecord.find((t) => t.avgReturnPct > 0 && t.total >= 2) ?? null;
-  const weak = [...traitRecord].reverse()
-    .find((t) => t.avgReturnPct < 0 && t.total >= 2 && t.factor !== edge?.factor) ?? null;
+  const edge = traitRecord.find((t) => t.verdict === "edge") ?? null;
+  const weak = [...traitRecord].reverse().find((t) => t.verdict === "blind-spot") ?? null;
   const archetype = archetypeFor(dnaVector);
-  const identityLine = buildIdentityLine(archetype, concentrationPct, topSector, edge, weak);
+  const identityLine = buildIdentityLine(archetype, concentrationPct, topSector, edge, weak, benchmark);
 
   // 5 — knownness + coverage.
   const distinctSectors = sectorValue.size;
@@ -245,11 +393,13 @@ export function computeInvestorDna(
   const coverage: CoverageInfo = { analyzed: all.length, total: holdings.length, uncovered };
 
   return {
+    version: DNA_VERSION,
     dnaVector,
     archetype,
     matchedPreset: nearestPreset(dnaVector),
     identityLine,
     traitRecord,
+    benchmark,
     tendencies,
     knownness,
     holdingsCount: all.length,
@@ -264,20 +414,60 @@ function buildIdentityLine(
   topSector: string,
   edge: TraitRecord | null,
   weak: TraitRecord | null,
+  benchmark: BenchmarkSummary,
 ): string {
   const concAdj = concentrationPct >= 55 ? "concentrated" : concentrationPct >= 38 ? "focused" : "diversified";
-  let s = `You're a ${concAdj} ${archetype.toLowerCase()}`;
-  s += edge
-    ? ` with a real edge in ${edge.label.toLowerCase()} names (${signed(edge.avgReturnPct)})`
-    : ` — still learning where your edge is`;
+  let s = `Your holdings read like a ${concAdj} ${archetype.toLowerCase()}`;
+  if (edge) {
+    s += ` with an edge in ${edge.label.toLowerCase()} names (${pts(edge.excessVsSpyPct!)} vs SPY)`;
+  } else if (benchmark.benchmarked === 0) {
+    s += ` — returns aren't benchmarked yet, so no edge is claimed`;
+  } else {
+    const months = benchmark.typicalHoldingMonths ?? 0;
+    s += ` — too early to call an edge (${plural(benchmark.benchmarked, "position")}, typically held ${monthsLabel(months)})`;
+  }
   if (weak) {
-    s += `, but your ${weak.label.toLowerCase()} bets have cost you (${signed(weak.avgReturnPct)}).`;
+    s += `, but your ${weak.label.toLowerCase()} names have lagged SPY (${pts(weak.excessVsSpyPct!)}).`;
   } else if (concAdj === "concentrated") {
     s += `, with little to cushion you if ${topSector} turns.`;
   } else {
     s += `.`;
   }
   return s;
+}
+
+/**
+ * The compact DNA block chat and the crew receive. Plain text, labelled as
+ * inferred, carrying the gate's own sentences so the model can't upgrade a
+ * "too early" into an edge. Tolerates snapshots missing newer fields.
+ */
+export function buildDnaSummary(dna: InvestorDNA): string {
+  const tilt = FACTOR_KEYS.map((k) => `${LABEL_BY_KEY[k]} ${dna.dnaVector[k]}`).join(", ");
+  const concentration = dna.tendencies.find((t) => t.key === "concentration")?.detail
+    .replace(/^(\d+)% of your holdings sit in (.+)\.$/, "$1% in $2") ?? "Unavailable";
+  const b = dna.benchmark;
+  const basisLabel = b?.basis === "purchase" ? "since purchase" : b?.basis === "added" ? "since added to Finava" : "mix of purchase dates and dates added to Finava";
+  const holding = b?.typicalHoldingMonths != null
+    ? `${monthsLabel(b.typicalHoldingMonths)} (${basisLabel})`
+    : "Unavailable";
+  const result = b && b.excessVsSpyPct !== null
+    ? `${pts(b.excessVsSpyPct)} vs SPY over each position's own holding window (${b.benchmarked} of ${b.total} positions benchmarked, ${b.beatSpy} beat SPY)` +
+      (b.excessVsSectorPct !== null ? `; ${pts(b.excessVsSectorPct)} vs sector ETFs` : "")
+    : "Unavailable";
+  const traits = dna.traitRecord.length
+    ? dna.traitRecord.map((t) => `- ${t.label} (${t.exposurePct}% of book): ${t.verdictLine ?? "Unavailable"}`).join("\n")
+    : "- None with enough exposure to read.";
+
+  return [
+    "## Investor DNA (inferred from your holdings; the user did not state any of this)",
+    `Style: ${dna.archetype}. Factor tilt (0-100): ${tilt}.`,
+    `Concentration: ${concentration}.`,
+    `Typical holding period: ${holding}.`,
+    `Benchmarked result: ${result}.`,
+    "Traits:",
+    traits,
+    `Rules: refer to this as "based on your holdings". Only call something an edge where a trait line starts with "Edge:". Where it says too early, not point-in-time, or unavailable, say so plainly. Never present this as the user's stated goals or risk tolerance.`,
+  ].join("\n");
 }
 
 // ── The Lens — one personalized line for a given stock ──
@@ -299,11 +489,11 @@ export function lensLineFor(
   const label = LABEL_BY_KEY[domFactor].toLowerCase();
   const rec = dna.traitRecord.find((t) => t.factor === domFactor);
 
-  if (rec && rec.avgReturnPct > 0 && rec.total >= 2) {
-    return { line: `This is ${article(label)} ${label} name — your sweet spot (${signed(rec.avgReturnPct)} on these).`, tone: "edge", href };
+  if (rec?.verdict === "edge" && rec.excessVsSpyPct !== null) {
+    return { line: `This is ${article(label)} ${label} name — your ${label} names are ${pts(rec.excessVsSpyPct)} vs SPY.`, tone: "edge", href };
   }
-  if (rec && rec.avgReturnPct < 0 && rec.total >= 2) {
-    return { line: `Heads up — ${article(label)} ${label} name, the kind that's cost you (${signed(rec.avgReturnPct)}).`, tone: "caution", href };
+  if (rec?.verdict === "blind-spot" && rec.excessVsSpyPct !== null) {
+    return { line: `Heads up — ${article(label)} ${label} name; yours are ${pts(rec.excessVsSpyPct)} vs SPY.`, tone: "caution", href };
   }
   if (dna.dnaVector[domFactor] >= 60) {
     return { line: `This fits your tilt toward ${label}.`, tone: "neutral", href };

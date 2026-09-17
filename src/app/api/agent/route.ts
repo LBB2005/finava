@@ -13,6 +13,7 @@ import {
   makeRunContext,
 } from "@/lib/usage";
 import { logRunCost } from "@/lib/usageRunCost";
+import { loadDnaSummary } from "@/lib/investorDnaStore";
 import type { AgentEvent } from "@/types/chat";
 import type { WaveRequest, SynthesizeRequest } from "@/lib/scoutTypes";
 
@@ -99,7 +100,10 @@ export async function POST(req: Request) {
             await runDiscoveryWave(wave as unknown as WaveRequest, emit);
           } else {
             // Normal CEO turn (incl. quick discover + deep shortlist emit).
-            await runCeoAgent(userPrompt ?? "", ceoContext, emit, {
+            // Investor DNA, inferred from holdings (W4-2). Not for discover: a
+            // shortlist is impersonal, and it rides after the portfolio block.
+            const dna = discover ? null : await loadDnaSummary(userId);
+            await runCeoAgent(userPrompt ?? "", dna ? `${ceoContext}\n\n${dna}`.trim() : ceoContext, emit, {
               deepResearch: !!deepResearch,
               // Length-capped by the schema; element shape is consumed loosely
               // downstream, so cast to the expected param types.

@@ -10,6 +10,7 @@ import { withAuthRaw } from "@/lib/withRoute";
 import { ChatRequestSchema } from "@/lib/schemas/chat";
 import { pageContextPrompt, type PageContext } from "@/lib/pageContext";
 import { getTemplateBlock } from "@/lib/templates.server";
+import { loadDnaSummary } from "@/lib/investorDnaStore";
 import { checkUsageLimit, recordUsage, makeRunContext } from "@/lib/usage";
 import { logRunCost } from "@/lib/usageRunCost";
 import { runTraced } from "@/lib/observability";
@@ -242,9 +243,10 @@ export async function POST(req: Request) {
   // compliance block so it can shape tone/structure but never override it.
   // Fetched alongside the market data: neither depends on the other, and this
   // pair is the whole pre-model latency budget.
-  const [templateBlock, grounding, experienceLevel] = await Promise.all([
+  const [templateBlock, grounding, dnaSummary, experienceLevel] = await Promise.all([
     getTemplateBlock(userId, templateId),
     groundTurn(userId, text, { conversationId, pageContext, portfolioContext }),
+    loadDnaSummary(userId),
     getExperienceLevel(userId),
   ]);
   const { quickContext, reusedData } = grounding;
@@ -275,7 +277,7 @@ ${promptClockLine()}
 Date statements against today: results for fiscal periods that have ended are reported figures, not projections, and an unconfirmed earnings date is "(estimated)".
 ${pageContext ? `\n${pageContextPrompt(pageContext)}\n` : ""}
 ${portfolioContext ? `## User's Current Portfolio\n${portfolioContext}` : "The user has no portfolio holdings yet."}
-
+${dnaSummary ? `\n${dnaSummary}\n` : ""}
 ## Live data for this turn
 ${EXTERNAL_DATA_RULE}
 

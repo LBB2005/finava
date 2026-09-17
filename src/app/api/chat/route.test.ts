@@ -13,6 +13,7 @@ const deps = vi.hoisted(() => ({
   getQuickContext: vi.fn(),
   loadTurnData: vi.fn(),
   saveTurnData: vi.fn(),
+  loadDnaSummary: vi.fn(),
   loadChatFacts: vi.fn(),
   getExperienceLevel: vi.fn(),
 }));
@@ -24,6 +25,8 @@ vi.mock("@/lib/facts/chatFacts", () => ({
 vi.mock("@/lib/experienceLevel.server", () => ({
   getExperienceLevel: deps.getExperienceLevel,
 }));
+
+vi.mock("@/lib/investorDnaStore", () => ({ loadDnaSummary: deps.loadDnaSummary }));
 
 vi.mock("@/lib/withRoute", () => ({
   withAuthRaw: deps.withAuthRaw,
@@ -149,6 +152,7 @@ beforeEach(() => {
   deps.getQuickContext.mockResolvedValue(quickContext());
   deps.loadTurnData.mockResolvedValue(null);
   deps.saveTurnData.mockResolvedValue(undefined);
+  deps.loadDnaSummary.mockResolvedValue(null);
   deps.loadChatFacts.mockResolvedValue({ input: { tickers: [] }, dropped: [] });
   deps.getExperienceLevel.mockResolvedValue("intermediate");
 });
@@ -212,6 +216,23 @@ describe("POST /api/chat", () => {
     expect(streamArg.system[0].text).toContain("## User's Current Portfolio\nNVDA: 5 shares");
     expect(streamArg.system[0].text).toContain("Use bullet points.");
     expect(streamArg.messages).toEqual([{ role: "user", content: "Analyze NVDA" }]);
+  });
+
+  it("gives the model the user's Investor DNA, labelled as inferred", async () => {
+    deps.loadDnaSummary.mockResolvedValueOnce("## Investor DNA (inferred from your holdings; the user did not state any of this)\nStyle: Momentum rider.");
+
+    const res = await POST(chatRequest({ messages: [{ role: "user", content: "What about AAPL?" }] }));
+    await res.text();
+
+    expect(deps.loadDnaSummary).toHaveBeenCalledWith("user_123");
+    expect(systemPrompt()).toContain("## Investor DNA (inferred from your holdings");
+    expect(systemPrompt()).toContain("Style: Momentum rider.");
+  });
+
+  it("answers without a DNA block when the user has none", async () => {
+    const res = await POST(chatRequest({ messages: [{ role: "user", content: "What about AAPL?" }] }));
+    await res.text();
+    expect(systemPrompt()).not.toContain("Investor DNA");
   });
 
   it("tells the model today's date, what Finava costs, and where the advice line is", async () => {

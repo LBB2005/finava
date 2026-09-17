@@ -11,7 +11,10 @@ const deps = vi.hoisted(() => ({
   checkDeepResearchAllowed: vi.fn(),
   recordDeepResearchRun: vi.fn(),
   usageRun: vi.fn((_store: { userId: string }, fn: () => unknown) => fn()),
+  loadDnaSummary: vi.fn(),
 }));
+
+vi.mock("@/lib/investorDnaStore", () => ({ loadDnaSummary: deps.loadDnaSummary }));
 
 vi.mock("@/lib/withRoute", () => ({
   withAuthRaw: deps.withAuthRaw,
@@ -61,6 +64,7 @@ beforeEach(() => {
   deps.checkUsageLimit.mockResolvedValue(null);
   deps.checkDeepResearchAllowed.mockResolvedValue(null);
   deps.recordDeepResearchRun.mockResolvedValue(undefined);
+  deps.loadDnaSummary.mockResolvedValue(null);
   deps.runCeoAgent.mockImplementation(async (_prompt, _portfolio, emit) => {
     emit({ type: "message", message: "done" });
   });
@@ -73,6 +77,30 @@ beforeEach(() => {
 });
 
 describe("POST /api/agent", () => {
+  it("hands the crew the user's inferred Investor DNA after the portfolio", async () => {
+    deps.withAuthRaw.mockReturnValueOnce(async () => ({
+      userId: "user_123",
+      body: { userPrompt: "Review my portfolio", portfolioContext: "NVDA: 5 shares" },
+    }));
+    deps.loadDnaSummary.mockResolvedValueOnce("## Investor DNA (inferred from your holdings; the user did not state any of this)");
+
+    await readSse(await POST(agentRequest({ userPrompt: "Review my portfolio" })));
+
+    expect(deps.loadDnaSummary).toHaveBeenCalledWith("user_123");
+    expect(deps.runCeoAgent.mock.calls[0][1]).toBe(
+      "NVDA: 5 shares\n\n## Investor DNA (inferred from your holdings; the user did not state any of this)"
+    );
+  });
+
+  it("keeps the crew context unchanged when there is no DNA", async () => {
+    deps.withAuthRaw.mockReturnValueOnce(async () => ({
+      userId: "user_123",
+      body: { userPrompt: "Review my portfolio", portfolioContext: "NVDA: 5 shares" },
+    }));
+    await readSse(await POST(agentRequest({ userPrompt: "Review my portfolio" })));
+    expect(deps.runCeoAgent.mock.calls[0][1]).toBe("NVDA: 5 shares");
+  });
+
   it("returns auth/validation responses from withAuthRaw before any spend", async () => {
     deps.withAuthRaw.mockReturnValueOnce(async () =>
       NextResponse.json({ error: "Unauthorized" }, { status: 401 })
