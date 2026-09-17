@@ -17,7 +17,21 @@ import { userRateLimit } from "@/lib/rateLimit";
 import { EXTERNAL_DATA_RULE, fenceExternal } from "@/lib/externalContent";
 import { extractTickers } from "@/lib/tickers";
 import { isReuseFollowUp } from "@/lib/chat/intent";
-import { getQuickContext, renderQuickContext, UNAVAILABLE, type QuickContext } from "@/lib/quickContext";
+import { getQuickContext, renderQuickContext, UNAVAILABLE, DEFAULT_BUDGET_MS, type QuickContext } from "@/lib/quickContext";
+import { collectFacts, indexFacts, renderFactsBlock, readerBlock, FACT_CITATION_RULE, type FactsInput } from "@/lib/facts/promptBlock";
+import { createCitationStream } from "@/lib/facts/citations";
+import { loadChatFacts } from "@/lib/facts/chatFacts";
+import { hasValue } from "@/lib/facts/types";
+import { getExperienceLevel } from "@/lib/experienceLevel.server";
+import {
+  capabilityPromptBlock,
+  checkCapabilities,
+  DEFAULT_AVAILABILITY,
+  FUND_ANSWER_RULE,
+  isFundQuestion,
+  wantsInsider,
+  wantsPortfolio,
+} from "@/lib/capabilityCheck";
 import { isReusable, loadTurnData, saveTurnData } from "@/lib/turnData";
 import { logger } from "@/lib/logger";
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
@@ -73,6 +87,7 @@ Write the answer in markdown using these exact H2 headings, in this order:
 ## ${ANSWER_HEADINGS.keyNumbers}
 A markdown table with columns: Metric | Value | Source | As of.
 Only numbers that appear in the live data block above. A metric you were not given is "${UNAVAILABLE}".
+When the data block gives fact IDs, put the ID right after the value in the Value cell ("51.3x [F:AAPL.pe]"); Source and As of are filled in from the fact.
 
 ## ${ANSWER_HEADINGS.bull}
 Up to 3 bullets, ONE LINE each.
@@ -99,6 +114,14 @@ const GROUNDING_RULE = `Every number you state must come from the live data bloc
 function lastUserText(messages: MessageParam[]): string {
   const last = messages.at(-1);
   return typeof last?.content === "string" ? last.content : "";
+}
+
+/** The user's earlier turns (oldest first), for questions that only make sense against them. */
+function earlierUserTexts(messages: MessageParam[]): string[] {
+  return messages
+    .slice(0, -1)
+    .filter((m) => m.role === "user" && typeof m.content === "string")
+    .map((m) => m.content as string);
 }
 
 interface TurnGrounding {
@@ -132,6 +155,7 @@ async function groundTurn(
       pageContext: body.pageContext ?? null,
       portfolioContext: body.portfolioContext,
     });
+    await addRequestedFacts(userId, text, quickContext, body.portfolioContext);
     if (convId) {
       await saveTurnData(userId, convId, {
         quickContext,
@@ -145,6 +169,55 @@ async function groundTurn(
     });
     return { quickContext: null, reusedData: false };
   }
+}
+
+/**
+ * Insider and portfolio facts, fetched only when the question is about them —
+ * both are extra calls inside the turn's budget. Mutates the context so the
+ * reuse path stores and replays them too. Never throws.
+ */
+async function addRequestedFacts(userId: string, text: string, qc: QuickContext, portfolioContext?: string) {
+  const insider = qc.tickers.length > 0 && wantsInsider(text);
+  const portfolio = !!portfolioContext && wantsPortfolio(text);
+  if (!insider && !portfolio) return;
+  try {
+    const extra = await loadChatFacts({
+      tickers: insider ? qc.tickers : [],
+      insider,
+      portfolioUserId: portfolio ? userId : undefined,
+      deadlineMs: DEFAULT_BUDGET_MS,
+      cachedOnly: true,
+    });
+    qc.factsInput = { ...qc.factsInput, ...extra.input, tickers: qc.factsInput?.tickers ?? [] };
+    qc.dropped.push(...extra.dropped);
+  } catch (err) {
+    log.warn("fast lane could not load extra facts", { err: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/** Headlines with their article links, for the data block. */
+function renderHeadlines(qc: QuickContext): string {
+  const lines = ["Recent headlines:"];
+  if (!qc.headlines.length) lines.push(`- ${UNAVAILABLE}`);
+  for (const h of qc.headlines) lines.push(`- ${h.date} — ${h.headline} (${h.url ? `[${h.source}](${h.url})` : h.source})`);
+  return lines.join("\n");
+}
+
+/**
+ * The data block the model answers from. With facts, every number carries an
+ * ID the answer must cite; a context stored before W4-1 has no facts and keeps
+ * the old table.
+ */
+function renderDataBlock(qc: QuickContext, facts: FactsInput | undefined): string {
+  if (!facts) return renderQuickContext(qc);
+  const parts = [
+    `Live data${qc.ticker ? ` for ${qc.tickers.join(", ")}` : ""} (fetched ${qc.fetchedAt}). FACTS:`,
+    renderFactsBlock(collectFacts(facts)),
+    "",
+    renderHeadlines(qc),
+  ];
+  if (qc.dropped.length) parts.push("", `Not retrieved in time this turn: ${qc.dropped.join(", ")}.`);
+  return parts.join("\n");
 }
 
 export async function POST(req: Request) {
@@ -169,15 +242,28 @@ export async function POST(req: Request) {
   // compliance block so it can shape tone/structure but never override it.
   // Fetched alongside the market data: neither depends on the other, and this
   // pair is the whole pre-model latency budget.
-  const [templateBlock, grounding] = await Promise.all([
+  const [templateBlock, grounding, experienceLevel] = await Promise.all([
     getTemplateBlock(userId, templateId),
     groundTurn(userId, text, { conversationId, pageContext, portfolioContext }),
+    getExperienceLevel(userId),
   ]);
   const { quickContext, reusedData } = grounding;
 
+  const factsInput = quickContext?.factsInput;
+  const factIndex = indexFacts(factsInput ? collectFacts(factsInput) : []);
   const dataBlock = quickContext
-    ? fenceExternal("finava:live-market-data", renderQuickContext(quickContext))
+    ? fenceExternal("finava:live-market-data", renderDataBlock(quickContext, factsInput))
     : `No live market data was retrieved for this turn. Every market number is "${UNAVAILABLE}".`;
+
+  // Say up front what we can't get, rather than a long answer that ends in "check your broker".
+  const subject = quickContext?.ticker ?? null;
+  const subjectFacts = factsInput?.tickers?.find((t) => t.ticker === subject);
+  const capabilities = checkCapabilities(text, {
+    ...DEFAULT_AVAILABILITY,
+    priceTargets: !!subjectFacts && hasValue(subjectFacts.streetTarget),
+  });
+  const capabilityBlock = capabilityPromptBlock(capabilities, subject);
+  const fundRule = isFundQuestion(text, earlierUserTexts(messages as MessageParam[])) ? FUND_ANSWER_RULE : "";
 
   // Run the whole stream inside the usage context so every model call it makes
   // (this chat message + the follow-up generate()) is metered to this user.
@@ -196,6 +282,8 @@ ${EXTERNAL_DATA_RULE}
 ${dataBlock}
 
 ${GROUNDING_RULE}
+${factIndex.size ? `\n${FACT_CITATION_RULE}\n` : ""}${capabilityBlock ? `\n${capabilityBlock}\n` : ""}${fundRule ? `\n${fundRule}\n` : ""}
+${readerBlock(experienceLevel)}
 
 Be concise and data-driven. Use markdown formatting for clarity (tables, bullet points, etc.).
 
@@ -225,6 +313,19 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
         let ttftMs: number | null = null;
         // The finished answer, kept so the follow-up chips can be drawn from it.
         let answerText = "";
+        // With facts, each streamed line is number-checked before it is sent: a
+        // wrong cited figure is replaced with the fact's own value (W4-1).
+        // Time to first token is what the reader sees, so it is taken at the first send.
+        const sendText = (t: string) => {
+          ttftMs ??= Date.now() - startedAt;
+          send({ text: t });
+        };
+        const cited = factIndex.size
+          ? createCitationStream(factIndex, sendText, {
+              onMismatch: (m) => log.warn("cited number did not match its fact; replaced", { ...m }),
+              onReattribute: (r) => log.info("cited number matched a different fact; kept", { ...r }),
+            })
+          : null;
         try {
           // Which lane answered, and whether it had to refetch. Four testers
           // asked to be told how the answer was produced.
@@ -235,10 +336,19 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
               event.type === "content_block_delta" &&
               event.delta.type === "text_delta"
             ) {
-              ttftMs ??= Date.now() - startedAt;
-              answerText += event.delta.text;
-              send({ text: event.delta.text });
+              if (cited) {
+                cited.push(event.delta.text);
+              } else {
+                answerText += event.delta.text;
+                sendText(event.delta.text);
+              }
             }
+          }
+          if (cited) {
+            cited.flush();
+            answerText = cited.text();
+            const unknown = cited.unknownIds();
+            if (unknown.length) log.warn("answer cited facts that were not in the block", { ids: unknown });
           }
           // Meter this chat message's token usage against the user's allowance.
           try {
@@ -271,6 +381,8 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
           send({ timing });
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         } catch (err) {
+          // What was already checked still reaches the reader before the error.
+          cited?.flush();
           const msg = err instanceof Error ? err.message : "Stream error";
           send({ error: msg });
         } finally {

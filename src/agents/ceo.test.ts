@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentEvent, SkepticReport } from "@/types/chat";
 import { resetAgentLatencies } from "./crewPlanner";
+import type { FactsInput } from "@/lib/facts/promptBlock";
+import { tickerFactsFixture } from "@/test/factsFixture";
+import { insiderFacts } from "@/lib/facts/precomputed";
 
 // ── Scripted Anthropic stream ────────────────────────────────────────────────
 // runCeoAgent calls anthropic.messages.stream(...).finalMessage() once per loop
@@ -70,10 +73,11 @@ const resolvePlanMock = vi.fn(async (_id?: string) => ({
 vi.mock("@/lib/entitlements", () => ({ resolvePlan: (id: string) => resolvePlanMock(id) }));
 
 const checkCache = vi.fn(async () => null as string | null);
+const extractTickersMock = vi.fn<(text: string) => string[]>(() => []);
 vi.mock("@/lib/agentMemory", () => ({
   checkCache: (...a: unknown[]) => checkCache(...(a as [])),
   saveCache: vi.fn(async () => {}),
-  extractTickers: vi.fn(() => []),
+  extractTickers: (t: string) => extractTickersMock(t),
   getTickerMemory: vi.fn(async () => ""),
   saveTickerMemory: vi.fn(async () => {}),
 }));
@@ -83,6 +87,11 @@ vi.mock("@/lib/userPreference", () => ({
   updateStyleFromConversation: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/templates.server", () => ({ getTemplateBlock: vi.fn(async () => "") }));
+// W4-1: facts and the reader's level. Default: no facts, so pre-W4-1 behaviour holds.
+const loadChatFactsMock = vi.fn<(o: unknown) => Promise<{ input: FactsInput; dropped: string[] }>>(async () => ({ input: { tickers: [] }, dropped: [] }));
+vi.mock("@/lib/facts/chatFacts", () => ({ loadChatFacts: (o: unknown) => loadChatFactsMock(o) }));
+const experienceLevelMock = vi.fn<(u?: string) => Promise<string>>(async () => "intermediate");
+vi.mock("@/lib/experienceLevel.server", () => ({ getExperienceLevel: (u?: string) => experienceLevelMock(u) }));
 // The real registry shape: every crew tool, plus the scout. W2-2 filters this
 // down to the planned crew before offering it to the model, so the mock has to
 // carry real names for that filter to be observable.
@@ -141,6 +150,9 @@ beforeEach(() => {
   // The planner's rolling latency medians are module state and feed both the ETA
   // and the tool deadline — reset them so one test's timings can't move another's.
   resetAgentLatencies();
+  extractTickersMock.mockReset().mockReturnValue([]);
+  loadChatFactsMock.mockReset().mockResolvedValue({ input: { tickers: [] }, dropped: [] });
+  experienceLevelMock.mockReset().mockResolvedValue("intermediate");
 });
 
 describe("agentTimeoutMs", () => {
@@ -866,5 +878,148 @@ describe("adaptive tool deadline", () => {
     expect(events.some((e) => e.type === "budget_warning")).toBe(true);
     const calls = streamSpy.mock.calls as unknown as Array<Array<Record<string, unknown>>>;
     expect("tools" in calls[1][0]).toBe(false);
+  });
+});
+
+// ── W4-1: the crew cites facts ───────────────────────────────────────────────
+
+describe("W4-1: the report cites facts", () => {
+  const finals = (events: AgentEvent[]) =>
+    events.filter((e) => e.type === "final_response") as { content: string; replace?: boolean }[];
+
+  it("gives the CEO a facts block for the named tickers, with the citation rule", async () => {
+    extractTickersMock.mockImplementation((t: string) => (t.includes("NVDA") ? ["NVDA"] : []));
+    loadChatFactsMock.mockResolvedValue({ input: { tickers: [tickerFactsFixture("NVDA")] }, dropped: [] });
+    finalMessages.push({ stop_reason: "end_turn", content: [text("## Answer\nok")], usage: {} });
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("analyze NVDA", "", () => {});
+    expect(loadChatFactsMock).toHaveBeenCalledWith(expect.objectContaining({ tickers: ["NVDA"] }));
+    const prompt = assembledPromptText();
+    expect(prompt).toContain("[F:NVDA.price] NVDA price = $182.50");
+    expect(prompt).toMatch(/Never calculate/);
+  });
+
+  it("replaces a wrong cited number in the final report", async () => {
+    extractTickersMock.mockReturnValue(["NVDA"]);
+    loadChatFactsMock.mockResolvedValue({ input: { tickers: [tickerFactsFixture("NVDA")] }, dropped: [] });
+    finalMessages.push(
+      { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
+      { stop_reason: "end_turn", content: [text("## Answer\nNVDA trades at 15.1x [F:NVDA.pe] earnings.")], usage: {} },
+    );
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("analyze NVDA", "", (e) => events.push(e));
+    expect(finals(events)).toEqual([
+      { type: "final_response", content: "## Answer\nNVDA trades at 51.3x earnings.", replace: true },
+    ]);
+  });
+
+  it("checks the streamed revision too, and never lets an ID reach the reader", async () => {
+    extractTickersMock.mockReturnValue(["PFE"]);
+    const pfe = insiderFacts("PFE", { data: [{ name: "Bourla Albert", change: 38_000, transactionPrice: 26.32, transactionDate: "2026-08-04", transactionCode: "P" }] }, "2026-09-15T20:00:00.000Z");
+    loadChatFactsMock.mockResolvedValue({ input: { tickers: [], insider: [pfe] }, dropped: [] });
+    skepticCritique = issuesOn("DRAFT");
+    finalMessages.push(
+      { stop_reason: "tool_use", content: [toolUse("t1", "run_risk_agent")], usage: {} },
+      { stop_reason: "end_turn", content: [text("DRAFT")], usage: {} },
+      { stop_reason: "end_turn", content: [text("The CEO bought $10.3M [F:PFE.insider.largestBuy] of stock.")], usage: {} },
+    );
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("did Pfizer's CEO buy PFE?", "", (e) => events.push(e));
+    const shown = finals(events).map((e) => e.content).join("");
+    expect(shown).toBe("The CEO bought $1.0M of stock.");
+    expect(loadChatFactsMock).toHaveBeenCalledWith(expect.objectContaining({ insider: true }));
+    // Everything the reader sees lands before the run says it is done.
+    const types = events.map((e) => e.type);
+    expect(types.lastIndexOf("final_response")).toBeLessThan(types.indexOf("done"));
+  });
+
+  it("loads the user's portfolio facts when the run carries holdings", async () => {
+    finalMessages.push({ stop_reason: "end_turn", content: [text("ok")], usage: {} });
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("how risky is my book", "| AAPL | 10 |", () => {}, { userId: "u1", holdings: [{ ticker: "AAPL", shares: 10 }] });
+    expect(loadChatFactsMock).toHaveBeenCalledWith(expect.objectContaining({ portfolioUserId: "u1" }));
+  });
+
+  it("answers in seconds when the question needs data Finava can't get", async () => {
+    extractTickersMock.mockReturnValue(["NVDA"]);
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("what's the implied volatility on NVDA?", "", (e) => events.push(e));
+    expect(streamSpy).not.toHaveBeenCalled();
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain("crew_plan");
+    expect(finals(events)[0]).toMatchObject({ replace: true, content: expect.stringContaining("I can't get options-chain and implied-volatility data for NVDA") });
+    expect(events).toContainEqual(expect.objectContaining({ type: "followups" }));
+    expect(types.at(-1)).toBe("done");
+  });
+
+  it("runs a price-target question when the analyst agent's web fallback is configured", async () => {
+    vi.stubEnv("PERPLEXITY_API_KEY", "key");
+    extractTickersMock.mockReturnValue(["AMD"]);
+    finalMessages.push({ stop_reason: "end_turn", content: [text("ok")], usage: {} });
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("what's the analyst price target for AMD?", "", () => {});
+    expect(streamSpy).toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it("answers fast on a price-target question when no source can supply one", async () => {
+    vi.stubEnv("PERPLEXITY_API_KEY", "");
+    extractTickersMock.mockReturnValue(["AMD"]);
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent("what's the analyst price target for AMD?", "", (e) => events.push(e));
+    expect(streamSpy).not.toHaveBeenCalled();
+    expect(finals(events)[0].content).toMatch(/I can't get analyst price targets for AMD/);
+    vi.unstubAllEnvs();
+  });
+
+  it("still runs a broad analysis that mentions a gap, and names the gap to the model", async () => {
+    finalMessages.push({ stop_reason: "end_turn", content: [text("ok")], usage: {} });
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("full analysis of NVDA including options flow", "", () => {});
+    expect(streamSpy).toHaveBeenCalled();
+    expect(assembledPromptText()).toContain("Finava cannot get options-chain and implied-volatility data");
+  });
+
+  it("writes for the reader's experience level", async () => {
+    experienceLevelMock.mockResolvedValue("beginner");
+    finalMessages.push({ stop_reason: "end_turn", content: [text("ok")], usage: {} });
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("analyze AAPL", "", () => {}, { userId: "u1" });
+    expect(experienceLevelMock).toHaveBeenCalledWith("u1");
+    expect(assembledPromptText()).toMatch(/Skip technical-analysis indicators/);
+  });
+});
+
+describe("W4-1: Discover is honest about ETFs", () => {
+  // Priya (#3): her ETF question, then the clarify chip she tapped.
+  const PRIYA =
+    "ok that actually makes sense lol thank you. so if i only have like $100 to put in a month which etf should i even look at, is there like one thats good for beginners? and do i need way more money than that to actually start\n\n[User clarification]: Just tell me what's best for $100/month";
+
+  it("never runs the stock scout for Priya's ETF question, and returns no stock picks", async () => {
+    const { runCeoAgent } = await import("./ceo");
+    const events: AgentEvent[] = [];
+    await runCeoAgent(PRIYA, "", (e) => events.push(e), { discover: true, tier: "quick" });
+    expect(runScoutAgent).not.toHaveBeenCalled();
+    expect(streamSpy).not.toHaveBeenCalled();
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain("scout_complete");
+    expect(types).not.toContain("deep_shortlist");
+    const answer = (events.find((e) => e.type === "final_response") as { content: string }).content;
+    expect(answer).toMatch(/Discover screens individual stocks/);
+    expect(types.at(-1)).toBe("done");
+  });
+
+  it("reads the earlier turn when the ETF question came before the clarification", async () => {
+    const { runCeoAgent } = await import("./ceo");
+    await runCeoAgent("Just tell me what's best for $100/month", "", () => {}, {
+      discover: true,
+      tier: "quick",
+      conversationHistory: [{ role: "user", content: "which etf should a beginner look at?" }],
+    });
+    expect(runScoutAgent).not.toHaveBeenCalled();
   });
 });

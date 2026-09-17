@@ -1,6 +1,7 @@
 import { generate } from "@/lib/llm";
 import { getCandles, getSnapshots } from "@/lib/finnhub";
 import { getSkillsPrompt } from "@/agents/skills";
+import { positionShocks } from "@/lib/facts/precomputed";
 
 export async function runRiskAgent(
   input: unknown,
@@ -87,6 +88,11 @@ export async function runRiskAgent(
         const weightLines = rows
           .map((r) => `  - ${r.ticker}: ${(r.weight * 100).toFixed(1)}% of portfolio${typeof r.beta === "number" ? `, beta ${r.beta.toFixed(2)}` : ", beta N/A"}`)
           .join("\n");
+        // Each position's dollar change if its price falls, computed here (W4-1).
+        const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+        const shockLines = rows
+          .map((r) => `  - ${r.ticker} ${usd(r.value)} → ${positionShocks(r.value).map((s) => `−${s.shockPct}%: ${usd(s.loss)}`).join(" · ")}`)
+          .join("\n");
         const ddLine = portBeta !== null
           ? `- Estimated portfolio decline in a 30% market drop ≈ ${(portBeta * 30).toFixed(0)}% (= weighted beta × 30%; assumes betas hold and ignores correlation breakdown — a rough upper-bound anchor, not a point forecast)`
           : "- Weighted portfolio beta could not be computed — do not estimate a portfolio-level drawdown.";
@@ -95,7 +101,9 @@ export async function runRiskAgent(
 PORTFOLIO-LEVEL RISK — COMPUTED, AUTHORITATIVE (use these exact figures; do not derive your own):
 - Priced portfolio value: $${total.toLocaleString("en-US", { maximumFractionDigits: 0 })}
 - Position weights:
-${weightLines}${portBeta !== null ? `\n- Weighted portfolio beta: ${portBeta.toFixed(2)} (Σ weightᵢ·betaᵢ over priced holdings${coveredWeight < 0.999 ? `, covering ${(coveredWeight * 100).toFixed(0)}% of value` : ""})` : ""}
+${weightLines}
+- Position $ change if that stock falls 10/20/30%:
+${shockLines}${portBeta !== null ? `\n- Weighted portfolio beta: ${portBeta.toFixed(2)} (Σ weightᵢ·betaᵢ over priced holdings${coveredWeight < 0.999 ? `, covering ${(coveredWeight * 100).toFixed(0)}% of value` : ""})` : ""}
 ${ddLine}
 
 NON-NEGOTIABLE: Any "portfolio loss in an X% drawdown" claim MUST use the weighted portfolio beta above — NEVER apply a single holding's beta to the whole portfolio. Flag any position over 20% of portfolio value as HIGH concentration.`;
@@ -129,7 +137,7 @@ Provide:
 2. Concentration risks and overweight positions (use the computed position weights above)
 3. Beta analysis (market sensitivity)
 4. Volatility comparison across holdings
-5. A worst-case drawdown scenario that uses the weighted portfolio beta above — not any single holding's beta
+5. A worst-case drawdown scenario that uses the weighted portfolio beta and the position dollar changes above — not any single holding's beta, and no dollar figure you worked out yourself
 6. Specific risk concerns and position-sizing recommendations`,
   });
 

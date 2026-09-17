@@ -13,7 +13,7 @@ const skill: AgentSkill = {
   ],
 
   promptEnhancements: [
-    "Always state: number of Buy / Hold / Sell ratings, consensus price target, and current price vs. target (% upside/downside)",
+    "Always state: number of Buy / Hold / Sell ratings, consensus price target, and the precomputed % upside/downside to it (quote it; never calculate it)",
     "Note if the consensus price target has been rising or falling over the past 3 months — direction matters more than the absolute level",
     "Flag any recent rating changes (upgrade/downgrade) — these are more actionable than existing ratings",
     "Comment on analyst estimate revision trend: are estimates going up or down? Earnings revisions predict stock price direction",

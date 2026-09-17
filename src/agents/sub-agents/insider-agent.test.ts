@@ -167,6 +167,25 @@ describe("runInsiderAgent — Finnhub history window", () => {
   });
 });
 
+describe("runInsiderAgent — the model never multiplies", () => {
+  it("states each trade's dollar value and the buy/sell totals, computed in code", async () => {
+    // The readout's case: 38,000 × $26.32 ≈ $1.0M was written up as $10.3M.
+    getInsiderTransactions.mockResolvedValue({
+      data: [
+        { name: "Bourla Albert", change: 38_000, transactionPrice: 26.32, transactionCode: "P", transactionDate: "2026-08-04" },
+        { name: "Doe Jane", change: -5_000, transactionPrice: 27.1, transactionCode: "S", transactionDate: "2026-08-20" },
+      ],
+    });
+    const { runInsiderAgent } = await import("./insider-agent");
+    await runInsiderAgent({ tickers: ["PFE"] });
+    const p = lastPrompt();
+    expect(p).toContain('"value": "$1.0M"');
+    expect(p).toContain('"totalBuyValue": "$1.0M"');
+    expect(p).toContain('"totalSellValue": "$135,500"');
+    expect(p).toMatch(/never (multiply|recompute)/i);
+  });
+});
+
 describe("runInsiderAgent — Form 4 purchase parsing", () => {
   beforeEach(() => {
     searchRecentForm4.mockResolvedValue([FILING]);
