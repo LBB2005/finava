@@ -2,6 +2,7 @@ import { getCompanyNews } from "@/lib/finnhub";
 import type { Fact, TickerFacts } from "@/lib/facts/types";
 import { isValidTicker } from "@/lib/tickers";
 import type { PageContext } from "@/lib/pageContext";
+import type { FactsInput } from "@/lib/facts/promptBlock";
 
 /**
  * The fast lane's grounding data.
@@ -45,6 +46,8 @@ export interface QuickHeadline {
   source: string;
   /** YYYY-MM-DD. Undated headlines are dropped, not guessed at. */
   date: string;
+  /** The article, when the feed gave one. */
+  url?: string;
 }
 
 export type FactKey =
@@ -71,6 +74,8 @@ export interface QuickContext {
   fetchedAt: string;
   /** Sources that failed or missed the budget, named so the answer can say so. */
   dropped: string[];
+  /** The facts behind `facts`, for the citation block and number check (W4-1). */
+  factsInput?: FactsInput;
 }
 
 export interface QuickContextInput {
@@ -219,6 +224,7 @@ function readHeadlines(raw: unknown): QuickHeadline[] {
       headline: String(n.headline),
       source: typeof n.source === "string" && n.source ? n.source : UNAVAILABLE,
       date: isoDay(new Date((num(n.datetime) ?? 0) * 1000)),
+      ...(typeof n.url === "string" && /^https?:\/\//.test(n.url) ? { url: n.url } : {}),
     }));
 }
 
@@ -265,6 +271,7 @@ export async function getQuickContext(input: QuickContextInput): Promise<QuickCo
     ...base,
     facts: facts ? toQuickFacts(facts) : emptyFacts(),
     headlines: news ? readHeadlines(news) : [],
+    factsInput: { tickers: facts ? [facts] : [] },
   };
 }
 

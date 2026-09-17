@@ -61,6 +61,20 @@ describe("runAnalystAgent", () => {
     expect(p.prompt).not.toContain("web-sourced consensus");
   });
 
+  it("hands the model the upside and consensus score instead of a formula", async () => {
+    getRecommendationTrends.mockResolvedValue([{ strongBuy: 3, buy: 1, hold: 4, sell: 1, strongSell: 0 }]);
+    getPriceTarget.mockResolvedValue({ targetMean: 175, targetHigh: 200, targetLow: 150, numberOfAnalysts: 20 });
+    const { runAnalystAgent } = await import("./analyst-agent");
+    await runAnalystAgent({ tickers: ["AAPL"] });
+    const p = lastPrompt().prompt;
+    // (175 / 100 − 1) × 100, and (3×2 + 1 − 1) / 9 analysts.
+    expect(p).toContain('"upsidePct": 75');
+    expect(p).toContain('"consensusScore": 0.67');
+    expect(p).toContain('"totalAnalysts": 9');
+    expect(p).not.toMatch(/Formula:/);
+    expect(p).not.toMatch(/\(avg target − currentPrice\)/);
+  });
+
   it("still synthesizes when the Finnhub data sources throw", async () => {
     getRecommendationTrends.mockRejectedValue(new Error("rate limited"));
     getPriceTarget.mockRejectedValue(new Error("403"));

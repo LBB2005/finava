@@ -127,6 +127,19 @@ describe("runDiscoverySynthesis", () => {
     );
   });
 
+  it("never ranks stocks as the answer to an ETF request", async () => {
+    h.streamArgs.length = 0;
+    const { runDiscoverySynthesis } = await import("./discovery");
+    const events: AgentEvent[] = [];
+    await runDiscoverySynthesis({ ...req, query: "best ETF for $100 a month" } as never, (e) => events.push(e));
+    expect(h.streamArgs).toHaveLength(0);
+    expect(h.critique).not.toHaveBeenCalled();
+    const finals = events.filter((e) => e.type === "final_response") as { content: string }[];
+    expect(finals).toHaveLength(1);
+    expect(finals[0].content).toMatch(/Discover screens individual stocks/);
+    expect(finals[0].content).not.toContain("AAA");
+  });
+
   it("emits a fallback when the draft is empty", async () => {
     h.streamFinal.value = { content: [{ type: "text", text: "   " }], stop_reason: "end_turn" };
     const { runDiscoverySynthesis } = await import("./discovery");

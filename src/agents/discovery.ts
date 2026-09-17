@@ -11,6 +11,7 @@
 // skeptic→revision self-correction.
 
 import { anthropic, MODEL } from "@/lib/anthropic";
+import { fundDiscoverResponse, isFundQuestion } from "@/lib/capabilityCheck";
 import {
   agentDispatch,
   agentTimeoutMs,
@@ -223,6 +224,13 @@ function truncate(s: string, n: number): string {
 /** The single LLM synthesis pass — re-rank by query + evidence, then self-correct. */
 export async function runDiscoverySynthesis(req: SynthesizeRequest, emit: EventEmitter): Promise<void> {
   const { query, picks, evidence } = req;
+
+  // Last line of defence for W4-1: a fund request that reached a shortlist still
+  // never gets stocks ranked as its answer.
+  if (isFundQuestion(query)) {
+    emit({ type: "final_response", content: fundDiscoverResponse(), replace: true });
+    return;
+  }
 
   // Per-pick block: identity + factor score + its deep valuation evidence (if any).
   const valuation = evidence?.valuation ?? {};
