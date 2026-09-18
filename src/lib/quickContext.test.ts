@@ -92,6 +92,27 @@ describe("getQuickContext", () => {
     expect(qc.dropped).not.toContain("score");
   });
 
+  // Sep-17 panel: "couldn't get me past one ticker out of three" — the fast lane
+  // fetched facts for the first ticker only, so every other name was Unavailable.
+  it("fetches facts for every ticker named, not just the first", async () => {
+    deps.getTickerFacts.mockImplementation(async (t: string) => tickerFactsFixture(t));
+    const qc = await getQuickContext({ tickers: ["ABBV", "PFE", "MRK"] });
+    expect(qc.factsInput?.tickers?.map((t) => t.ticker)).toEqual(["ABBV", "PFE", "MRK"]);
+    expect(deps.getTickerFacts).toHaveBeenCalledTimes(3);
+    // The legacy single-ticker table still describes the first.
+    expect(qc.ticker).toBe("ABBV");
+  });
+
+  it("names a ticker whose facts didn't arrive, and keeps the others", async () => {
+    deps.getTickerFacts.mockImplementation(async (t: string) => {
+      if (t === "PFE") throw new Error("down");
+      return tickerFactsFixture(t);
+    });
+    const qc = await getQuickContext({ tickers: ["ABBV", "PFE"] });
+    expect(qc.factsInput?.tickers?.map((t) => t.ticker)).toEqual(["ABBV"]);
+    expect(qc.dropped).toContain("PFE market data");
+  });
+
   it("keeps the raw facts for the citation block, and each article's link", async () => {
     deps.getCompanyNews.mockResolvedValue([{ ...NEWS[0], url: "https://www.reuters.com/a" }, NEWS[1]]);
     const qc = await getQuickContext({ tickers: ["NVDA"] });

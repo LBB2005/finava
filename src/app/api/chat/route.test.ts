@@ -16,7 +16,16 @@ const deps = vi.hoisted(() => ({
   loadDnaSummary: vi.fn(),
   loadChatFacts: vi.fn(),
   getExperienceLevel: vi.fn(),
+  after: vi.fn(),
+  getTickerFacts: vi.fn(),
 }));
+
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  after: deps.after,
+}));
+
+vi.mock("@/lib/facts/ticker", () => ({ getTickerFacts: deps.getTickerFacts }));
 
 vi.mock("@/lib/facts/chatFacts", () => ({
   loadChatFacts: deps.loadChatFacts,
@@ -608,6 +617,50 @@ describe("POST /api/chat — answers cite facts", () => {
     await (await ask("which etf should a beginner look at with $100 a month?")).text();
     expect(systemPrompt()).toContain("Discover screens individual stocks");
     expect(systemPrompt()).toMatch(/never present individual stocks/);
+  });
+
+  // Sep-17 panel: "It typed 'Fetching now…' at me three times and then admitted
+  // in the same message it can't fetch."
+  it("never lets the answer promise to fetch or come back with more", async () => {
+    await (await ask("is AAPL a buy?")).text();
+    expect(systemPrompt()).toMatch(/cannot fetch/i);
+    expect(systemPrompt()).toMatch(/never write .*fetching/i);
+  });
+
+  // Sep-17 panel: "A disclaimer paragraph about licensed advisers before a single number appeared."
+  it("puts the not-advice note at the end, never ahead of the answer", async () => {
+    await (await ask("is AAPL a buy?")).text();
+    expect(systemPrompt()).toMatch(/not financial advice.{0,120}(last line|at the end)/i);
+    expect(systemPrompt()).toMatch(/never (open|start) with a disclaimer/i);
+  });
+
+  // Sep-17 panel: "The score itself didn't exist for any ticker I tried." The
+  // fast lane reads scores from cache only, so a stock nobody had opened was
+  // "Not scored yet" forever. Now the turn scores it after the answer is sent.
+  describe("a ticker nobody has scored yet", () => {
+    const unscored = () =>
+      tickerFactsFixture("AMD", { score: { value: null, source: "Finava Score v2 (15 factors)", asOf: "2026-09-15T20:00:00.000Z", note: "Not scored yet" } });
+
+    it("is scored after the answer is sent, so the next question has it", async () => {
+      deps.getQuickContext.mockResolvedValueOnce(quickContext({ ticker: "AMD", tickers: ["AMD"], factsInput: { tickers: [unscored()] } }));
+      deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("AMD"));
+      await (await ask("is AMD a buy?")).text();
+      expect(deps.after).toHaveBeenCalledTimes(1);
+      await deps.after.mock.calls[0][0]();
+      expect(deps.getTickerFacts).toHaveBeenCalledWith("AMD", expect.not.objectContaining({ cachedOnly: true }));
+    });
+
+    it("tells the reader the score is being computed rather than implying it doesn't exist", async () => {
+      deps.getQuickContext.mockResolvedValueOnce(quickContext({ ticker: "AMD", tickers: ["AMD"], factsInput: { tickers: [unscored()] } }));
+      await (await ask("is AMD a buy?")).text();
+      expect(systemPrompt()).toMatch(/Finava Score for AMD is being computed now/);
+    });
+
+    it("schedules nothing when every score is already cached", async () => {
+      withFacts();
+      await (await ask("is AAPL a buy?")).text();
+      expect(deps.after).not.toHaveBeenCalled();
+    });
   });
 
   it("writes for the reader's experience level", async () => {

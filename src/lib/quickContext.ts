@@ -253,17 +253,27 @@ export async function getQuickContext(input: QuickContextInput): Promise<QuickCo
   const now = new Date();
   const newsFrom = isoDay(new Date(now.getTime() - 14 * DAY_MS));
 
-  const [facts, news] = await Promise.all([
-    // cachedOnly: a fast answer never waits on a cold score assembly.
-    within("market data", deadline, async () => {
-      // Loaded lazily: the facts loader reaches firebase-admin, which validates
-      // service-account env at module load (same reason as turnData.ts).
-      const { getTickerFacts } = await import("@/lib/facts/ticker");
-      return getTickerFacts(ticker, { cachedOnly: true, deadlineMs: budgetMs });
-    }, dropped),
+  // Loaded lazily (and once): the facts loader reaches firebase-admin, which
+  // validates service-account env at module load (same reason as turnData.ts).
+  const factsModule = import("@/lib/facts/ticker");
+
+  // Every named ticker gets its facts, not just the first: a comparison of three
+  // names used to leave two of them Unavailable (Sep-17 panel). They share the
+  // one deadline, and a ticker that misses it is named, not guessed at.
+  const [loaded, news] = await Promise.all([
+    Promise.all(
+      tickers.map((t, i) =>
+        // cachedOnly: a fast answer never waits on a cold score assembly.
+        within(i === 0 ? "market data" : `${t} market data`, deadline, async () => {
+          const { getTickerFacts } = await factsModule;
+          return getTickerFacts(t, { cachedOnly: true, deadlineMs: budgetMs });
+        }, dropped)
+      )
+    ),
     within("news", deadline, () => getCompanyNews(ticker, newsFrom, isoDay(now)), dropped),
   ]);
 
+  const facts = loaded[0] ?? null;
   if (facts) {
     for (const name of facts.dropped) dropped.push(DROPPED_LABELS[name] ?? name);
   }
@@ -271,7 +281,7 @@ export async function getQuickContext(input: QuickContextInput): Promise<QuickCo
     ...base,
     facts: facts ? toQuickFacts(facts) : emptyFacts(),
     headlines: news ? readHeadlines(news) : [],
-    factsInput: { tickers: facts ? [facts] : [] },
+    factsInput: { tickers: loaded.filter((f): f is TickerFacts => f != null) },
   };
 }
 
