@@ -163,6 +163,10 @@ function collectTicker(c: Collector, t: TickerFacts) {
   n("revenueTTM", "revenue (TTM)", "usd", t.revenueTTM);
   n("netIncomeTTM", "net income (TTM)", "usd", t.netIncomeTTM);
   n("fcfTTM", "free cash flow (TTM)", "usd", t.fcfTTM);
+  const revenue = val(t.revenueTTM);
+  const share = (x: number | null) => (x != null && revenue != null && revenue > 0 ? (x / revenue) * 100 : null);
+  c.computed(`${T}.netMarginTTM`, `${T} net margin (TTM)`, "pct", share(val(t.netIncomeTTM)), "net income ÷ revenue (TTM)", [t.netIncomeTTM, t.revenueTTM], "Needs net income and revenue for the same four quarters");
+  c.computed(`${T}.fcfMarginTTM`, `${T} free-cash-flow margin (TTM)`, "pct", share(val(t.fcfTTM)), "free cash flow ÷ revenue (TTM)", [t.fcfTTM, t.revenueTTM], "Needs free cash flow and revenue for the same four quarters");
   n("cash", "cash & short-term investments", "usd", t.cashAndSTI);
   n("debt", "total debt", "usd", t.debt);
   n("beta", "beta", "number", t.beta);

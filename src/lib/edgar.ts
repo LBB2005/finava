@@ -19,25 +19,23 @@ let CIK_CACHE: Record<string, string> | null = null;
 
 async function getCikMap(): Promise<Record<string, string>> {
   if (CIK_CACHE) return CIK_CACHE;
-  try {
-    const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(10_000),
-      next: { revalidate: 86400 }, // refresh daily
-    });
-    if (!res.ok) throw new Error(`company_tickers.json ${res.status}`);
-    const data = await res.json();
-    // { "0": { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." }, ... }
-    const map: Record<string, string> = {};
-    for (const entry of Object.values(data) as Array<{ cik_str: number; ticker: string }>) {
-      map[entry.ticker.toUpperCase()] = String(entry.cik_str).padStart(10, "0");
-    }
-    CIK_CACHE = map;
-    return map;
-  } catch (err) {
-    console.error("[edgar] Failed to load company tickers:", err);
-    return {};
+  // Retried like every other SEC call: SEC throttles bursts. A load that still
+  // fails THROWS. Returning an empty map here made every lookup answer "no such
+  // company", which callers show as "no SEC filings" (the Sep-17 panel saw AT&T
+  // that way) and the facts layer caches for a day. Only a successful load is kept.
+  const res = await fetchWithRetry("https://www.sec.gov/files/company_tickers.json", {
+    headers: { "User-Agent": USER_AGENT },
+    next: { revalidate: 86400 }, // refresh daily
+  });
+  if (!res.ok) throw new Error(`SEC company tickers unavailable (${res.status})`);
+  const data = await res.json();
+  // { "0": { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." }, ... }
+  const map: Record<string, string> = {};
+  for (const entry of Object.values(data) as Array<{ cik_str: number; ticker: string }>) {
+    map[entry.ticker.toUpperCase()] = String(entry.cik_str).padStart(10, "0");
   }
+  CIK_CACHE = map;
+  return map;
 }
 
 // Resolve ticker → zero-padded 10-digit CIK string

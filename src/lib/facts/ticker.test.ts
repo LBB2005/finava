@@ -141,6 +141,20 @@ describe("getTickerFacts", () => {
     expect(f.dropped).toEqual(["target"]);
   });
 
+  // Sep-17 panel: an SEC outage was reported as "No SEC filings" (AT&T) and
+  // cached for a day. An outage must read as an outage and must not stick.
+  it("says SEC is unavailable, not that the company has no filings, and doesn't cache it", async () => {
+    deps.getCikByTicker.mockRejectedValueOnce(new Error("SEC company tickers unavailable (429)"));
+    const down = await getTickerFacts("T", { now, cachedOnly: true });
+    expect(down.dropped).toContain("edgar");
+    expect(down.revenueTTM.note).toBe("Source unavailable right now");
+    expect(down.revenueTTM.note).not.toMatch(/No SEC filings/);
+
+    const back = await getTickerFacts("T", { now, cachedOnly: true });
+    expect(back.dropped).not.toContain("edgar");
+    expect(back.revenueTTM.value).not.toBeNull();
+  });
+
   it("a symbol without SEC filings gets a noted DCF and still a score", async () => {
     deps.getCikByTicker.mockResolvedValue(null);
     const f = await getTickerFacts("SPY", { now });

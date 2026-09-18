@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { anthropic, HAIKU } from "@/lib/anthropic";
 import { ANSWER_HEADINGS } from "@/lib/answerFormat";
 import { answerFollowupPrompt, parseFollowups } from "@/lib/chat/answerFollowups";
@@ -109,7 +109,9 @@ Be terse. The whole answer is a screenful, not an essay — the reader wants the
 OVERRIDE: if the user asked for a particular brevity or format — "yes or no", "3 bullets", "simpler", "one line" — answer in the shape they asked for and ignore this contract entirely.`;
 
 /** How the answer must treat the fetched data block. */
-const GROUNDING_RULE = `Every number you state must come from the live data block above, and you must carry its source and as-of with it. If a number is not in that block, say "${UNAVAILABLE}" — do not recall it, estimate it, or infer it from a number that is there. If the block lists sources that were not retrieved in time, say so in ## Confidence & gaps.`;
+const GROUNDING_RULE = `Every number you state must come from the live data block above, and you must carry its source and as-of with it. If a number is not in that block, say "${UNAVAILABLE}" — do not recall it, estimate it, or infer it from a number that is there. If the block lists sources that were not retrieved in time, say so in ## Confidence & gaps.
+
+You cannot fetch anything: this answer is written from the block above and nothing else, and there is no later turn in which you go and get more. Never write "fetching", "let me pull that", "one moment", "I'll look that up" or anything that promises data you don't have. If the answer needs more than the block has, say what is Unavailable and that "Run full analysis" gathers more.`;
 
 /** The last user turn's plain text, for ticker extraction and follow-up detection. */
 function lastUserText(messages: MessageParam[]): string {
@@ -196,6 +198,31 @@ async function addRequestedFacts(userId: string, text: string, qc: QuickContext,
   }
 }
 
+/**
+ * Tickers this turn read without a cached Finava Score. The fast lane reads
+ * scores from cache only (it never waits on a cold assembly), so a stock nobody
+ * had opened stayed "Not scored yet" — the Sep-17 panel hit it on every ticker.
+ */
+function unscoredTickers(qc: QuickContext | null): string[] {
+  if (!qc) return [];
+  const scored = new Set((qc.factsInput?.tickers ?? []).filter((t) => hasValue(t.score)).map((t) => t.ticker));
+  // A ticker whose facts didn't arrive in time at all is the coldest case.
+  return qc.tickers.filter((t) => !scored.has(t));
+}
+
+/**
+ * Score them after the answer is sent: the full facts read computes and caches
+ * the score and DCF globally, so the next question (and the stock page) has
+ * them. Best-effort; runs within this route's maxDuration.
+ */
+function scoreAfterResponse(tickers: string[]) {
+  if (!tickers.length) return;
+  after(async () => {
+    const { getTickerFacts } = await import("@/lib/facts/ticker");
+    await Promise.allSettled(tickers.map((t) => getTickerFacts(t, { deadlineMs: 45_000 })));
+  });
+}
+
 /** Headlines with their article links, for the data block. */
 function renderHeadlines(qc: QuickContext): string {
   const lines = ["Recent headlines:"];
@@ -267,6 +294,12 @@ export async function POST(req: Request) {
   const capabilityBlock = capabilityPromptBlock(capabilities, subject);
   const fundRule = isFundQuestion(text, earlierUserTexts(messages as MessageParam[])) ? FUND_ANSWER_RULE : "";
 
+  const unscored = unscoredTickers(quickContext);
+  scoreAfterResponse(unscored);
+  const scoringNote = unscored.length
+    ? `The Finava Score for ${unscored.join(", ")} is being computed now. If the score matters to the answer, say it will be ready on the next question; don't describe it as missing or unavailable for good.`
+    : "";
+
   // Run the whole stream inside the usage context so every model call it makes
   // (this chat message + the follow-up generate()) is metered to this user.
   return runTraced(makeRunContext(userId, undefined, "fast"), () => {
@@ -284,7 +317,7 @@ ${EXTERNAL_DATA_RULE}
 ${dataBlock}
 
 ${GROUNDING_RULE}
-${factIndex.size ? `\n${FACT_CITATION_RULE}\n` : ""}${capabilityBlock ? `\n${capabilityBlock}\n` : ""}${fundRule ? `\n${fundRule}\n` : ""}
+${factIndex.size ? `\n${FACT_CITATION_RULE}\n` : ""}${scoringNote ? `\n${scoringNote}\n` : ""}${capabilityBlock ? `\n${capabilityBlock}\n` : ""}${fundRule ? `\n${fundRule}\n` : ""}
 ${readerBlock(experienceLevel)}
 
 Be concise and data-driven. Use markdown formatting for clarity (tables, bullet points, etc.).
@@ -295,7 +328,7 @@ ${ANSWER_CONTRACT}
 
 ${aboutFinavaBlock()}
 ${templateBlock ? `\n${templateBlock}\n` : ""}
-COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a registered investment adviser. Never give personalized investment advice — never tell the user what THEY should buy, sell, hold, or how to allocate THEIR portfolio, even when their holdings are shown above and even if they ask directly ("should I sell my AAPL?"). Instead, present the relevant impersonal analysis (fundamentals, valuation, risks, scenarios both ways) and remind them the decision is theirs to make with a licensed adviser. General, non-personalized analysis of any stock is fine, including scenario levels about the stock itself ("below $X the valuation case breaks") and the portfolio's measured weights and concentration as facts. Never give exit or sell-price levels for the user's positions, share counts to trade, rebalancing plans, or position-size rules of thumb applied to their holdings. Anything you know about the user's style is inferred: say "based on your holdings", never "your stated profile", and never label them with a risk tolerance. Note that content is not financial advice.`;
+COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a registered investment adviser. Never give personalized investment advice — never tell the user what THEY should buy, sell, hold, or how to allocate THEIR portfolio, even when their holdings are shown above and even if they ask directly ("should I sell my AAPL?"). Instead, present the relevant impersonal analysis (fundamentals, valuation, risks, scenarios both ways) and remind them the decision is theirs to make with a licensed adviser. General, non-personalized analysis of any stock is fine, including scenario levels about the stock itself ("below $X the valuation case breaks") and the portfolio's measured weights and concentration as facts. Never give exit or sell-price levels for the user's positions, share counts to trade, rebalancing plans, or position-size rules of thumb applied to their holdings. Anything you know about the user's style is inferred: say "based on your holdings", never "your stated profile", and never label them with a risk tolerance. Note that content is not financial advice in one short line as the last line of the answer. Never open with a disclaimer: the answer comes first.`;
 
     const stream = anthropic.messages.stream({
       model: FAST_MODEL,

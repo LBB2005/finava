@@ -263,13 +263,45 @@ describe("EDGAR failure modes", () => {
     await expect(searchRecentForm4("AAPL")).rejects.toThrow(/EDGAR FTS 429/);
   });
 
-  it("returns an empty map (not a throw) when the CIK ticker file is unreachable", async () => {
-    // Fresh module so CIK_CACHE starts null and the failing fetch is actually hit.
+  // The Sep-17 panel re-run: under load SEC throttled the ticker file, every
+  // lookup answered null, and every caller read null as "this company has no
+  // SEC filings" — AT&T was shown that way, and the facts layer cached it for a
+  // day. SEC being unreachable must be a failure, not an answer.
+  it("throws (never answers null) when the CIK ticker file is unreachable", async () => {
     vi.resetModules();
     vi.stubGlobal("fetch", vi.fn(async () => new Response("down", { status: 500 })));
     const fresh = await import("./edgar");
-    // Unknown ticker resolves to null rather than crashing the caller.
-    await expect(fresh.getCikByTicker("AAPL")).resolves.toBeNull();
+    await expect(fresh.getCikByTicker("T")).rejects.toThrow(/company tickers/i);
+  });
+
+  it("does not remember a failed load: the next lookup tries again", async () => {
+    vi.resetModules();
+    let up = false;
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      up ? Response.json({ "0": { cik_str: 732717, ticker: "T", title: "AT&T Inc." } }) : new Response("down", { status: 500 })
+    ));
+    const fresh = await import("./edgar");
+    await expect(fresh.getCikByTicker("T")).rejects.toThrow();
+    up = true;
+    await expect(fresh.getCikByTicker("T")).resolves.toBe("0000732717");
+  });
+
+  it("still answers null for a ticker SEC doesn't list (an ETF, a foreign issuer)", async () => {
+    vi.resetModules();
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ "0": { cik_str: 732717, ticker: "T", title: "AT&T Inc." } })));
+    const fresh = await import("./edgar");
+    await expect(fresh.getCikByTicker("VOO")).resolves.toBeNull();
+  });
+
+  it("retries a throttled ticker-file load before giving up", async () => {
+    vi.resetModules();
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      ++calls === 1 ? new Response("slow down", { status: 429 }) : Response.json({ "0": { cik_str: 732717, ticker: "T", title: "AT&T Inc." } })
+    ));
+    const fresh = await import("./edgar");
+    await expect(fresh.getCikByTicker("T")).resolves.toBe("0000732717");
+    expect(calls).toBe(2);
   });
 
   it("fetches submissions with a zero-padded CIK", async () => {
