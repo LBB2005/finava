@@ -128,6 +128,17 @@ describe("classifyScroll", () => {
     expect(s).toMatchObject({ yanks: 0, others: 0, pulledBack: false, maxAwayPx: 500 });
   });
 
+  it("measures how far the page left an idle reader behind the stream (follow lost)", () => {
+    const s = classifyScroll([
+      { ...f(0, 1_000, 1_000, "idle"), streaming: true },
+      { ...f(16, 1_000, 1_000, "idle", 1_060), streaming: true }, // grew 60 px, not followed yet
+      { ...f(33, 1_060, 1_060, "idle", 1_400), streaming: true }, // followed once, then a 340 px block landed
+      { ...f(50, 1_060, 1_060, "idle", 2_000), streaming: true }, // and it never followed again
+      { ...f(66, 1_060, 1_060, "idle", 5_000), streaming: false }, // after the stream: not counted
+    ]);
+    expect(s.leftBehindPx).toBe(940);
+  });
+
   it("any other move the reader didn't make (anchoring, clamping) is counted with its size", () => {
     const s = classifyScroll([f(0, 700, 700, "hold"), f(16, 520, 520, "hold", 900)]);
     expect(s.others).toBe(1);

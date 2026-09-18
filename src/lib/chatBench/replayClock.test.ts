@@ -92,10 +92,17 @@ describe("ReplayClock", () => {
     await expect(p).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("sleepUntil resolves at once for a time already passed", async () => {
+  it("sleepUntil for a time already passed still wakes in a new task, like a network chunk", async () => {
+    // Overdue chunks resolved in one microtask chain would never let the page
+    // render between them: one giant long task that a real network never makes.
     const c = clock();
     c.play();
     vi.advanceTimersByTime(100);
-    await expect(c.sleepUntil(50)).resolves.toBeUndefined();
+    let woke = false;
+    void c.sleepUntil(50).then(() => (woke = true));
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(woke).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(woke).toBe(true);
   });
 });

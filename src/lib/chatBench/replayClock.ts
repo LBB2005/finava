@@ -55,27 +55,35 @@ export class ReplayClock {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const done = () => {
         clearTimeout(timer);
-        this.listeners.delete(check);
-        signal?.removeEventListener("abort", check);
+        this.listeners.delete(onChange);
+        signal?.removeEventListener("abort", onChange);
       };
-      const check = () => {
+      const wake = () => {
+        done();
+        resolve();
+      };
+      const check = (calledNow = false) => {
         if (signal?.aborted) {
           done();
           reject(new DOMException("The operation was aborted.", "AbortError"));
           return;
         }
         const remaining = target - this.elapsed();
+        clearTimeout(timer);
         if (remaining <= 0) {
-          done();
-          resolve();
+          // Already due when asked: still wake in a new task, so the page gets to
+          // render between chunks as it does between network reads. (A chain of
+          // overdue chunks resolved as microtasks is one long task no network makes.)
+          if (calledNow) timer = setTimeout(wake, 0);
+          else wake();
           return;
         }
-        clearTimeout(timer);
         if (!this.paused) timer = setTimeout(check, remaining / this._speed);
       };
-      this.listeners.add(check);
-      signal?.addEventListener("abort", check);
-      check();
+      const onChange = () => check();
+      this.listeners.add(onChange);
+      signal?.addEventListener("abort", onChange);
+      check(true);
     });
   }
 
