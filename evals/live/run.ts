@@ -9,7 +9,8 @@
  *   --only <id,id>     run only these scenario ids (a small dry run)
  *   --out <dir>        where results go (default evals/results/live-<timestamp>)
  *   --no-persist       skip the save → reload check through /api/conversations
- *   --record           also save every lane stream as a smoke fixture
+ *   --record           also save every lane stream as a smoke fixture (+ a .timing.json
+ *                      sidecar so /dev/chat-replay can replay it at the recorded pace)
  *   --token <t>        bearer token (default dev-bypass; a preview deploy needs a real one)
  *
  * Output: results.json (every turn) and summary.md.
@@ -86,7 +87,15 @@ async function main() {
       results.push(m);
       if (flag("record")) {
         const req = laneRequest(requests);
-        if (req?.bytes.length) console.log(`  recorded ${recordFixture(`${sc.id}-${i + 1}`, req)}`);
+        if (req?.bytes.length) {
+          const turnInfo = {
+            router: requests.find((r) => r.url === "/api/classify"),
+            mode: t.mode,
+            prompt: t.text,
+            prior: conv.messages.slice(0, msgsBefore),
+          };
+          console.log(`  recorded ${recordFixture(`${sc.id}-${i + 1}`, req, turnInfo)}`);
+        }
       }
       console.log(
         `  ${sc.id} #${i + 1} ${m.lane ?? "—"}${m.lane !== t.expect ? ` (expected ${t.expect})` : ""} · ttft ${m.ttftMs ?? "—"} ms · total ${m.totalMs} ms` +

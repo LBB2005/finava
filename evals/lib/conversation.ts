@@ -66,6 +66,18 @@ let seq = 0;
 const nextId = () => `eval-${Date.now().toString(36)}-${(seq++).toString(36)}`;
 const store = () => useChatStore.getState();
 
+/** A message as the conversations API stores it: the POST body, with agentTrace stringified by the route. */
+export function storedForm(m: ChatMessage): StoredMessage {
+  const body = toStoredMessage(m);
+  return {
+    ...body,
+    id: m.id,
+    createdAt: m.createdAt,
+    agentTrace: body.agentTrace ? JSON.stringify(body.agentTrace) : null,
+    context: body.context ?? null,
+  };
+}
+
 export class Conversation {
   readonly id: string;
   private runs = new RunRegistry();
@@ -81,18 +93,7 @@ export class Conversation {
 
   /** Simulate a reload: every message goes through the stored form and back. */
   reload(): void {
-    const reloaded = this.messages.map((m) => {
-      const body = toStoredMessage(m);
-      // The messages route stringifies agentTrace; the rest is stored as sent.
-      const stored: StoredMessage = {
-        ...body,
-        id: m.id,
-        createdAt: m.createdAt,
-        agentTrace: body.agentTrace ? JSON.stringify(body.agentTrace) : null,
-        context: body.context ?? null,
-      };
-      return fromStoredMessage(JSON.parse(JSON.stringify(stored)) as StoredMessage);
-    });
+    const reloaded = this.messages.map((m) => fromStoredMessage(JSON.parse(JSON.stringify(storedForm(m))) as StoredMessage));
     useChatStore.setState((s) => ({ messagesByConv: { ...s.messagesByConv, [this.id]: reloaded } }));
     this.pendingClarify = null; // module state in ChatEngine; a reload loses it too
   }

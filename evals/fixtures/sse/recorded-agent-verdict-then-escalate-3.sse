@@ -1,0 +1,1768 @@
+data: {"type":"crew_plan","agents":["run_earnings_agent","run_analyst_agent","run_news_agent","run_technical_agent"],"etaSeconds":210,"deep":false}
+
+data: {"type":"crew_planned","agents":["run_earnings_agent","run_analyst_agent","run_news_agent","run_technical_agent"]}
+
+data: {"type":"ceo_thinking","content":"On it! Running the full crew on NVIDIA right now — let me pull everything simultaneously."}
+
+data: {"type":"agent_start","agent":"run_news_agent","models":["perplexity","gemini"]}
+
+data: {"type":"agent_progress","agent":"run_news_agent","status":"running"}
+
+data: {"type":"agent_start","agent":"run_technical_agent","models":["gemini"]}
+
+data: {"type":"agent_progress","agent":"run_technical_agent","status":"running"}
+
+data: {"type":"agent_start","agent":"run_earnings_agent","models":["gemini"]}
+
+data: {"type":"agent_progress","agent":"run_earnings_agent","status":"running"}
+
+data: {"type":"agent_start","agent":"run_analyst_agent","models":["openai"]}
+
+data: {"type":"agent_progress","agent":"run_analyst_agent","status":"running"}
+
+data: {"type":"agent_complete","agent":"run_earnings_agent","result":"## NVDA Earnings Analysis\n\nHere's an analysis of NVDA's earnings history, upcoming catalysts, and analyst sentiment:\n\n**EPS Trends and Beat/Miss History:**\n\n*   **2026-09-30:** Consensus EPS estimate was $2.1384, actual reported EPS was $2.22, a surprise of 3.8%.\n*   **2026-06-30:** Consensus EPS estimate was $1.7922, actual reported EPS was $1.87, a surprise of 4.3%.\n*   **2026-03-31:** Consensus EPS estimate was $1.5634, actual reported EPS was $1.62, a surprise of 3.6%.\n*   **2025-12-31:** Consensus EPS estimate was $1.2746, actual reported EPS was $1.30, a surprise of 2.0%.\n\nNVDA has demonstrated a consistent pattern of beating EPS estimates over the past four reported quarters. The surprise percentages have ranged from a low of 2.0% to a high of 4.3%, indicating a steady ability to outperform expectations.\n\n**Upcoming Earnings Dates:**\n\nNVDA is expected to report its next earnings on **expected 2026-11-17** for fiscal quarter Q3 2027.\n\n**Analyst Consensus:**\n\nThe current analyst sentiment is heavily skewed towards positive:\n*   Strong Buy: 24\n*   Buy: 41\n*   Hold: 3\n*   Sell: 1\n*   Strong Sell: 0\n\nThis indicates a strong consensus among analysts for NVDA.\n\n**Earnings-Based Investment Thesis:**\n\nNVDA exhibits a strong earnings profile characterized by consistent EPS beats, although the magnitude of these beats has been moderate. The stock's reaction to these beats is not provided in the data, but the consistent outperformance suggests positive underlying operational strength. The upcoming earnings report in November presents a near-term catalyst. Given the overwhelmingly positive analyst consensus, the market appears to be pricing in continued strong performance.\n\n**Earnings Quality Rating:** High (organic, recurring beat)","models":["gemini"]}
+
+data: {"type":"agent_progress","agent":"run_earnings_agent","status":"done","ms":0}
+
+data: {"type":"agent_complete","agent":"run_analyst_agent","result":"| Ticker | Rating | Analysts | Avg Target | Range | Upside % |\n|---|---:|---:|---:|---:|---:|\n| NVDA | Buy — consensusScore 1.28 (structured feed) | 69 (structured feed) | N/A | N/A | N/A |\n\n**NVDA analyst summary:** Wall Street is broadly positive on NVDA: the rating distribution is **24 Strong Buy / 41 Buy / 3 Hold / 1 Sell / 0 Strong Sell** (structured feed), which maps to a **Buy** consensus despite being very close to a crowded-bullish setup. The **consensus price target is N/A** and **precomputed upside is N/A** because the price-target feed is unavailable, so the bullishness here is based on ratings breadth rather than target-implied return. Three-month price-target trend, recent upgrades/downgrades, and EPS estimate revision trend are **Unavailable**, so **Wall Street Sentiment: Bullish — but trust it only cautiously** given the very heavy Buy skew and missing target/revision context.","models":["openai"]}
+
+data: {"type":"agent_progress","agent":"run_analyst_agent","status":"done","ms":0}
+
+data: {"type":"agent_complete","agent":"run_technical_agent","result":"NVDA is currently trading above its 50-day and 200-day Simple Moving Averages (SMAs), indicating a **Bullish** market structure.\n\nThe Relative Strength Index (RSI) is at 42.4, which is neither overbought nor oversold, suggesting room for potential price movement in either direction without immediate mean reversion pressure.\n\nThe MACD line (0.494) is below the signal line (1.703), and the histogram is negative (-1.209), indicating recent bearish momentum. However, this occurs within a larger bullish trend structure, suggesting a potential consolidation or pullback within the uptrend rather than a trend reversal.\n\nKey Technical Levels:\n*   **Support:** The 50 SMA at 213.90 and the 200 SMA at 198.16 are key support levels. The 20 SMA at 218.63 is also a near-term level to watch.\n*   **Resistance:** Previous highs or psychological levels would be the primary resistance.\n\n**Technical Bias: Neutral**\n\n**Key Level to Watch:** 213.90 (50 SMA)","models":["gemini"]}
+
+data: {"type":"agent_progress","agent":"run_technical_agent","status":"done","ms":2034}
+
+data: {"type":"agent_complete","agent":"run_news_agent","result":"Here's an analysis of the recent news headlines for NVDA:\n\n**Key Themes:**\n\nThe provided headlines for NVDA are almost exclusively irrelevant to the company itself. The vast majority of articles are about other companies, investment strategies (dividend kings, ETFs, general market advice), or broader market trends. The tag \"[NVDA]\" appears to be used as a general marker for \"stocks\" or \"market\" rather than indicating specific news about NVIDIA.\n\nThere is one headline that is directly relevant to NVDA, though it's generic:\n\n*   **AI Sector Sentiment:** The headline \"INTC, AMD, MU, NVDA: Chip Stocks Rally As Investors Look Past AI Concerns\" suggests a positive market sentiment for chip stocks, including NVDA, with investors seemingly shrugging off prior AI-related worries.\n\n**Overall Sentiment (per ticker):**\n\n*   **NVDA:**\n    *   **Direct News:** Bullish (based on the general \"Chip Stocks Rally\" headline).\n    *   **Implied from Irrelevant Headlines:** Neutral (the sheer volume of unrelated headlines suggests no significant, specific news about NVDA is breaking today, despite the positive sector sentiment).\n\n**Material Events:**\n\n*   **Chip Stocks Rally:** This is the most material event mentioned that directly affects NVDA, indicating a positive day for the sector. However, no specific reason for the rally or details about NVDA's performance are provided (Finnhub, 2026-09-18).\n*   **Absence of Specific NVDA News:** The most notable observation is the lack of specific news regarding NVIDIA's products, financials, partnerships, or competitive landscape.\n\n**Net News Sentiment:**\n\n**Neutral.**\n\nWhile there's a broad bullish sentiment for chip stocks mentioned, the overwhelming majority of the headlines tagged with NVDA are not about NVIDIA itself. This indicates a lack of specific, material news for the company within this dataset. The \"rally\" is a general sector movement rather than a company-specific catalyst detailed in these headlines.","models":["perplexity","gemini"]}
+
+data: {"type":"agent_progress","agent":"run_news_agent","status":"done","ms":3924}
+
+data: {"type":"ceo_compiling"}
+
+data: {"type":"ceo_thinking","content":"## Answer\nNVIDIA is **not \"too late\"** in a binary sense — the stock is in a confirmed long-term uptrend, analysts are overwhelmingly bullish (65 out of 69 rate it Buy or Strong Buy), and it has beaten earnings estimates 4 quarters in a row. However, near-term technicals show a short-term pullback in progress, so the next few weeks could offer a slightly better entry than today. The bull case is intact; the main risk is that a lot of good news is already priced in.\n\n---\n\n## Key numbers\n\n| Metric | Value | Source | As of |\n|---|---|---|---|\n| Price vs 50-day SMA | Above ($213.90 SMA) | Technical Agent | Sep 18, 2026 |\n| Price vs 200-day SMA | Above ($198.16 SMA) | Technical Agent | Sep 18, 2026 |\n| 20-day SMA | $218.63 | Technical Agent | Sep 18, 2026 |\n| RSI | 42.4 (neutral) | Technical Agent | Sep 18, 2026 |\n| MACD | Bearish short-term (−1.209 histogram) | Technical Agent | Sep 18, 2026 |\n| Latest EPS beat | +3.8% above estimate ($2.22 actual vs $2.14 est) | Earnings Agent | Q ended Sep 30, 2026 |\n| Consecutive EPS beats | 4 quarters in a row | Earnings Agent | FY2026–FY2027 |\n| Analyst consensus | **Buy** (24 Strong Buy / 41 Buy / 3 Hold / 1 Sell) | Analyst Agent | Sep 18, 2026 |\n| Total analysts covering | 69 | Analyst Agent | Sep 18, 2026 |\n| Next earnings (estimated) | Nov 17, 2026 | Earnings Agent | Estimated |\n| Analyst price target | Unavailable | Analyst Agent | — |\n| Sector news sentiment | Neutral (chip stocks rallying broadly) | News Agent | Sep 18, 2026 |\n\n---\n\n## Bull case\n- 🟢 **Unbroken long-term uptrend** — NVDA trades above both its 50-day ($213.90) and 200-day ($198.16) moving averages, the classic sign of a healthy trend\n- 🟢 **Earnings machine** — 4 straight quarters of beating estimates, with EPS growing from $1.30 → $1.62 → $1.87 → $2.22, a clear acceleration\n- 🟢 **Wall Street loves it** — 95% of 69 analysts rate it Buy or Strong Buy; the AI infrastructure buildout thesis remains the dominant narrative on the Street\n\n## Bear case\n- 🔴 **Short-term momentum fading** — MACD histogram is negative (−1.209), meaning near-term selling pressure is outpacing buying; a deeper pullback toward the 50-day SMA (~$213) is possible\n- 🔴 **Crowded trade risk** — With 65/69 analysts already bullish, there are very few people left to upgrade the stock; any disappointment could trigger a sharp re-rating\n- 🔴 **No price target data** — The analyst target feed was unavailable, so we can't confirm whether current prices already reflect full upside — a meaningful gap in the valuation picture\n\n## What would change the view\n- 📈 **Bullish flip**: Q3 earnings (est. Nov 17) beat estimates again AND guidance raises — would confirm the trend and likely bring new buyers in\n- 📉 **Bearish flip**: Price breaks below the 50-day SMA ($213.90) and fails to recover — that would signal the uptrend is breaking down, changing the technical picture materially\n- ⚠️ **Wildcard**: Any major shift in AI capex spending by cloud hyperscalers (Microsoft, Google, Amazon) is the single biggest fundamental risk to NVDA's revenue story\n\n## Confidence & gaps\n**Medium** — Technicals and earnings data are solid; gaps include analyst price targets (unavailable), DCF/valuation multiples (not pulled), and insider/institutional flow (not pulled). A complete picture would require a deeper valuation run.\n\n---\n\n## Details\n\n### 📈 Technical Picture\nNVDA's structure is bullish at the macro level — sitting above both the 50-day SMA ($213.90) and 200-day SMA ($198.16). But short-term, the MACD is flashing caution: the signal line (1.703) is above the MACD line (0.494), and the histogram is negative at −1.209. This is a classic \"pullback within an uptrend\" setup. RSI at 42.4 is neutral — not oversold enough to be a screaming buy signal, not overbought enough to be a warning.\n\n```chart\n{\n  \"type\": \"bar\",\n  \"title\": \"NVDA vs Key Moving Averages\",\n  \"description\": \"20-day, 50-day, and 200-day SMAs vs current price zone\",\n  \"unit\": \"$\",\n  \"data\": [\n    { \"name\": \"SMA 200\", \"value\": 198.16 },\n    { \"name\": \"SMA 50\", \"value\": 213.90 },\n    { \"name\": \"SMA 20\", \"value\": 218.63 }\n  ]\n}\n```\n\n### 💰 Earnings Quality\nNVDA's EPS trend is genuinely impressive — not just beating estimates, but *growing fast*:\n\n```chart\n{\n  \"type\": \"line\",\n  \"title\": \"NVDA EPS — Last 4 Quarters\",\n  \"description\": \"Actual EPS reported each quarter\",\n  \"unit\": \"$\",\n  \"data\": [\n    { \"name\": \"Q4 FY26 (Dec '25)\", \"value\": 1.30 },\n    { \"name\": \"Q1 FY27 (Mar '26)\", \"value\": 1.62 },\n    { \"name\": \"Q2 FY27 (Jun '26)\", \"value\": 1.87 },\n    { \"name\": \"Q3 FY27 (Sep '26)\", \"value\": 2.22 }\n  ]\n}\n```\n\nEvery single quarter beat the consensus estimate. The beats are modest in percentage terms (2–4%) but consistent — a sign of a management team that guides conservatively and delivers. Next report is estimated Nov 17, 2026.\n\n### 🧑‍💼 Analyst Consensus\n69 analysts cover the stock. The breakdown:\n\n```chart\n{\n  \"type\": \"donut\",\n  \"title\": \"NVDA Wall Street Ratings (69 Analysts)\",\n  \"unit\": \"\",\n  \"data\": [\n    { \"name\": \"Strong Buy\", \"value\": 24 },\n    { \"name\": \"Buy\", \"value\": 41 },\n    { \"name\": \"Hold\", \"value\": 3 },\n    { \"name\": \"Sell\", \"value\": 1 },\n    { \"name\": \"Strong Sell\", \"value\": 0 }\n  ]\n}\n```\n\nThis is about as bullish as Wall Street gets. The flip side: **crowded consensus = limited upside from upgrades**, and a single miss could spark a wave of downgrades.\n\n### 📰 News & Sentiment\nNo major NVDA-specific headlines this week. The broader chip sector (NVDA, AMD, MU, INTC) is rallying as investors look past AI concerns — a mildly positive backdrop. The absence of negative news is itself a neutral-to-positive signal.\n\n### ⚖️ Conflicting Signals\n| Signal | Direction | Weight |\n|---|---|---|\n| Long-term trend (above 50 & 200 SMA) | 🟢 Bullish | High |\n| MACD short-term momentum | 🔴 Bearish | Medium |\n| RSI at 42.4 | 🟡 Neutral | Medium |\n| Analyst consensus (95% Buy) | 🟢 Bullish | Medium |\n| EPS trajectory | 🟢 Bullish | High |\n| No price target data | ⚠️ Gap | — |\n\n**Net stance**: The long-term picture is constructive. The short-term setup suggests patience — waiting for the MACD to turn positive or a dip toward the 50-day SMA ($213.90) could improve the entry.\n\n### 💵 Your $3,000\nWhether $3,000 is the right amount to deploy, and whether NVDA fits your overall financial picture, is a decision for you — ideally alongside a licensed financial adviser. What the data *does* say: NVDA is not a broken stock. It's in an uptrend, growing earnings, and widely respected on Wall Street. The question isn't really *\"is it too late\"* — it's *\"what price makes sense given the risks.\"* That requires the valuation data (DCF, P/E vs peers) we didn't pull this run. Want me to go deeper on that?\n\n---\n*This is impersonal research from Finava, not financial advice. All decisions are yours to make, ideally with a licensed adviser.*"}
+
+data: {"type":"skeptic_start"}
+
+data: {"type":"ceo_compiling"}
+
+data: {"type":"final_response","content":"##"}
+
+data: {"type":"final_response","content":" Answer"}
+
+data: {"type":"final_response","content":"\nNVIDIA"}
+
+data: {"type":"final_response","content":" is"}
+
+data: {"type":"final_response","content":" **"}
+
+data: {"type":"final_response","content":"not \""}
+
+data: {"type":"final_response","content":"too"}
+
+data: {"type":"final_response","content":" late\"** in"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" binary"}
+
+data: {"type":"final_response","content":" sense —"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" stock"}
+
+data: {"type":"final_response","content":" is in a"}
+
+data: {"type":"final_response","content":" confirmed"}
+
+data: {"type":"final_response","content":" long"}
+
+data: {"type":"final_response","content":"-term uptrend, analysts"}
+
+data: {"type":"final_response","content":" are overwhel"}
+
+data: {"type":"final_response","content":"mingly bullish ("}
+
+data: {"type":"final_response","content":"65"}
+
+data: {"type":"final_response","content":" "}
+
+data: {"type":"final_response","content":"out of 69"}
+
+data: {"type":"final_response","content":" rate"}
+
+data: {"type":"final_response","content":" it"}
+
+data: {"type":"final_response","content":" Buy or"}
+
+data: {"type":"final_response","content":" Strong"}
+
+data: {"type":"final_response","content":" Buy), and it"}
+
+data: {"type":"final_response","content":" has"}
+
+data: {"type":"final_response","content":" beaten"}
+
+data: {"type":"final_response","content":" earnings"}
+
+data: {"type":"final_response","content":" estimates"}
+
+data: {"type":"final_response","content":" "}
+
+data: {"type":"final_response","content":"4"}
+
+data: {"type":"final_response","content":" quarters"}
+
+data: {"type":"final_response","content":" in a row. However"}
+
+data: {"type":"final_response","content":", near"}
+
+data: {"type":"final_response","content":"-term techn"}
+
+data: {"type":"final_response","content":"icals show"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" short"}
+
+data: {"type":"final_response","content":"-term pull"}
+
+data: {"type":"final_response","content":"back in"}
+
+data: {"type":"final_response","content":" progress"}
+
+data: {"type":"final_response","content":", so"}
+
+data: {"type":"final_response","content":" the next"}
+
+data: {"type":"final_response","content":" few"}
+
+data: {"type":"final_response","content":" weeks could offer"}
+
+data: {"type":"final_response","content":" a slightly"}
+
+data: {"type":"final_response","content":" better"}
+
+data: {"type":"final_response","content":" entry than"}
+
+data: {"type":"final_response","content":" today"}
+
+data: {"type":"final_response","content":"."}
+
+data: {"type":"final_response","content":" The bull"}
+
+data: {"type":"final_response","content":" case is intact"}
+
+data: {"type":"final_response","content":";"}
+
+data: {"type":"final_response","content":" the main"}
+
+data: {"type":"final_response","content":" risk is that a"}
+
+data: {"type":"final_response","content":" lot"}
+
+data: {"type":"final_response","content":" of good"}
+
+data: {"type":"final_response","content":" news is"}
+
+data: {"type":"final_response","content":" already"}
+
+data: {"type":"final_response","content":" pr"}
+
+data: {"type":"final_response","content":"iced in.\n\n---"}
+
+data: {"type":"final_response","content":"\n\n## Key"}
+
+data: {"type":"final_response","content":" numbers"}
+
+data: {"type":"final_response","content":"\n\n| Metric | Value |"}
+
+data: {"type":"final_response","content":" Source |"}
+
+data: {"type":"final_response","content":" As"}
+
+data: {"type":"final_response","content":" of |\n|---|"}
+
+data: {"type":"final_response","content":"---|---|---|\n| Price"}
+
+data: {"type":"final_response","content":" vs"}
+
+data: {"type":"final_response","content":" "}
+
+data: {"type":"final_response","content":"50-day SMA | Above"}
+
+data: {"type":"final_response","content":" ($"}
+
+data: {"type":"final_response","content":"213.90 "}
+
+data: {"type":"final_response","content":"S"}
+
+data: {"type":"final_response","content":"MA) | Technical"}
+
+data: {"type":"final_response","content":" Agent"}
+
+data: {"type":"final_response","content":" | Sep"}
+
+data: {"type":"final_response","content":" 18"}
+
+data: {"type":"final_response","content":", 2026"}
+
+data: {"type":"final_response","content":" |\n| Price vs "}
+
+data: {"type":"final_response","content":"200-day SMA | Above"}
+
+data: {"type":"final_response","content":" ($198"}
+
+data: {"type":"final_response","content":".16"}
+
+data: {"type":"final_response","content":" SMA) | Technical Agent"}
+
+data: {"type":"final_response","content":" | Sep 18, 2"}
+
+data: {"type":"final_response","content":"026 |\n| "}
+
+data: {"type":"final_response","content":"20"}
+
+data: {"type":"final_response","content":"-day S"}
+
+data: {"type":"final_response","content":"MA | $218"}
+
+data: {"type":"final_response","content":".63"}
+
+data: {"type":"final_response","content":" | Technical Agent | Sep "}
+
+data: {"type":"final_response","content":"18, 2026 |"}
+
+data: {"type":"final_response","content":"\n| RS"}
+
+data: {"type":"final_response","content":"I | 42.4 "}
+
+data: {"type":"final_response","content":"("}
+
+data: {"type":"final_response","content":"neutral"}
+
+data: {"type":"final_response","content":") | Technical Agent | Sep "}
+
+data: {"type":"final_response","content":"18, 2026 |"}
+
+data: {"type":"final_response","content":"\n| MACD |"}
+
+data: {"type":"final_response","content":" Bear"}
+
+data: {"type":"final_response","content":"ish short"}
+
+data: {"type":"final_response","content":"-term ("}
+
+data: {"type":"final_response","content":"−"}
+
+data: {"type":"final_response","content":"1.209 "}
+
+data: {"type":"final_response","content":"histogram"}
+
+data: {"type":"final_response","content":") | Technical Agent | Sep "}
+
+data: {"type":"final_response","content":"18, 2026 |"}
+
+data: {"type":"final_response","content":"\n| Latest"}
+
+data: {"type":"final_response","content":" E"}
+
+data: {"type":"final_response","content":"PS beat"}
+
+data: {"type":"final_response","content":" | +"}
+
+data: {"type":"final_response","content":"3"}
+
+data: {"type":"final_response","content":".8"}
+
+data: {"type":"final_response","content":"% above"}
+
+data: {"type":"final_response","content":" estimate"}
+
+data: {"type":"final_response","content":" ($"}
+
+data: {"type":"final_response","content":"2"}
+
+data: {"type":"final_response","content":".22"}
+
+data: {"type":"final_response","content":" "}
+
+data: {"type":"final_response","content":"actual"}
+
+data: {"type":"final_response","content":" vs"}
+
+data: {"type":"final_response","content":" $2.14"}
+
+data: {"type":"final_response","content":" est"}
+
+data: {"type":"final_response","content":") |"}
+
+data: {"type":"final_response","content":" Earnings"}
+
+data: {"type":"final_response","content":" Agent | Q"}
+
+data: {"type":"final_response","content":" ended"}
+
+data: {"type":"final_response","content":" Sep"}
+
+data: {"type":"final_response","content":" 30"}
+
+data: {"type":"final_response","content":", 2026"}
+
+data: {"type":"final_response","content":" |\n| Consecutive"}
+
+data: {"type":"final_response","content":" EPS beats | 4 "}
+
+data: {"type":"final_response","content":"quarters"}
+
+data: {"type":"final_response","content":" in"}
+
+data: {"type":"final_response","content":" a row | Earnings Agent |"}
+
+data: {"type":"final_response","content":" F"}
+
+data: {"type":"final_response","content":"Y2026–"}
+
+data: {"type":"final_response","content":"F"}
+
+data: {"type":"final_response","content":"Y2027"}
+
+data: {"type":"final_response","content":" |"}
+
+data: {"type":"final_response","content":"\n| Analyst consensus | **"}
+
+data: {"type":"final_response","content":"Buy"}
+
+data: {"type":"final_response","content":"** (24"}
+
+data: {"type":"final_response","content":" Strong"}
+
+data: {"type":"final_response","content":" Buy /"}
+
+data: {"type":"final_response","content":" 41"}
+
+data: {"type":"final_response","content":" Buy / 3"}
+
+data: {"type":"final_response","content":" Hold / 1 "}
+
+data: {"type":"final_response","content":"Sell) | Analyst Agent |"}
+
+data: {"type":"final_response","content":" Sep 18, 2026"}
+
+data: {"type":"final_response","content":" |\n| Total"}
+
+data: {"type":"final_response","content":" analysts"}
+
+data: {"type":"final_response","content":" covering"}
+
+data: {"type":"final_response","content":" | 69 | Analyst"}
+
+data: {"type":"final_response","content":" Agent | Sep 18, "}
+
+data: {"type":"final_response","content":"2026 |"}
+
+data: {"type":"final_response","content":"\n| Next"}
+
+data: {"type":"final_response","content":" earnings"}
+
+data: {"type":"final_response","content":" ("}
+
+data: {"type":"final_response","content":"estimated"}
+
+data: {"type":"final_response","content":") | Nov"}
+
+data: {"type":"final_response","content":" 17"}
+
+data: {"type":"final_response","content":", 2026 |"}
+
+data: {"type":"final_response","content":" Earnings Agent |"}
+
+data: {"type":"final_response","content":" Estimated |"}
+
+data: {"type":"final_response","content":"\n| Analyst price target"}
+
+data: {"type":"final_response","content":" | N/A (structured feed"}
+
+data: {"type":"final_response","content":") | Analyst Agent | Sep"}
+
+data: {"type":"final_response","content":" 18, 2026 "}
+
+data: {"type":"final_response","content":"|"}
+
+data: {"type":"final_response","content":"\n| Sector"}
+
+data: {"type":"final_response","content":" news"}
+
+data: {"type":"final_response","content":" sentiment"}
+
+data: {"type":"final_response","content":" | Neutral"}
+
+data: {"type":"final_response","content":" ("}
+
+data: {"type":"final_response","content":"chip"}
+
+data: {"type":"final_response","content":" stocks"}
+
+data: {"type":"final_response","content":" rall"}
+
+data: {"type":"final_response","content":"ying broadly"}
+
+data: {"type":"final_response","content":") | News Agent | Sep "}
+
+data: {"type":"final_response","content":"18, 2026 |"}
+
+data: {"type":"final_response","content":"\n\n---\n\n## Bull"}
+
+data: {"type":"final_response","content":" case"}
+
+data: {"type":"final_response","content":"\n- "}
+
+data: {"type":"final_response","content":"🟢 **Un"}
+
+data: {"type":"final_response","content":"br"}
+
+data: {"type":"final_response","content":"oken long"}
+
+data: {"type":"final_response","content":"-term uptrend** —"}
+
+data: {"type":"final_response","content":" NVDA trades"}
+
+data: {"type":"final_response","content":" above"}
+
+data: {"type":"final_response","content":" both"}
+
+data: {"type":"final_response","content":" its"}
+
+data: {"type":"final_response","content":" 50-day ($"}
+
+data: {"type":"final_response","content":"213.90) and 200"}
+
+data: {"type":"final_response","content":"-day ($198.16)"}
+
+data: {"type":"final_response","content":" moving"}
+
+data: {"type":"final_response","content":" averages,"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" classic"}
+
+data: {"type":"final_response","content":" sign"}
+
+data: {"type":"final_response","content":" of a healthy"}
+
+data: {"type":"final_response","content":" trend"}
+
+data: {"type":"final_response","content":"\n- 🟢 "}
+
+data: {"type":"final_response","content":"**Earnings"}
+
+data: {"type":"final_response","content":" machine"}
+
+data: {"type":"final_response","content":"** — "}
+
+data: {"type":"final_response","content":"4 straight"}
+
+data: {"type":"final_response","content":" quarters of beating"}
+
+data: {"type":"final_response","content":" estimates, with E"}
+
+data: {"type":"final_response","content":"PS growing"}
+
+data: {"type":"final_response","content":" from"}
+
+data: {"type":"final_response","content":" $1"}
+
+data: {"type":"final_response","content":".30"}
+
+data: {"type":"final_response","content":" →"}
+
+data: {"type":"final_response","content":" $1"}
+
+data: {"type":"final_response","content":".62"}
+
+data: {"type":"final_response","content":" → $1.87"}
+
+data: {"type":"final_response","content":" → $2.22,"}
+
+data: {"type":"final_response","content":" a clear"}
+
+data: {"type":"final_response","content":" acceleration"}
+
+data: {"type":"final_response","content":"\n- 🟢 "}
+
+data: {"type":"final_response","content":"**Wall"}
+
+data: {"type":"final_response","content":" Street loves"}
+
+data: {"type":"final_response","content":" it** — "}
+
+data: {"type":"final_response","content":"95"}
+
+data: {"type":"final_response","content":"% of "}
+
+data: {"type":"final_response","content":"69 analysts rate"}
+
+data: {"type":"final_response","content":" it"}
+
+data: {"type":"final_response","content":" Buy or Strong Buy;"}
+
+data: {"type":"final_response","content":" the AI"}
+
+data: {"type":"final_response","content":" infrastructure"}
+
+data: {"type":"final_response","content":" build"}
+
+data: {"type":"final_response","content":"out thesis"}
+
+data: {"type":"final_response","content":" remains"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" dominant"}
+
+data: {"type":"final_response","content":" narrative on"}
+
+data: {"type":"final_response","content":" the Street"}
+
+data: {"type":"final_response","content":"\n\n##"}
+
+data: {"type":"final_response","content":" Bear case\n- "}
+
+data: {"type":"final_response","content":"🔴 **Short"}
+
+data: {"type":"final_response","content":"-term momentum"}
+
+data: {"type":"final_response","content":" f"}
+
+data: {"type":"final_response","content":"ading** — MACD histogram"}
+
+data: {"type":"final_response","content":" is"}
+
+data: {"type":"final_response","content":" negative ("}
+
+data: {"type":"final_response","content":"−1.209), meaning"}
+
+data: {"type":"final_response","content":" near"}
+
+data: {"type":"final_response","content":"-term selling"}
+
+data: {"type":"final_response","content":" pressure is"}
+
+data: {"type":"final_response","content":" out"}
+
+data: {"type":"final_response","content":"pacing buying"}
+
+data: {"type":"final_response","content":";"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" deeper"}
+
+data: {"type":"final_response","content":" pullback toward"}
+
+data: {"type":"final_response","content":" the 50-day SMA"}
+
+data: {"type":"final_response","content":" (~"}
+
+data: {"type":"final_response","content":"$213.90) is"}
+
+data: {"type":"final_response","content":" possible"}
+
+data: {"type":"final_response","content":"\n- 🔴 "}
+
+data: {"type":"final_response","content":"**Crow"}
+
+data: {"type":"final_response","content":"ded trade"}
+
+data: {"type":"final_response","content":" risk"}
+
+data: {"type":"final_response","content":"** — With"}
+
+data: {"type":"final_response","content":" 65"}
+
+data: {"type":"final_response","content":"/"}
+
+data: {"type":"final_response","content":"69 analysts already"}
+
+data: {"type":"final_response","content":" bull"}
+
+data: {"type":"final_response","content":"ish, there are"}
+
+data: {"type":"final_response","content":" very"}
+
+data: {"type":"final_response","content":" few people"}
+
+data: {"type":"final_response","content":" left"}
+
+data: {"type":"final_response","content":" to upgrade"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" stock"}
+
+data: {"type":"final_response","content":"; any"}
+
+data: {"type":"final_response","content":" disappoint"}
+
+data: {"type":"final_response","content":"ment could trigger"}
+
+data: {"type":"final_response","content":" a sharp"}
+
+data: {"type":"final_response","content":" re"}
+
+data: {"type":"final_response","content":"-rating"}
+
+data: {"type":"final_response","content":"\n- 🔴 "}
+
+data: {"type":"final_response","content":"**No"}
+
+data: {"type":"final_response","content":" price target data available"}
+
+data: {"type":"final_response","content":"** — The structured"}
+
+data: {"type":"final_response","content":" analyst"}
+
+data: {"type":"final_response","content":" feed returned"}
+
+data: {"type":"final_response","content":" N"}
+
+data: {"type":"final_response","content":"/A for consensus"}
+
+data: {"type":"final_response","content":" price targets"}
+
+data: {"type":"final_response","content":", so"}
+
+data: {"type":"final_response","content":" we"}
+
+data: {"type":"final_response","content":" cannot confirm"}
+
+data: {"type":"final_response","content":" whether current"}
+
+data: {"type":"final_response","content":" prices"}
+
+data: {"type":"final_response","content":" already"}
+
+data: {"type":"final_response","content":" reflect full"}
+
+data: {"type":"final_response","content":" up"}
+
+data: {"type":"final_response","content":"side —"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" meaningful"}
+
+data: {"type":"final_response","content":" gap in"}
+
+data: {"type":"final_response","content":" the val"}
+
+data: {"type":"final_response","content":"uation picture"}
+
+data: {"type":"final_response","content":"\n\n##"}
+
+data: {"type":"final_response","content":" What"}
+
+data: {"type":"final_response","content":" would"}
+
+data: {"type":"final_response","content":" change"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" view"}
+
+data: {"type":"final_response","content":"\n-"}
+
+data: {"type":"final_response","content":" "}
+
+data: {"type":"final_response","content":"📈"}
+
+data: {"type":"final_response","content":" **Bull"}
+
+data: {"type":"final_response","content":"ish flip"}
+
+data: {"type":"final_response","content":"**:"}
+
+data: {"type":"final_response","content":" Q"}
+
+data: {"type":"final_response","content":"3 earnings ("}
+
+data: {"type":"final_response","content":"est"}
+
+data: {"type":"final_response","content":". Nov"}
+
+data: {"type":"final_response","content":" 17) beat"}
+
+data: {"type":"final_response","content":" estimates again"}
+
+data: {"type":"final_response","content":" AND"}
+
+data: {"type":"final_response","content":" guidance"}
+
+data: {"type":"final_response","content":" raises"}
+
+data: {"type":"final_response","content":" —"}
+
+data: {"type":"final_response","content":" would"}
+
+data: {"type":"final_response","content":" confirm"}
+
+data: {"type":"final_response","content":" the trend"}
+
+data: {"type":"final_response","content":" and"}
+
+data: {"type":"final_response","content":" likely"}
+
+data: {"type":"final_response","content":" bring"}
+
+data: {"type":"final_response","content":" new"}
+
+data: {"type":"final_response","content":" buyers"}
+
+data: {"type":"final_response","content":" in"}
+
+data: {"type":"final_response","content":"\n- 📉"}
+
+data: {"type":"final_response","content":" **Bearish flip**:"}
+
+data: {"type":"final_response","content":" Price"}
+
+data: {"type":"final_response","content":" breaks"}
+
+data: {"type":"final_response","content":" below the 50-day S"}
+
+data: {"type":"final_response","content":"MA ($"}
+
+data: {"type":"final_response","content":"213.90) and"}
+
+data: {"type":"final_response","content":" fails"}
+
+data: {"type":"final_response","content":" to recover"}
+
+data: {"type":"final_response","content":" — that"}
+
+data: {"type":"final_response","content":" would"}
+
+data: {"type":"final_response","content":" signal"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" up"}
+
+data: {"type":"final_response","content":"trend is breaking"}
+
+data: {"type":"final_response","content":" down"}
+
+data: {"type":"final_response","content":","}
+
+data: {"type":"final_response","content":" changing"}
+
+data: {"type":"final_response","content":" the technical"}
+
+data: {"type":"final_response","content":" picture mater"}
+
+data: {"type":"final_response","content":"ially\n- "}
+
+data: {"type":"final_response","content":"⚠️ **"}
+
+data: {"type":"final_response","content":"Wild"}
+
+data: {"type":"final_response","content":"card"}
+
+data: {"type":"final_response","content":"**: Any"}
+
+data: {"type":"final_response","content":" major"}
+
+data: {"type":"final_response","content":" shift"}
+
+data: {"type":"final_response","content":" in AI"}
+
+data: {"type":"final_response","content":" cap"}
+
+data: {"type":"final_response","content":"ex spending"}
+
+data: {"type":"final_response","content":" by"}
+
+data: {"type":"final_response","content":" cloud"}
+
+data: {"type":"final_response","content":" hyper"}
+
+data: {"type":"final_response","content":"scalers ("}
+
+data: {"type":"final_response","content":"Microsoft"}
+
+data: {"type":"final_response","content":", Google"}
+
+data: {"type":"final_response","content":", Amazon) is"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" single"}
+
+data: {"type":"final_response","content":" biggest"}
+
+data: {"type":"final_response","content":" fundamental"}
+
+data: {"type":"final_response","content":" risk"}
+
+data: {"type":"final_response","content":" to"}
+
+data: {"type":"final_response","content":" NVDA's revenue"}
+
+data: {"type":"final_response","content":" story"}
+
+data: {"type":"final_response","content":"\n\n##"}
+
+data: {"type":"final_response","content":" Confidence"}
+
+data: {"type":"final_response","content":" &"}
+
+data: {"type":"final_response","content":" gaps"}
+
+data: {"type":"final_response","content":"\n**"}
+
+data: {"type":"final_response","content":"Medium"}
+
+data: {"type":"final_response","content":"**"}
+
+data: {"type":"final_response","content":" —"}
+
+data: {"type":"final_response","content":" Techn"}
+
+data: {"type":"final_response","content":"icals and"}
+
+data: {"type":"final_response","content":" earnings data are solid;"}
+
+data: {"type":"final_response","content":" gaps"}
+
+data: {"type":"final_response","content":" include"}
+
+data: {"type":"final_response","content":" analyst"}
+
+data: {"type":"final_response","content":" price"}
+
+data: {"type":"final_response","content":" targets (N/A in"}
+
+data: {"type":"final_response","content":" structured feed), DC"}
+
+data: {"type":"final_response","content":"F/"}
+
+data: {"type":"final_response","content":"val"}
+
+data: {"type":"final_response","content":"uation mult"}
+
+data: {"type":"final_response","content":"iples (not"}
+
+data: {"type":"final_response","content":" pulled"}
+
+data: {"type":"final_response","content":"), and insider"}
+
+data: {"type":"final_response","content":"/"}
+
+data: {"type":"final_response","content":"institutional flow"}
+
+data: {"type":"final_response","content":" (not pulled). A"}
+
+data: {"type":"final_response","content":" complete"}
+
+data: {"type":"final_response","content":" val"}
+
+data: {"type":"final_response","content":"uation picture requires"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" deeper"}
+
+data: {"type":"final_response","content":" run"}
+
+data: {"type":"final_response","content":" of"}
+
+data: {"type":"final_response","content":" those"}
+
+data: {"type":"final_response","content":" agents"}
+
+data: {"type":"final_response","content":".\n\n---\n\n## Details"}
+
+data: {"type":"final_response","content":"\n\n### "}
+
+data: {"type":"final_response","content":"📈"}
+
+data: {"type":"final_response","content":" Technical"}
+
+data: {"type":"final_response","content":" Picture"}
+
+data: {"type":"final_response","content":"\nNVDA's"}
+
+data: {"type":"final_response","content":" structure"}
+
+data: {"type":"final_response","content":" is bull"}
+
+data: {"type":"final_response","content":"ish at"}
+
+data: {"type":"final_response","content":" the macro"}
+
+data: {"type":"final_response","content":" level —"}
+
+data: {"type":"final_response","content":" sitting"}
+
+data: {"type":"final_response","content":" above both the 50-day"}
+
+data: {"type":"final_response","content":" S"}
+
+data: {"type":"final_response","content":"MA ($213.90) and"}
+
+data: {"type":"final_response","content":" 200-day SMA ($"}
+
+data: {"type":"final_response","content":"198.16)."}
+
+data: {"type":"final_response","content":" But"}
+
+data: {"type":"final_response","content":" short"}
+
+data: {"type":"final_response","content":"-term,"}
+
+data: {"type":"final_response","content":" the MACD is"}
+
+data: {"type":"final_response","content":" fl"}
+
+data: {"type":"final_response","content":"ashing caution: the"}
+
+data: {"type":"final_response","content":" MACD line (0.494"}
+
+data: {"type":"final_response","content":") is below the signal line ("}
+
+data: {"type":"final_response","content":"1.703), a"}
+
+data: {"type":"final_response","content":" bear"}
+
+data: {"type":"final_response","content":"ish configuration"}
+
+data: {"type":"final_response","content":","}
+
+data: {"type":"final_response","content":" and"}
+
+data: {"type":"final_response","content":" the histogram confirms"}
+
+data: {"type":"final_response","content":" this"}
+
+data: {"type":"final_response","content":" at"}
+
+data: {"type":"final_response","content":" −"}
+
+data: {"type":"final_response","content":"1.209. This"}
+
+data: {"type":"final_response","content":" is"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" classic"}
+
+data: {"type":"final_response","content":" \""}
+
+data: {"type":"final_response","content":"pull"}
+
+data: {"type":"final_response","content":"back within"}
+
+data: {"type":"final_response","content":" an"}
+
+data: {"type":"final_response","content":" uptrend\" setup"}
+
+data: {"type":"final_response","content":"."}
+
+data: {"type":"final_response","content":" RS"}
+
+data: {"type":"final_response","content":"I at 42.4 "}
+
+data: {"type":"final_response","content":"is neutral —"}
+
+data: {"type":"final_response","content":" not"}
+
+data: {"type":"final_response","content":" overs"}
+
+data: {"type":"final_response","content":"old enough"}
+
+data: {"type":"final_response","content":" to be"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" scre"}
+
+data: {"type":"final_response","content":"aming"}
+
+data: {"type":"final_response","content":" buy signal"}
+
+data: {"type":"final_response","content":", not"}
+
+data: {"type":"final_response","content":" overbought enough to be a"}
+
+data: {"type":"final_response","content":" warning"}
+
+data: {"type":"final_response","content":". The "}
+
+data: {"type":"final_response","content":"20-day SMA at"}
+
+data: {"type":"final_response","content":" $218.63 sits"}
+
+data: {"type":"final_response","content":" just"}
+
+data: {"type":"final_response","content":" above both"}
+
+data: {"type":"final_response","content":" longer"}
+
+data: {"type":"final_response","content":"-"}
+
+data: {"type":"final_response","content":"term aver"}
+
+data: {"type":"final_response","content":"ages, acting"}
+
+data: {"type":"final_response","content":" as near"}
+
+data: {"type":"final_response","content":"-term"}
+
+data: {"type":"final_response","content":" resistance"}
+
+data: {"type":"final_response","content":".\n\n```"}
+
+data: {"type":"final_response","content":"chart"}
+
+data: {"type":"final_response","content":"\n{\n  \"type"}
+
+data: {"type":"final_response","content":"\": \"bar"}
+
+data: {"type":"final_response","content":"\",\n  \"title"}
+
+data: {"type":"final_response","content":"\": \"NVDA vs"}
+
+data: {"type":"final_response","content":" Key"}
+
+data: {"type":"final_response","content":" Moving"}
+
+data: {"type":"final_response","content":" Averages\",\n  \""}
+
+data: {"type":"final_response","content":"description"}
+
+data: {"type":"final_response","content":"\": \"20"}
+
+data: {"type":"final_response","content":"-day,"}
+
+data: {"type":"final_response","content":" 50-day, and "}
+
+data: {"type":"final_response","content":"200-day SM"}
+
+data: {"type":"final_response","content":"As\","}
+
+data: {"type":"final_response","content":"\n  \"unit"}
+
+data: {"type":"final_response","content":"\": \"$"}
+
+data: {"type":"final_response","content":"\",\n  \"data\": ["}
+
+data: {"type":"final_response","content":"\n    {"}
+
+data: {"type":"final_response","content":" \"name"}
+
+data: {"type":"final_response","content":"\": \"S"}
+
+data: {"type":"final_response","content":"MA 200"}
+
+data: {"type":"final_response","content":"\", \"value\": 198."}
+
+data: {"type":"final_response","content":"16 },\n    { \""}
+
+data: {"type":"final_response","content":"name\": \"SMA 50"}
+
+data: {"type":"final_response","content":"\", \"value\": 213."}
+
+data: {"type":"final_response","content":"90 },\n    { \""}
+
+data: {"type":"final_response","content":"name\": \"SMA 20"}
+
+data: {"type":"final_response","content":"\", \"value\": 218."}
+
+data: {"type":"final_response","content":"63 }\n  ]"}
+
+data: {"type":"final_response","content":"\n}\n```\n\n### "}
+
+data: {"type":"final_response","content":"💰 Earnings"}
+
+data: {"type":"final_response","content":" Quality"}
+
+data: {"type":"final_response","content":"\nNVDA's E"}
+
+data: {"type":"final_response","content":"PS trend"}
+
+data: {"type":"final_response","content":" is genu"}
+
+data: {"type":"final_response","content":"inely impressive"}
+
+data: {"type":"final_response","content":" —"}
+
+data: {"type":"final_response","content":" not"}
+
+data: {"type":"final_response","content":" just beating"}
+
+data: {"type":"final_response","content":" estimates, but *"}
+
+data: {"type":"final_response","content":"growing fast"}
+
+data: {"type":"final_response","content":"*:"}
+
+data: {"type":"final_response","content":"\n\n```"}
+
+data: {"type":"final_response","content":"chart\n{\n  \"type"}
+
+data: {"type":"final_response","content":"\": \"line\",\n  \""}
+
+data: {"type":"final_response","content":"title\": \"NVDA E"}
+
+data: {"type":"final_response","content":"PS —"}
+
+data: {"type":"final_response","content":" Last"}
+
+data: {"type":"final_response","content":" 4 Quarters\","}
+
+data: {"type":"final_response","content":"\n  \"description\": \"Actual"}
+
+data: {"type":"final_response","content":" E"}
+
+data: {"type":"final_response","content":"PS reported"}
+
+data: {"type":"final_response","content":" each"}
+
+data: {"type":"final_response","content":" quarter ("}
+
+data: {"type":"final_response","content":"Earnings"}
+
+data: {"type":"final_response","content":" Agent)\",\n  \"unit\":"}
+
+data: {"type":"final_response","content":" \"$\",\n  \"data\":"}
+
+data: {"type":"final_response","content":" [\n    { \"name\":"}
+
+data: {"type":"final_response","content":" \"Q4"}
+
+data: {"type":"final_response","content":" F"}
+
+data: {"type":"final_response","content":"Y26 "}
+
+data: {"type":"final_response","content":"("}
+
+data: {"type":"final_response","content":"Dec"}
+
+data: {"type":"final_response","content":" '"}
+
+data: {"type":"final_response","content":"25)\", \"value\": 1"}
+
+data: {"type":"final_response","content":".30 },\n    {"}
+
+data: {"type":"final_response","content":" \"name\": \"Q1"}
+
+data: {"type":"final_response","content":" FY27 (Mar"}
+
+data: {"type":"final_response","content":" '26)\", \"value\": "}
+
+data: {"type":"final_response","content":"1.62 },\n    "}
+
+data: {"type":"final_response","content":"{ \"name\": \"Q2"}
+
+data: {"type":"final_response","content":" FY27 (Jun"}
+
+data: {"type":"final_response","content":" '26)\", \"value\": "}
+
+data: {"type":"final_response","content":"1.87 },\n    "}
+
+data: {"type":"final_response","content":"{ \"name\": \"Q3"}
+
+data: {"type":"final_response","content":" FY27 (Sep"}
+
+data: {"type":"final_response","content":" '26)\", \"value\": "}
+
+data: {"type":"final_response","content":"2.22 }"}
+
+data: {"type":"final_response","content":"\n  ]\n}\n```"}
+
+data: {"type":"final_response","content":"\n\nEvery"}
+
+data: {"type":"final_response","content":" single"}
+
+data: {"type":"final_response","content":" quarter beat"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" consensus"}
+
+data: {"type":"final_response","content":" estimate. The beats"}
+
+data: {"type":"final_response","content":" are modest"}
+
+data: {"type":"final_response","content":" in"}
+
+data: {"type":"final_response","content":" percentage"}
+
+data: {"type":"final_response","content":" terms (2"}
+
+data: {"type":"final_response","content":"–"}
+
+data: {"type":"final_response","content":"4%)"}
+
+data: {"type":"final_response","content":" but consistent"}
+
+data: {"type":"final_response","content":" —"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" sign"}
+
+data: {"type":"final_response","content":" of"}
+
+data: {"type":"final_response","content":" a management"}
+
+data: {"type":"final_response","content":" team"}
+
+data: {"type":"final_response","content":" that guides"}
+
+data: {"type":"final_response","content":" conserv"}
+
+data: {"type":"final_response","content":"atively and delivers"}
+
+data: {"type":"final_response","content":"."}
+
+data: {"type":"final_response","content":" Next"}
+
+data: {"type":"final_response","content":" report"}
+
+data: {"type":"final_response","content":" is estimated Nov"}
+
+data: {"type":"final_response","content":" 17, 2026 "}
+
+data: {"type":"final_response","content":"(label"}
+
+data: {"type":"final_response","content":":"}
+
+data: {"type":"final_response","content":" estimated"}
+
+data: {"type":"final_response","content":","}
+
+data: {"type":"final_response","content":" not"}
+
+data: {"type":"final_response","content":" confirmed"}
+
+data: {"type":"final_response","content":" by"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" company"}
+
+data: {"type":"final_response","content":" per"}
+
+data: {"type":"final_response","content":" agent"}
+
+data: {"type":"final_response","content":" data"}
+
+data: {"type":"final_response","content":").\n\n### "}
+
+data: {"type":"final_response","content":"🧑"}
+
+data: {"type":"final_response","content":"‍💼 Analyst"}
+
+data: {"type":"final_response","content":" Consensus"}
+
+data: {"type":"final_response","content":"\n69"}
+
+data: {"type":"final_response","content":" analysts cover"}
+
+data: {"type":"final_response","content":" the"}
+
+data: {"type":"final_response","content":" stock."}
+
+data: {"type":"final_response","content":" The breakdown"}
+
+data: {"type":"final_response","content":":\n\n```chart\n{"}
+
+data: {"type":"final_response","content":"\n  \"type\": \"do"}
+
+data: {"type":"final_response","content":"nut\",\n  \"title\":"}
+
+data: {"type":"final_response","content":" \""}
+
+data: {"type":"final_response","content":"NVDA Wall"}
+
+data: {"type":"final_response","content":" Street Ratings"}
+
+data: {"type":"final_response","content":" ("}
+
+data: {"type":"final_response","content":"69"}
+
+data: {"type":"final_response","content":" Analysts)\",\n  \""}
+
+data: {"type":"final_response","content":"unit"}
+
+data: {"type":"final_response","content":"\": \"\","}
+
+data: {"type":"final_response","content":"\n  \"data\": ["}
+
+data: {"type":"final_response","content":"\n    { \"name\": \"Strong"}
+
+data: {"type":"final_response","content":" Buy\", \"value\": 24"}
+
+data: {"type":"final_response","content":" },\n    { \"name"}
+
+data: {"type":"final_response","content":"\": \"Buy\", \"value\":"}
+
+data: {"type":"final_response","content":" 41 },\n    {"}
+
+data: {"type":"final_response","content":" \"name\": \"Hold\", \""}
+
+data: {"type":"final_response","content":"value\": 3 },"}
+
+data: {"type":"final_response","content":"\n    { \"name\": \""}
+
+data: {"type":"final_response","content":"Sell\", \"value\": 1"}
+
+data: {"type":"final_response","content":" },"}
+
+data: {"type":"final_response","content":"\n    { \"name\": \""}
+
+data: {"type":"final_response","content":"Strong Sell\", \"value\":"}
+
+data: {"type":"final_response","content":" 0 }\n  ]"}
+
+data: {"type":"final_response","content":"\n}\n```\n\nThis"}
+
+data: {"type":"final_response","content":" is about"}
+
+data: {"type":"final_response","content":" as bullish as Wall Street gets"}
+
+data: {"type":"final_response","content":". The consensus"}
+
+data: {"type":"final_response","content":" price"}
+
+data: {"type":"final_response","content":" target is **"}
+
+data: {"type":"final_response","content":"N/A ("}
+
+data: {"type":"final_response","content":"structured feed)** — the"}
+
+data: {"type":"final_response","content":" data"}
+
+data: {"type":"final_response","content":" pipeline"}
+
+data: {"type":"final_response","content":" did"}
+
+data: {"type":"final_response","content":" not return a dollar"}
+
+data: {"type":"final_response","content":" figure"}
+
+data: {"type":"final_response","content":", so no"}
+
+data: {"type":"final_response","content":" up"}
+
+data: {"type":"final_response","content":"side percentage"}
+
+data: {"type":"final_response","content":" can be calculated and"}
+
+data: {"type":"final_response","content":" none"}
+
+data: {"type":"final_response","content":" is"}
+
+data: {"type":"final_response","content":" stated"}
+
+data: {"type":"final_response","content":" here"}
+
+data: {"type":"final_response","content":"."}
+
+data: {"type":"final_response","content":" The flip"}
+
+data: {"type":"final_response","content":" side"}
+
+data: {"type":"final_response","content":" of"}
+
+data: {"type":"final_response","content":" heavy"}
+
+data: {"type":"final_response","content":" bullish"}
+
+data: {"type":"final_response","content":"ness:"}
+
+data: {"type":"final_response","content":" **crowded consensus ="}
+
+data: {"type":"final_response","content":" limited upside from further"}
+
+data: {"type":"final_response","content":" upgrades**, and a single miss"}
+
+data: {"type":"final_response","content":" could spark a wave of dow"}
+
+data: {"type":"final_response","content":"ngrades.\n\n### "}
+
+data: {"type":"final_response","content":"📰"}
+
+data: {"type":"final_response","content":" News & Sentiment\nNo"}
+
+data: {"type":"final_response","content":" major NVDA-specific headlines"}
+
+data: {"type":"final_response","content":" this week. The broader chip sector"}
+
+data: {"type":"final_response","content":" (NVDA, AMD,"}
+
+data: {"type":"final_response","content":" MU, INTC)"}
+
+data: {"type":"final_response","content":" is rallying as investors look past"}
+
+data: {"type":"final_response","content":" AI concerns — a mildly"}
+
+data: {"type":"final_response","content":" positive backdrop. The absence of negative"}
+
+data: {"type":"final_response","content":" news is itself a neutral-to"}
+
+data: {"type":"final_response","content":"-positive signal."}
+
+data: {"type":"final_response","content":" Net"}
+
+data: {"type":"final_response","content":" News"}
+
+data: {"type":"final_response","content":" Sentiment:"}
+
+data: {"type":"final_response","content":" **"}
+
+data: {"type":"final_response","content":"Neutral** ("}
+
+data: {"type":"final_response","content":"News"}
+
+data: {"type":"final_response","content":" Agent).\n\n### "}
+
+data: {"type":"final_response","content":"⚖️ Conflicting"}
+
+data: {"type":"final_response","content":" Signals\n| Signal | Direction |"}
+
+data: {"type":"final_response","content":" Weight |\n|---|---|---|"}
+
+data: {"type":"final_response","content":"\n| Long-term trend ("}
+
+data: {"type":"final_response","content":"above 50 & 200"}
+
+data: {"type":"final_response","content":" SMA) | "}
+
+data: {"type":"final_response","content":"🟢 Bullish |"}
+
+data: {"type":"final_response","content":" High |\n| MACD"}
+
+data: {"type":"final_response","content":" short-term momentum | "}
+
+data: {"type":"final_response","content":"🔴 Bearish |"}
+
+data: {"type":"final_response","content":" Medium |\n| RSI at"}
+
+data: {"type":"final_response","content":" 42.4 | "}
+
+data: {"type":"final_response","content":"🟡 Neutral |"}
+
+data: {"type":"final_response","content":" Medium |\n| Analyst consensus"}
+
+data: {"type":"final_response","content":" (95% Buy) | "}
+
+data: {"type":"final_response","content":"🟢 Bullish"}
+
+data: {"type":"final_response","content":" | Medium |\n| EPS"}
+
+data: {"type":"final_response","content":" trajectory | 🟢 "}
+
+data: {"type":"final_response","content":"Bullish | High |"}
+
+data: {"type":"final_response","content":"\n|"}
+
+data: {"type":"final_response","content":" Consensus"}
+
+data: {"type":"final_response","content":" price target | "}
+
+data: {"type":"final_response","content":"⚠️ N"}
+
+data: {"type":"final_response","content":"/A —"}
+
+data: {"type":"final_response","content":" no up"}
+
+data: {"type":"final_response","content":"side calc"}
+
+data: {"type":"final_response","content":" possible"}
+
+data: {"type":"final_response","content":" | —"}
+
+data: {"type":"final_response","content":" |\n\n**Net stance**: The"}
+
+data: {"type":"final_response","content":" long-term picture is constructive"}
+
+data: {"type":"final_response","content":". The short-term setup suggests"}
+
+data: {"type":"final_response","content":" patience — waiting for the MA"}
+
+data: {"type":"final_response","content":"CD to turn positive or a d"}
+
+data: {"type":"final_response","content":"ip toward the 50-day"}
+
+data: {"type":"final_response","content":" SMA ($213.90)"}
+
+data: {"type":"final_response","content":" could improve the entry."}
+
+data: {"type":"final_response","content":" The missing"}
+
+data: {"type":"final_response","content":" price"}
+
+data: {"type":"final_response","content":" target data prevents"}
+
+data: {"type":"final_response","content":" a"}
+
+data: {"type":"final_response","content":" defin"}
+
+data: {"type":"final_response","content":"itive val"}
+
+data: {"type":"final_response","content":"uation call"}
+
+data: {"type":"final_response","content":";"}
+
+data: {"type":"final_response","content":" that"}
+
+data: {"type":"final_response","content":" gap is the primary"}
+
+data: {"type":"final_response","content":" reason"}
+
+data: {"type":"final_response","content":" confidence"}
+
+data: {"type":"final_response","content":" is rated"}
+
+data: {"type":"final_response","content":" Medium"}
+
+data: {"type":"final_response","content":" rather"}
+
+data: {"type":"final_response","content":" than High.\n\n### "}
+
+data: {"type":"final_response","content":"💵 The"}
+
+data: {"type":"final_response","content":" $3,000 "}
+
+data: {"type":"final_response","content":"Question"}
+
+data: {"type":"final_response","content":"\nWhether $3,000 "}
+
+data: {"type":"final_response","content":"is the right amount to deploy,"}
+
+data: {"type":"final_response","content":" and whether NVDA fits an"}
+
+data: {"type":"final_response","content":" overall financial picture, is a decision"}
+
+data: {"type":"final_response","content":" for the"}
+
+data: {"type":"final_response","content":" individual"}
+
+data: {"type":"final_response","content":" investor —"}
+
+data: {"type":"final_response","content":" ideally alongside a licensed financial adviser"}
+
+data: {"type":"final_response","content":". What the data *does*"}
+
+data: {"type":"final_response","content":" say: NVDA is not"}
+
+data: {"type":"final_response","content":" a broken stock. It is"}
+
+data: {"type":"final_response","content":" in an uptrend, growing"}
+
+data: {"type":"final_response","content":" earnings quarter"}
+
+data: {"type":"final_response","content":" over"}
+
+data: {"type":"final_response","content":" quarter, and widely respected on Wall"}
+
+data: {"type":"final_response","content":" Street. The core"}
+
+data: {"type":"final_response","content":" question is"}
+
+data: {"type":"final_response","content":" not *"}
+
+data: {"type":"final_response","content":"\""}
+
+data: {"type":"final_response","content":"is it too late\""}
+
+data: {"type":"final_response","content":"* —"}
+
+data: {"type":"final_response","content":" it is *\"what price makes"}
+
+data: {"type":"final_response","content":" sense given the risks.\"* That"}
+
+data: {"type":"final_response","content":" requires val"}
+
+data: {"type":"final_response","content":"uation data (DCF, P"}
+
+data: {"type":"final_response","content":"/E vs peers) that"}
+
+data: {"type":"final_response","content":" was"}
+
+data: {"type":"final_response","content":" not pulled in this run. A"}
+
+data: {"type":"final_response","content":" follow"}
+
+data: {"type":"final_response","content":"-up deep"}
+
+data: {"type":"final_response","content":" dive on"}
+
+data: {"type":"final_response","content":" those"}
+
+data: {"type":"final_response","content":" dimensions"}
+
+data: {"type":"final_response","content":" is"}
+
+data: {"type":"final_response","content":" available"}
+
+data: {"type":"final_response","content":" on"}
+
+data: {"type":"final_response","content":" request"}
+
+data: {"type":"final_response","content":".\n\n###"}
+
+data: {"type":"final_response","content":" "}
+
+data: {"type":"final_response","content":"🔍 Data"}
+
+data: {"type":"final_response","content":" Gaps —"}
+
+data: {"type":"final_response","content":" Agents"}
+
+data: {"type":"final_response","content":" Not"}
+
+data: {"type":"final_response","content":" Deployed"}
+
+data: {"type":"final_response","content":" This"}
+
+data: {"type":"final_response","content":" Run\nThe"}
+
+data: {"type":"final_response","content":" following agents were"}
+
+data: {"type":"final_response","content":" not called"}
+
+data: {"type":"final_response","content":" and"}
+
+data: {"type":"final_response","content":" their"}
+
+data: {"type":"final_response","content":" data is absent"}
+
+data: {"type":"final_response","content":" from"}
+
+data: {"type":"final_response","content":" this"}
+
+data: {"type":"final_response","content":" report"}
+
+data: {"type":"final_response","content":":"}
+
+data: {"type":"final_response","content":"\n- **DC"}
+
+data: {"type":"final_response","content":"F Agent"}
+
+data: {"type":"final_response","content":"** — no"}
+
+data: {"type":"final_response","content":" fair"}
+
+data: {"type":"final_response","content":" value or intr"}
+
+data: {"type":"final_response","content":"insic value estimate"}
+
+data: {"type":"final_response","content":"\n- **Compar"}
+
+data: {"type":"final_response","content":"ables Agent** — no P"}
+
+data: {"type":"final_response","content":"/E,"}
+
+data: {"type":"final_response","content":" EV/EBITDA"}
+
+data: {"type":"final_response","content":", or P"}
+
+data: {"type":"final_response","content":"/S"}
+
+data: {"type":"final_response","content":" vs"}
+
+data: {"type":"final_response","content":" peers\n- **Insider Agent"}
+
+data: {"type":"final_response","content":"** — no Form"}
+
+data: {"type":"final_response","content":" 4 insider"}
+
+data: {"type":"final_response","content":" buying"}
+
+data: {"type":"final_response","content":"/"}
+
+data: {"type":"final_response","content":"selling data"}
+
+data: {"type":"final_response","content":"\n- **Sentiment"}
+
+data: {"type":"final_response","content":" Agent** — no Reddit"}
+
+data: {"type":"final_response","content":"/St"}
+
+data: {"type":"final_response","content":"ockTwits retail"}
+
+data: {"type":"final_response","content":" sentiment score"}
+
+data: {"type":"final_response","content":"\n- **Options"}
+
+data: {"type":"final_response","content":" Agent** — no put"}
+
+data: {"type":"final_response","content":"/call ratio"}
+
+data: {"type":"final_response","content":" or unusual"}
+
+data: {"type":"final_response","content":" flow"}
+
+data: {"type":"final_response","content":" data"}
+
+data: {"type":"final_response","content":"\n- **Multi"}
+
+data: {"type":"final_response","content":"-Year"}
+
+data: {"type":"final_response","content":" Fundament"}
+
+data: {"type":"final_response","content":"als Agent** — no 3"}
+
+data: {"type":"final_response","content":"–"}
+
+data: {"type":"final_response","content":"5 year revenue"}
+
+data: {"type":"final_response","content":"/"}
+
+data: {"type":"final_response","content":"margin"}
+
+data: {"type":"final_response","content":" trend"}
+
+data: {"type":"final_response","content":"\n\nThese"}
+
+data: {"type":"final_response","content":" gaps are the primary driver"}
+
+data: {"type":"final_response","content":" of the Medium"}
+
+data: {"type":"final_response","content":" confidence rating"}
+
+data: {"type":"final_response","content":". A"}
+
+data: {"type":"final_response","content":" full"}
+
+data: {"type":"final_response","content":" crew"}
+
+data: {"type":"final_response","content":" deployment"}
+
+data: {"type":"final_response","content":" would"}
+
+data: {"type":"final_response","content":" address"}
+
+data: {"type":"final_response","content":" all"}
+
+data: {"type":"final_response","content":" of them.\n\n---"}
+
+data: {"type":"final_response","content":"\n*This is impersonal research"}
+
+data: {"type":"final_response","content":" from Finava, not financial"}
+
+data: {"type":"final_response","content":" advice. All decisions are yours to"}
+
+data: {"type":"final_response","content":" make, ideally with a licensed"}
+
+data: {"type":"final_response","content":" adviser.*"}
+
+data: {"type":"skeptic_complete","critique":"**Second Opinion:** Reviewed against 4 analysts' evidence · 2 corrections applied\n\n- Overstated: \"Analyst price target | Unavailable | Analyst Agent | —\" — run_analyst_agent reports 'The **consensus price target is N/A**' — this is not 'Unavailable', it is explicitly N/A in a structured feed.\n- Contradicts the analysts' evidence: \"the MACD is flashing caution: the signal line (1.703) is above the MACD line (0.494)\" — run_technical_agent states 'The MACD line (0.494) is below the signal line (1.703)', which is correct, but the report's phrasing 'the signal line (1.703) is above the MACD line (0.494)' is the same fact stated normally. However, the report then says 'the histogram is negative at −1.209' which the evidence confirms. The actual issue: the report should clarify that MACD below signal line is bearish, which it does correctly later.","report":{"status":"reviewed","agentsReviewed":4,"corrections":[{"quote":"Analyst price target | Unavailable | Analyst Agent | —","problem":"overclaim","evidence":"run_analyst_agent reports 'The **consensus price target is N/A**' — this is not 'Unavailable', it is explicitly N/A in a structured feed.","fix":"Change 'Unavailable' to 'N/A (structured feed)' to match the analyst agent's language and clarify the distinction."},{"quote":"the MACD is flashing caution: the signal line (1.703) is above the MACD line (0.494)","problem":"contradicts_evidence","evidence":"run_technical_agent states 'The MACD line (0.494) is below the signal line (1.703)', which is correct, but the report's phrasing 'the signal line (1.703) is above the MACD line (0.494)' is the same fact stated normally. However, the report then says 'the histogram is negative at −1.209' which the evidence confirms. The actual issue: the report should clarify that MACD below signal line is bearish, which it does correctly later.","fix":"No fix needed; the statement is accurate."}],"caveats":[]}}
+
+data: {"type":"followups","questions":["How do NVDA valuations compare to peers?","When's the next catalyst after Nov 17?"]}
+
+data: {"type":"done"}
+
