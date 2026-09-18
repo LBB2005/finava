@@ -122,6 +122,14 @@ describe("GET /api/stock/[ticker]/financials", () => {
     expect((await GET(new Request("http://t"), ctx("NEWCO"))).status).toBe(404);
   });
 
+  it("says SEC is unavailable (503), never that the company has no filings, when the lookup fails", async () => {
+    deps.getCikByTicker.mockRejectedValueOnce(new Error("SEC company tickers unavailable (429)"));
+    const res = await GET(new Request("http://t"), ctx("T"));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(JSON.stringify(body)).not.toMatch(/no SEC filings/i);
+  });
+
   it("builds ledger rows with YoY, margin fallback, EPS mapping, and proxy FCF", async () => {
     const res = await GET(new Request("http://t"), ctx("acme"));
     expect(res.status).toBe(200);

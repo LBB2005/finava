@@ -76,7 +76,16 @@ export async function GET(
   const symbol = (ticker ?? "").trim().toUpperCase();
   if (!symbol) return NextResponse.json({ error: "Missing ticker." }, { status: 400 });
 
-  const cik = await getCikByTicker(symbol);
+  let cik: string | null;
+  try {
+    cik = await getCikByTicker(symbol);
+  } catch {
+    // SEC unreachable is an outage, not "this company has no filings".
+    return NextResponse.json(
+      { error: "SEC filings are unavailable right now. Try again shortly." },
+      { status: 503 }
+    );
+  }
   if (!cik) {
     // ETFs / foreign issuers have no XBRL facts — no statement data.
     return NextResponse.json(
