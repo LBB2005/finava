@@ -26,6 +26,13 @@ function report(over: Partial<BenchReport> = {}): BenchReport {
       cls: 0.042,
       largest: { t: 61_000, value: 0.031, sources: [{ label: 'div.flex.gap-[14px] "L Answer"', dy: -210 }] },
     },
+    shiftPhases: {
+      waiting: { count: 0, total: 0, cls: 0, largest: null },
+      firstText: { count: 0, total: 0, cls: 0, largest: null },
+      streaming: { count: 0, total: 0, cls: 0, largest: null },
+      end: { count: 0, total: 0, cls: 0, largest: null },
+    },
+    transitions: { firstText: null, end: null },
     topShifts: [],
     ...over,
   };

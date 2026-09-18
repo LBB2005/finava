@@ -13,27 +13,32 @@ import {
   labelElement,
   layoutShiftSummary,
   longTaskSummary,
+  shiftsByPhase,
   topScripts,
+  transitionAt,
   type FrameSample,
   type FrameStats,
   type ScrollStats,
   type Shift,
+  type ShiftPhases,
   type ShiftStats,
 } from "@/lib/chatBench/metrics";
 
 export type ReaderKind = "trackpad" | "wheel" | "none";
 
 /**
- * The scripted reader scrolls up once, when the answer is `TRIGGER` of the way
- * in. Trackpad: 5 px a frame for 60 frames (small deltas, like a two-finger
- * scroll). Wheel: three 100 px notches, 100 ms apart. Then it reads for 1.5 s
- * and scrolls back down to the bottom.
+ * The scripted reader, once, when the answer is `TRIGGER` of the way in: it
+ * catches up with the stream (jumps to the bottom and reads there for 10 frames,
+ * so the page sees someone following), then scrolls up a little. Trackpad: 5 px
+ * a frame for 60 frames (small deltas, like a two-finger scroll). Wheel: three
+ * 100 px notches, 100 ms apart. Then it reads for 1.5 s and scrolls back down.
  */
 const READERS: Record<Exclude<ReaderKind, "none">, { stepPx: number; everyFrames: number; steps: number }> = {
   trackpad: { stepPx: 5, everyFrames: 1, steps: 60 },
   wheel: { stepPx: 100, everyFrames: 6, steps: 3 },
 };
 const TRIGGER = 0.35;
+const CATCHUP_FRAMES = 10;
 const HOLD_FRAMES = 90;
 const DOWN_STEP_PX = 10;
 const DOWN_MAX_FRAMES = 150;
@@ -63,6 +68,10 @@ export interface BenchReport {
   framesReader: FrameStats;
   scroll: ScrollStats;
   layout: ShiftStats;
+  /** Layout shift split by moment: waiting, first text, streaming, end-of-stream swap. */
+  shiftPhases: ShiftPhases;
+  /** How the list's height and scroll position changed when the first text arrived and when the stream ended. */
+  transitions: { firstText: { dHeight: number; dScrollTop: number } | null; end: { dHeight: number; dScrollTop: number } | null };
   topShifts: Shift[];
 }
 
@@ -154,8 +163,15 @@ export function startRecorder(o: {
       const maxTop = el.scrollHeight - el.clientHeight;
       let after = before;
       if (!readerDone && phase === "idle" && firstTextAt != null && endAt == null && textLen >= o.expectedChars * TRIGGER) {
-        phase = "up";
+        phase = "catchup";
         phaseFrame = 0;
+        el.scrollTop = maxTop;
+        after = el.scrollTop;
+      } else if (phase === "catchup") {
+        if (++phaseFrame >= CATCHUP_FRAMES) {
+          phase = "up";
+          phaseFrame = 0;
+        }
       }
       if (phase === "up") {
         const r = READERS[o.reader as Exclude<ReaderKind, "none">];
@@ -212,6 +228,11 @@ export function startRecorder(o: {
       framesReader: frameSummary(readerStamps),
       scroll: classifyScroll(frames),
       layout: layoutShiftSummary(shifts),
+      shiftPhases: shiftsByPhase(shifts, { firstTextMs: rel(firstTextAt), endMs: rel(endAt) }),
+      transitions: {
+        firstText: firstTextAt == null ? null : transitionAt(frames, firstTextAt - t0),
+        end: endAt == null ? null : transitionAt(frames, endAt - t0),
+      },
       topShifts: [...shifts].sort((a, b) => b.value - a.value).slice(0, 5),
     });
   };

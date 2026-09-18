@@ -46,19 +46,35 @@ export function createReplayFetch(
     const t0 = clock.elapsed();
     laneStartedAt = t0;
     let i = 0;
-    const body = new ReadableStream<Uint8Array>({
-      async pull(c) {
-        if (i >= plan.length) return c.close();
-        const chunk = plan[i++];
-        try {
-          await clock.sleepUntil(t0 + chunk.at, signal ?? undefined);
-        } catch (e) {
-          c.error(e);
-          return;
-        }
-        c.enqueue(chunk.bytes);
+    const body = new ReadableStream<Uint8Array>(
+      {
+        async pull(c) {
+          if (i >= plan.length) return c.close();
+          try {
+            await clock.sleepUntil(t0 + plan[i].at, signal ?? undefined);
+          } catch (e) {
+            c.error(e);
+            return;
+          }
+          // Everything that arrived while the page was busy comes back in one read,
+          // as bytes pile up in a real network pipe.
+          const due: Uint8Array[] = [];
+          while (i < plan.length && t0 + plan[i].at <= clock.elapsed()) due.push(plan[i++].bytes);
+          if (due.length === 1) c.enqueue(due[0]);
+          else {
+            const joined = new Uint8Array(due.reduce((n, b) => n + b.length, 0));
+            let at = 0;
+            for (const b of due) {
+              joined.set(b, at);
+              at += b.length;
+            }
+            c.enqueue(joined);
+          }
+        },
       },
-    });
+      // Pull only when the page asks for the next read, never a chunk ahead.
+      { highWaterMark: 0 }
+    );
     signal?.addEventListener("abort", () => {
       // fetch errors a body that is mid-read when its request is aborted.
       body.cancel(abortError()).catch(() => {});

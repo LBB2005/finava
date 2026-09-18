@@ -129,8 +129,13 @@ export default function ReplayBench() {
         store.setConversationId(convId);
         store.setMode(send.mode);
         setRun("running", o.fixture);
-        // Let the transcript (and this panel) render and settle at the bottom before anything is timed.
-        await sleep(800);
+        // Let the transcript (and this panel) render, then put the reader at the bottom,
+        // where someone who just read the last answer and sent this turn would be.
+        // (MessageList only pins when you're already near the bottom, so a transcript
+        // that appears all at once opens at the top.)
+        await sleep(600);
+        document.querySelector("main .print-transcript")?.scrollTo({ top: 1e9 });
+        await sleep(200);
 
         const clock = new ReplayClock({ speed: runSpeed });
         clockRef.current = clock;

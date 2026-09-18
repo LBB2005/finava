@@ -6,8 +6,11 @@ import {
   layoutShiftSummary,
   longTaskSummary,
   percentile,
+  shiftsByPhase,
   topScripts,
+  transitionAt,
   type FrameSample,
+  type Shift,
 } from "./metrics";
 
 describe("percentile", () => {
@@ -139,11 +142,54 @@ describe("classifyScroll", () => {
     expect(s.leftBehindPx).toBe(940);
   });
 
+  it("a reader catching up to the bottom is following: neither away nor left behind", () => {
+    const s = classifyScroll([
+      { ...f(0, 200, 1_000, "catchup"), streaming: true }, // reader jumps to the bottom
+      { ...f(16, 1_040, 1_040, "catchup", 1_040), streaming: true }, // page follows the new text
+    ]);
+    expect(s).toMatchObject({ follows: 1, yanks: 0, maxAwayPx: 0, leftBehindPx: 0 });
+  });
+
   it("any other move the reader didn't make (anchoring, clamping) is counted with its size", () => {
     const s = classifyScroll([f(0, 700, 700, "hold"), f(16, 520, 520, "hold", 900)]);
     expect(s.others).toBe(1);
     expect(s.otherPx).toBe(180);
     expect(s.largestOther).toEqual({ t: 16, delta: -180 });
+  });
+});
+
+describe("shiftsByPhase", () => {
+  const shift = (t: number, value: number): Shift => ({ t, value, hadRecentInput: false, sources: [{ label: `at ${t}`, dy: 10 }] });
+
+  it("splits layout shifts into waiting, first text, streaming and the end-of-stream swap", () => {
+    const p = shiftsByPhase([shift(100, 0.01), shift(5_100, 0.2), shift(6_000, 0.001), shift(9_200, 0.05)], {
+      firstTextMs: 5_000,
+      endMs: 9_000,
+    });
+    expect(p.waiting).toMatchObject({ count: 1, total: 0.01 });
+    expect(p.firstText).toMatchObject({ count: 1, total: 0.2, largest: { t: 5_100, value: 0.2 } });
+    expect(p.streaming).toMatchObject({ count: 1, total: 0.001 });
+    expect(p.end).toMatchObject({ count: 1, total: 0.05 });
+  });
+
+  it("puts everything in waiting when no text ever came", () => {
+    const p = shiftsByPhase([shift(100, 0.01)], { firstTextMs: null, endMs: null });
+    expect(p.waiting.count).toBe(1);
+    expect(p.firstText.count).toBe(0);
+  });
+});
+
+describe("transitionAt", () => {
+  const f = (t: number, before: number, maxTop: number): FrameSample => ({ t, before, after: before, maxTop, phase: "idle" });
+
+  it("reports how the list's height and scroll position changed across a moment, once it settled", () => {
+    const frames = [f(0, 900, 900), f(16, 900, 900), f(33, 640, 640), f(300, 660, 660), f(316, 680, 680)];
+    // At 20 ms the 300 px crew panel went away and 40 px of text arrived.
+    expect(transitionAt(frames, 20, 250)).toEqual({ dHeight: -240, dScrollTop: -240 });
+  });
+
+  it("is null without frames on both sides", () => {
+    expect(transitionAt([f(0, 0, 0)], 20)).toBeNull();
   });
 });
 

@@ -14,7 +14,8 @@
  * Flags: --base (default http://localhost:3011) · --fixture a,b (required) ·
  * --width 1440,375 · --cpu 1 (CDP throttling rates) · --reader trackpad|wheel|none ·
  * --speed 1 · --out file.json · --shots dir (also save a mid-stream and a final
- * screenshot per run; screenshots cost frames, so don't use them for the numbers) ·
+ * screenshot of the chat column per run; screenshots cost frames, so don't use
+ * them for the numbers) · --shot-at ms,ms (extra screenshots at those replay times) ·
  * --profile prefix (save a .cpuprofile per run and print the top self-time functions;
  * diagnosis only, sampling adds overhead).
  */
@@ -33,6 +34,9 @@ const shotsIdx = argv.indexOf("--shots");
 const SHOTS = shotsIdx === -1 ? null : argv[shotsIdx + 1];
 const profileIdx = argv.indexOf("--profile");
 const PROFILE = profileIdx === -1 ? null : argv[profileIdx + 1];
+const shotAtIdx = argv.indexOf("--shot-at");
+/** Extra screenshots at these replay times (ms), e.g. mid-way through the crew's wait. */
+const SHOT_AT = shotAtIdx === -1 ? [] : argv[shotAtIdx + 1].split(",").map(Number);
 
 type Msg = { id?: number; method?: string; params?: Record<string, unknown>; sessionId?: string; result?: unknown; error?: { message: string } };
 
@@ -132,8 +136,18 @@ async function evaluate<T>(cdp: Cdp, sessionId: string, expression: string): Pro
   return r.result.value;
 }
 
+/** A JPEG of the chat column only: the sidebar (conversation titles, portfolio) stays out of the picture. */
 async function screenshot(cdp: Cdp, sessionId: string, file: string) {
-  const { data } = await cdp.send<{ data: string }>("Page.captureScreenshot", { format: "png" }, sessionId);
+  const clip = await evaluate<{ x: number; y: number; width: number; height: number }>(
+    cdp,
+    sessionId,
+    "(() => { const r = document.querySelector('main').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()"
+  );
+  const { data } = await cdp.send<{ data: string }>(
+    "Page.captureScreenshot",
+    { format: "jpeg", quality: 70, clip: { ...clip, scale: 1 } },
+    sessionId
+  );
   writeFileSync(file, Buffer.from(data, "base64"));
 }
 
@@ -200,7 +214,7 @@ async function runOnce(
     if (opts.profile) {
       // Diagnosis only: sampling adds overhead, so profiled numbers aren't baseline numbers.
       await cdp.send("Profiler.enable", {}, sessionId);
-      await cdp.send("Profiler.setSamplingInterval", { interval: 500 }, sessionId);
+      await cdp.send("Profiler.setSamplingInterval", { interval: 2_000 }, sessionId);
       await cdp.send("Profiler.start", {}, sessionId);
       const report = await evaluate<BenchReport>(cdp, sessionId, call);
       const { profile } = await cdp.send<{ profile: CpuProfile }>("Profiler.stop", {}, sessionId);
@@ -214,16 +228,20 @@ async function runOnce(
     await evaluate(cdp, sessionId, `(${call}, true)`);
     const base = path.join(opts.shots, `${fixture}-${width}${cpu > 1 ? `-cpu${cpu}` : ""}`);
     let shotMid = false;
+    const pending = [...SHOT_AT];
     for (;;) {
-      await new Promise((r) => setTimeout(r, 500));
-      const st = await evaluate<{ state: string; streamingChars: number }>(cdp, sessionId, "window.__chatBench.status()");
+      await new Promise((r) => setTimeout(r, 250));
+      const st = await evaluate<{ state: string; streamingChars: number; replayMs: number | null }>(cdp, sessionId, "window.__chatBench.status()");
+      while (pending.length && st.replayMs != null && st.replayMs >= pending[0]) {
+        await screenshot(cdp, sessionId, `${base}-at-${Math.round(pending.shift()! / 1000)}s.jpg`);
+      }
       if (!shotMid && st.streamingChars > 400) {
-        await screenshot(cdp, sessionId, `${base}-streaming.png`);
+        await screenshot(cdp, sessionId, `${base}-streaming.jpg`);
         shotMid = true;
       }
       if (st.state === "done" || st.state === "error") break;
     }
-    await screenshot(cdp, sessionId, `${base}-done.png`);
+    await screenshot(cdp, sessionId, `${base}-done.jpg`);
     return await evaluate<BenchReport>(cdp, sessionId, "window.__chatBench.last");
   } finally {
     await cdp.send("Target.closeTarget", { targetId }).catch(() => {});
@@ -236,9 +254,17 @@ async function main() {
   if (!health?.ok) throw new Error(`${args.base} isn't serving the bench (is the dev server running?)`);
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
+  const out = args.out ?? path.join("evals", "results", `bench-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  mkdirSync(path.dirname(out), { recursive: true });
+  const results: { fixture: string; width: number; cpu: number; report: BenchReport }[] = [];
+  const failures: { fixture: string; width: number; cpu: number; error: string }[] = [];
+  const tableOf = () =>
+    markdownTable(BASELINE_HEADER, results.map(({ fixture, cpu, report }) => baselineRow(`${fixture}${cpu > 1 ? ` · ${cpu}× CPU` : ""}`, report)));
+  // Written after every run, so a failure late in a long matrix loses nothing.
+  const save = () => writeFileSync(out, JSON.stringify({ args, ranAt: new Date().toISOString(), results, failures, table: tableOf() }, null, 2));
+
   const { wsUrl, proc, dir } = await launchChrome();
   const cdp = await Cdp.connect(wsUrl);
-  const results: { fixture: string; width: number; cpu: number; report: BenchReport }[] = [];
   try {
     // Warm-up: the first load compiles the page and its chunks; don't time that.
     console.log("warm-up…");
@@ -247,8 +273,21 @@ async function main() {
       for (const width of args.widths) {
         for (const fixture of args.fixtures) {
           const t = Date.now();
-          const report = await runOnce(cdp, fixture, width, cpu, { speed: args.speed, reader: args.reader, shots: SHOTS, profile: PROFILE });
+          const once = () => runOnce(cdp, fixture, width, cpu, { speed: args.speed, reader: args.reader, shots: SHOTS, profile: PROFILE });
+          let report: BenchReport;
+          try {
+            report = await once().catch((e) => {
+              console.log(`  retrying ${fixture} · ${width}px after: ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+              return once();
+            });
+          } catch (e) {
+            failures.push({ fixture, width, cpu, error: e instanceof Error ? e.message : String(e) });
+            console.log(`${fixture} · ${width}px · cpu ${cpu}× · FAILED twice: ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+            save();
+            continue;
+          }
           results.push({ fixture, width, cpu, report });
+          save();
           console.log(`${fixture} · ${width}px · cpu ${cpu}× · ${Math.round((Date.now() - t) / 1000)} s`);
           console.log(`  ${baselineRow("", report).slice(2).join(" · ")}`);
         }
@@ -262,12 +301,9 @@ async function main() {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 
-  const rows = results.map(({ fixture, cpu, report }) => baselineRow(`${fixture}${cpu > 1 ? ` · ${cpu}× CPU` : ""}`, report));
-  const table = markdownTable(BASELINE_HEADER, rows);
-  console.log(`\n${table}`);
-  const out = args.out ?? path.join("evals", "results", `bench-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-  mkdirSync(path.dirname(out), { recursive: true });
-  writeFileSync(out, JSON.stringify({ args, ranAt: new Date().toISOString(), results, table }, null, 2));
+  save();
+  console.log(`\n${tableOf()}`);
+  if (failures.length) console.log(`\n${failures.length} run(s) failed: ${failures.map((f) => `${f.fixture} · ${f.width}px`).join(", ")}`);
   console.log(`\nwrote ${out}`);
 }
 

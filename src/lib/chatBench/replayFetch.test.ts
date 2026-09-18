@@ -65,6 +65,20 @@ describe("createReplayFetch", () => {
     expect(at.map((t) => t - t0)).toEqual([2_000, 2_050, 2_300]);
   });
 
+  it("hands a busy page everything that arrived while it was busy in one read, as a network does", async () => {
+    const { replay } = setup();
+    const res = await replay.fetch("/api/chat", { method: "POST", body: "{}" });
+    const reader = res.body!.getReader();
+    const first = reader.read();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(new TextDecoder().decode((await first).value)).toBe('data: {"text":"Hel"}\n\n');
+    // The page is busy until well after the other two chunks were due.
+    await vi.advanceTimersByTimeAsync(1_000);
+    const rest = reader.read();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(new TextDecoder().decode((await rest).value)).toBe('data: {"text":"lo"}\n\ndata: [DONE]\n\n');
+  });
+
   it("answers Auto's router with the recorded decision after the recorded delay", async () => {
     const { replay } = setup();
     let body: unknown;
