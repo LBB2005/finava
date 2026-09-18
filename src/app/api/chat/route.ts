@@ -203,8 +203,11 @@ async function addRequestedFacts(userId: string, text: string, qc: QuickContext,
  * scores from cache only (it never waits on a cold assembly), so a stock nobody
  * had opened stayed "Not scored yet" — the Sep-17 panel hit it on every ticker.
  */
-function unscoredTickers(facts: FactsInput | undefined): string[] {
-  return (facts?.tickers ?? []).filter((t) => !hasValue(t.score)).map((t) => t.ticker);
+function unscoredTickers(qc: QuickContext | null): string[] {
+  if (!qc) return [];
+  const scored = new Set((qc.factsInput?.tickers ?? []).filter((t) => hasValue(t.score)).map((t) => t.ticker));
+  // A ticker whose facts didn't arrive in time at all is the coldest case.
+  return qc.tickers.filter((t) => !scored.has(t));
 }
 
 /**
@@ -291,7 +294,7 @@ export async function POST(req: Request) {
   const capabilityBlock = capabilityPromptBlock(capabilities, subject);
   const fundRule = isFundQuestion(text, earlierUserTexts(messages as MessageParam[])) ? FUND_ANSWER_RULE : "";
 
-  const unscored = unscoredTickers(factsInput);
+  const unscored = unscoredTickers(quickContext);
   scoreAfterResponse(unscored);
   const scoringNote = unscored.length
     ? `The Finava Score for ${unscored.join(", ")} is being computed now. If the score matters to the answer, say it will be ready on the next question; don't describe it as missing or unavailable for good.`

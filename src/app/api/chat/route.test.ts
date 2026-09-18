@@ -656,6 +656,17 @@ describe("POST /api/chat — answers cite facts", () => {
       expect(systemPrompt()).toMatch(/Finava Score for AMD is being computed now/);
     });
 
+    it("also scores a ticker whose facts didn't arrive in time at all — the coldest case", async () => {
+      deps.getQuickContext.mockResolvedValueOnce(
+        quickContext({ ticker: "ODFL", tickers: ["ODFL", "SAIA"], factsInput: { tickers: [] }, dropped: ["market data", "SAIA market data"] })
+      );
+      await (await ask("compare ODFL and SAIA")).text();
+      expect(deps.after).toHaveBeenCalledTimes(1);
+      deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("ODFL"));
+      await deps.after.mock.calls[0][0]();
+      expect(deps.getTickerFacts.mock.calls.map((c) => c[0]).sort()).toEqual(["ODFL", "SAIA"]);
+    });
+
     it("schedules nothing when every score is already cached", async () => {
       withFacts();
       await (await ask("is AAPL a buy?")).text();

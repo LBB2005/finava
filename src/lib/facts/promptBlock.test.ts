@@ -57,6 +57,16 @@ describe("collectFacts: a ticker", () => {
     expect(f.get("NVDA.pctFrom52wHigh")?.source).toMatch(/^Computed:/);
   });
 
+  // Seen live after the Sep-17 panel: "Net margin 19.5% — Computed (NI ÷ Revenue)",
+  // worked out by the model. Margins are the comparison models reach for most.
+  it("precomputes net and free-cash-flow margins", () => {
+    // Fixture: net income $86B, FCF $72B on $165B revenue.
+    expect(f.get("NVDA.netMarginTTM")?.value).toBeCloseTo((86 / 165) * 100, 6);
+    expect(f.get("NVDA.netMarginTTM")?.text).toBe("52.1%");
+    expect(f.get("NVDA.fcfMarginTTM")?.value).toBeCloseTo((72 / 165) * 100, 6);
+    expect(f.get("NVDA.netMarginTTM")?.source).toMatch(/^Computed:/);
+  });
+
   it("says in words which side of fair value and target the price is on", () => {
     // Seen live: "-54.2% upside to DCF" was written up as "54.2% below its DCF fair value".
     expect(f.get("NVDA.priceVsDcf")?.text).toBe("Price is below DCF fair value");
