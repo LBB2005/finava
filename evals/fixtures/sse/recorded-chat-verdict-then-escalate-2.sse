@@ -1,0 +1,74 @@
+data: {"meta":{"lane":"fast","reusedData":true}}
+
+data: {"text":"No"}
+
+data: {"text":" ticker"}
+
+data: {"text":" data"}
+
+data: {"text":" pulled"}
+
+data: {"text":" yet,"}
+
+data: {"text":" so"}
+
+data: {"text":" I can't say"}
+
+data: {"text":"."}
+
+data: {"text":" "}
+
+data: {"text":"\n\n**"}
+
+data: {"text":"Quick"}
+
+data: {"text":" yes"}
+
+data: {"text":"/no needs"}
+
+data: {"text":" one"}
+
+data: {"text":" thing"}
+
+data: {"text":":**"}
+
+data: {"text":" Do"}
+
+data: {"text":" you want me"}
+
+data: {"text":" to run"}
+
+data: {"text":" the"}
+
+data: {"text":" analysis"}
+
+data: {"text":" on"}
+
+data: {"text":" NVIDIA ("}
+
+data: {"text":"NVDA) right now? If"}
+
+data: {"text":" yes"}
+
+data: {"text":", I'll fetch"}
+
+data: {"text":" the live numbers"}
+
+data: {"text":" and give"}
+
+data: {"text":" you a"}
+
+data: {"text":" real"}
+
+data: {"text":" answer"}
+
+data: {"text":" in"}
+
+data: {"text":" 10 seconds."}
+
+data: {"followups":["Run it on NVDA right now","Compare NVDA to AMD or Intel?","What data do you need exactly?"]}
+
+data: {"timing":{"lane":"fast","ttftMs":560,"totalMs":2927,"reusedData":true}}
+
+data: [DONE]
+

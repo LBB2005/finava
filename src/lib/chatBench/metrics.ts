@@ -1,0 +1,227 @@
+/**
+ * Chat replay bench (dev only): the maths behind the numbers the bench reports.
+ * The recorder (src/app/dev/chat-replay/recorder.ts) collects raw entries in the
+ * browser; everything here is pure so it is unit-tested.
+ */
+
+/** Nearest-rank percentile. */
+export function percentile(values: number[], p: number): number | null {
+  const v = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!v.length) return null;
+  return v[Math.min(v.length - 1, Math.max(0, Math.ceil((p / 100) * v.length) - 1))];
+}
+
+const LONG_TASK_MS = 50;
+
+/** Long tasks (> 50 ms) that started inside the window, and Total Blocking Time. */
+export function longTaskSummary(
+  tasks: { start: number; duration: number }[],
+  window: { start: number; end: number }
+): { count: number; maxMs: number; tbtMs: number } {
+  const inside = tasks.filter((t) => t.start >= window.start && t.start < window.end && t.duration > LONG_TASK_MS);
+  return {
+    count: inside.length,
+    maxMs: Math.round(Math.max(0, ...inside.map((t) => t.duration))),
+    tbtMs: Math.round(inside.reduce((n, t) => n + (t.duration - LONG_TASK_MS), 0)),
+  };
+}
+
+export interface FrameStats {
+  frames: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxMs: number | null;
+  /** Frames the display showed without a new one from us, at `budgetMs` per frame. */
+  dropped: number;
+  budgetMs: number;
+}
+
+/** Frame times from consecutive requestAnimationFrame timestamps. */
+export function frameSummary(timestamps: number[]): FrameStats {
+  const deltas = timestamps.slice(1).map((t, i) => t - timestamps[i]);
+  // A 120 Hz display delivers ~8 ms frames most of the time; otherwise assume 60 Hz.
+  const fast = percentile(deltas, 10);
+  const budgetMs = fast != null && fast < 12 ? 1000 / 120 : 1000 / 60;
+  const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10);
+  return {
+    frames: deltas.length,
+    p50Ms: round1(percentile(deltas, 50)),
+    p95Ms: round1(percentile(deltas, 95)),
+    maxMs: round1(deltas.length ? Math.max(...deltas) : null),
+    dropped: deltas.reduce((n, d) => n + Math.max(0, Math.round(d / budgetMs) - 1), 0),
+    budgetMs,
+  };
+}
+
+export interface ShiftSource {
+  /** What moved (see labelElement). */
+  label: string;
+  /** How far it moved down (+) or up (−), in px. */
+  dy: number;
+}
+
+export interface Shift {
+  t: number;
+  value: number;
+  hadRecentInput: boolean;
+  sources: ShiftSource[];
+}
+
+export interface ShiftStats {
+  count: number;
+  total: number;
+  /** Cumulative Layout Shift: the worst session window (gaps ≤ 1 s, window ≤ 5 s). */
+  cls: number;
+  largest: { t: number; value: number; sources: ShiftSource[] } | null;
+}
+
+export function layoutShiftSummary(shifts: Shift[]): ShiftStats {
+  const counted = shifts.filter((s) => !s.hadRecentInput).sort((a, b) => a.t - b.t);
+  let cls = 0;
+  let windowValue = 0;
+  let windowStart = -Infinity;
+  let prevT = -Infinity;
+  for (const s of counted) {
+    if (s.t - prevT > 1_000 || s.t - windowStart > 5_000) {
+      windowValue = 0;
+      windowStart = s.t;
+    }
+    windowValue += s.value;
+    prevT = s.t;
+    cls = Math.max(cls, windowValue);
+  }
+  const largest = counted.reduce<Shift | null>((m, s) => (!m || s.value > m.value ? s : m), null);
+  return {
+    count: counted.length,
+    total: counted.reduce((n, s) => n + s.value, 0),
+    cls,
+    largest: largest ? { t: largest.t, value: largest.value, sources: largest.sources } : null,
+  };
+}
+
+/**
+ * One animation frame of the scripted reader. `before` is scrollTop when the frame
+ * began, `after` is scrollTop once the reader had its turn (equal when it didn't
+ * scroll), `maxTop` is scrollHeight − clientHeight. `catchup`: the reader has
+ * scrolled to the bottom to follow the stream. `up` / `hold`: it has scrolled up
+ * to read and wants to stay there.
+ */
+export interface FrameSample {
+  t: number;
+  before: number;
+  after: number;
+  maxTop: number;
+  phase: "idle" | "catchup" | "up" | "hold" | "down";
+  /** Between the first streamed text and the end of the stream. */
+  streaming?: boolean;
+}
+
+export interface ScrollStats {
+  /** App scrolls toward the bottom while the reader was following the stream. */
+  follows: number;
+  /** App scrolls toward the bottom while the reader was scrolling up or reading above. */
+  yanks: number;
+  yankPx: number;
+  /** Any other scroll the reader didn't make (scroll anchoring, a clamp as content shrank). */
+  others: number;
+  otherPx: number;
+  largestOther: { t: number; delta: number } | null;
+  /** How far above the bottom the reader managed to get. */
+  maxAwayPx: number;
+  pulledBack: boolean;
+  /** Largest gap between the view and the bottom while the reader sat still mid-stream:
+   *  how far the page let the answer run away from someone who wanted to follow it. */
+  leftBehindPx: number;
+}
+
+export function classifyScroll(frames: FrameSample[]): ScrollStats {
+  const s: ScrollStats = { follows: 0, yanks: 0, yankPx: 0, others: 0, otherPx: 0, largestOther: null, maxAwayPx: 0, pulledBack: false, leftBehindPx: 0 };
+  const away = (f: FrameSample) => f.phase === "up" || f.phase === "hold";
+  frames.forEach((f, i) => {
+    if (away(f)) s.maxAwayPx = Math.max(s.maxAwayPx, Math.round(f.maxTop - f.after));
+    if (f.phase === "idle" && f.streaming) s.leftBehindPx = Math.max(s.leftBehindPx, Math.round(f.maxTop - f.after));
+    if (i === 0) return;
+    const prev = frames[i - 1];
+    const delta = Math.round(f.before - prev.after);
+    if (Math.abs(delta) < 1) return;
+    if (delta > 0 && away(prev)) {
+      s.yanks += 1;
+      s.yankPx += delta;
+    } else if (delta > 0) {
+      s.follows += 1;
+    } else {
+      s.others += 1;
+      s.otherPx += Math.abs(delta);
+      if (!s.largestOther || Math.abs(delta) > Math.abs(s.largestOther.delta)) s.largestOther = { t: f.t, delta };
+    }
+  });
+  s.pulledBack = s.yanks > 0;
+  return s;
+}
+
+/** `div.flex.gap-[14px].items-start "NVDA still screens…"`: enough to find the element in the code. */
+export function labelElement(el: { tag: string; className: string; text: string }): string {
+  const classes = el.className.split(/\s+/).filter(Boolean).slice(0, 3);
+  const text = el.text.replace(/\s+/g, " ").trim();
+  const name = [el.tag.toLowerCase(), ...classes].join(".");
+  if (!text) return name;
+  return `${name} "${text.length > 40 ? `${text.slice(0, 40)}…` : text}"`;
+}
+
+/** Long-animation-frame script time grouped by what invoked it, largest first. */
+export function topScripts(
+  frames: { scripts: { invoker: string; sourceURL: string; duration: number }[] }[],
+  limit = 5
+): { invoker: string; sourceURL: string; ms: number; count: number }[] {
+  const by = new Map<string, { invoker: string; sourceURL: string; ms: number; count: number }>();
+  for (const f of frames) {
+    for (const s of f.scripts) {
+      const key = `${s.invoker} @ ${s.sourceURL}`;
+      const row = by.get(key) ?? { invoker: s.invoker, sourceURL: s.sourceURL, ms: 0, count: 0 };
+      row.ms += s.duration;
+      row.count += 1;
+      by.set(key, row);
+    }
+  }
+  return [...by.values()]
+    .map((r) => ({ ...r, ms: Math.round(r.ms) }))
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, limit);
+}
+
+/** How long after the first text counts as "the first text arrived" (panel → answer swap). */
+const FIRST_TEXT_WINDOW_MS = 500;
+
+export interface ShiftPhases {
+  /** Before any answer text: typing indicator, crew panel. */
+  waiting: ShiftStats;
+  /** The first 500 ms of text: the waiting UI gives way to the answer. */
+  firstText: ShiftStats;
+  streaming: ShiftStats;
+  /** After the stream ends: the streamed block is swapped for the committed message. */
+  end: ShiftStats;
+}
+
+export function shiftsByPhase(shifts: Shift[], at: { firstTextMs: number | null; endMs: number | null }): ShiftPhases {
+  const first = at.firstTextMs ?? Infinity;
+  const end = at.endMs ?? Infinity;
+  const pick = (from: number, to: number) => layoutShiftSummary(shifts.filter((s) => s.t >= from && s.t < to));
+  return {
+    waiting: pick(-Infinity, first),
+    firstText: pick(first, Math.min(first + FIRST_TEXT_WINDOW_MS, end)),
+    streaming: pick(Math.min(first + FIRST_TEXT_WINDOW_MS, end), end),
+    end: pick(end, Infinity),
+  };
+}
+
+/**
+ * How the list's scrollable height and scroll position changed across moment `t`:
+ * the last frame before it against the first frame `settleMs` later, once React
+ * has committed. A drop in height at the first text is the waiting UI unmounting.
+ */
+export function transitionAt(frames: FrameSample[], t: number, settleMs = 250): { dHeight: number; dScrollTop: number } | null {
+  const before = [...frames].reverse().find((f) => f.t < t);
+  const after = frames.find((f) => f.t >= t + settleMs);
+  if (!before || !after) return null;
+  return { dHeight: Math.round(after.maxTop - before.maxTop), dScrollTop: Math.round(after.before - before.after) };
+}

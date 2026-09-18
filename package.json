@@ -14,6 +14,7 @@
     "vercel-build": "node node_modules/next/dist/bin/next build",
     "eval:smoke": "vitest run --config evals/vitest.config.ts",
     "eval:live": "env -u ANTHROPIC_API_KEY npx tsx --env-file=.env --env-file=.env.local evals/live/run.ts",
+    "bench:replay": "npx tsx evals/bench/run.ts",
     "eval:panel": "env -u ANTHROPIC_API_KEY npx tsx --env-file=.env --env-file=.env.local evals/panel/run.ts"
   },
   "dependencies": {
