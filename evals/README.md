@@ -10,6 +10,7 @@ collapse coming back.
 | `npm run eval:live -- --dry` / `--yes` | ≈ $1.20 | 20 fixed prompts across every lane against a running app |
 | `npm run eval:panel -- --dry` / `--yes` | ≈ $30 (Opus personas) | The 50-persona panel: 40 API personas from here, 10 in a browser |
 | `npx tsx evals/report/build.ts` | none | Readout vs the Sep-14 baseline, plus the launch gate |
+| `npm run bench:replay -- --fixture …` | none | How chat *feels* while it answers: replays a recorded turn through the real UI and measures jank, scroll jumps, layout shift |
 
 The paid commands print an estimate and exit unless you pass `--yes`. **Don't run them without Liam's
 go-ahead on the spend.**
@@ -53,6 +54,46 @@ For each turn it records the lane, time to first text, total time, collapse at e
 answer vs rendered vs saved vs reloaded through `/api/conversations`), contract shape, number-check
 mismatches (from W4-1's `number_check` events: `Unavailable` until those exist), routing misses and
 errors. Output goes to `evals/results/live-*/results.json` + `summary.md`. The results folder is gitignored.
+
+`--record` also writes a `.timing.json` sidecar per fixture: when each network chunk arrived, Auto's
+router call, and the conversation so far. The replay bench below uses it; the smoke eval ignores it.
+
+## Replay bench (`/dev/chat-replay`, `evals/bench`)
+
+Free and repeatable: no model calls. The dev-only page `/dev/chat-replay` (404 in production) mounts the
+real `ChatContainer` and swaps only the network. A fetch interceptor (`src/lib/chatBench/replayFetch.ts`)
+plays one recorded turn to the real `ChatEngine` at the recorded pace (1× / 4×, pausable). It answers
+Auto's router with the recorded decision, swallows conversation writes, and refuses any lane request it
+has no recording for, so nothing reaches a paid route. The page measures itself
+(`src/app/dev/chat-replay/recorder.ts`, maths in `src/lib/chatBench/metrics.ts`):
+
+- long tasks > 50 ms, Total Blocking Time, long-animation-frame script attribution;
+- frame times while the text streams, and while a scripted reader scrolls;
+- scroll: a reader catches up to the bottom, then scrolls up 300 px (trackpad: 5 px a frame; wheel: 100 px
+  notches). **Yanks** = the page scrolling back toward the bottom while they read above. **Left behind** =
+  how far the answer ran past a reader who sat still (the page stopped following);
+- layout shift (CLS and the element that moved), split into waiting / first text / streaming / end-of-stream
+  swap, plus how the list's height changed at first text and at the end.
+
+```bash
+# dev server on 3011 (the worktree's launch.json entry), then:
+npm run bench:replay -- --fixture recorded-chat-verdict-then-escalate-1,recorded-agent-verdict-then-escalate-3 \
+  --width 1440,375 --cpu 1,4
+```
+
+The runner drives headless Chrome over the DevTools protocol (installed Chrome, `CHROME_PATH` to override):
+fixed viewport, optional CPU throttling, a fresh page per run, results written after every run to
+`evals/results/` (gitignored). `--reader wheel|none`, `--speed 4`, `--profile <prefix>` (a `.cpuprofile`
+per run plus the top self-time functions, diagnosis only), `--shots <dir>` (chat-column screenshots).
+
+By hand: open `/dev/chat-replay?fixture=<name>` with dev auth on, or drive `window.__chatBench`
+(`run({ fixture, speed, reader })`, `status()`, `pause()`, `play()`, `last`). The page needs a visible
+tab: a hidden tab gets no animation frames, and the chat's own text reveal stops too.
+
+Caveats: it's the dev build (React dev mode, StrictMode), so absolute costs run higher than production.
+Compare runs against each other on the same machine, not against production numbers. Long-animation-frame
+attribution shows chunk delivery as `TimerHandler:setTimeout` (the replay clock); in production that work
+sits under the fetch stream read.
 
 ## Panel (`evals/panel`)
 

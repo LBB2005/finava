@@ -78,7 +78,8 @@ export default function ReplayBench() {
   const [fixture, setFixture] = useState(params.get("fixture") ?? "");
   const [speed, setSpeedState] = useState(Number(params.get("speed")) || 1);
   const [reader, setReader] = useState<ReaderKind>(parseReader(params.get("reader")));
-  const [open, setOpen] = useState(params.get("autostart") !== "1");
+  // Collapsed for autostart and for the headless runner (?panel=0), so screenshots show the chat.
+  const [open, setOpen] = useState(params.get("autostart") !== "1" && params.get("panel") !== "0");
   const [state, setState] = useState<RunState>("idle");
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +111,7 @@ export default function ReplayBench() {
       const runSpeed = o.speed ?? 1;
       const runReader = o.reader ?? "trackpad";
       setRun("loading", o.fixture);
+      setFixture(o.fixture);
       setReport(null);
       const net = realFetch();
       try {

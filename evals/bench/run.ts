@@ -166,7 +166,7 @@ async function openBench(cdp: Cdp, width: number, cpu: number): Promise<{ sessio
   await load;
   await evaluate(cdp, sessionId, "localStorage.setItem('finava_dev_auth','1')");
   const load2 = cdp.once("Page.loadEventFired", sessionId, 120_000);
-  await s("Page.navigate", { url: `${args.base}/dev/chat-replay?autostart=0` });
+  await s("Page.navigate", { url: `${args.base}/dev/chat-replay?panel=0` });
   await load2;
   for (let i = 0; i < 240; i++) {
     if (await evaluate<boolean>(cdp, sessionId, "typeof window.__chatBench === 'object'")) break;
