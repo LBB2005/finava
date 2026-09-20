@@ -1,5 +1,6 @@
 "use client";
 import useSWR from "swr";
+import { authFetch } from "@/lib/authFetch";
 import type { Stock } from "@/lib/research";
 
 interface FactorResponse {
@@ -9,7 +10,7 @@ interface FactorResponse {
 }
 
 const fetcher = (url: string) =>
-  fetch(url).then((r) => {
+  authFetch(url).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   });

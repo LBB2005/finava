@@ -255,9 +255,9 @@ describe("POST /api/briefing/generate — cron path", () => {
     deps.holdings.set("user_2", [{ ticker: "NVDA", shares: 1, avgCost: 900 }]);
     deps.collectionGroupGet.mockResolvedValueOnce({
       docs: [
-        { ref: { parent: { parent: { id: "user_1" } } } },
-        { ref: { parent: { parent: { id: "user_2" } } } },
-        { ref: { parent: { parent: { id: "user_1" } } } }, // duplicate user
+        { ref: { parent: { parent: { id: "user_1", parent: { id: "users", parent: null } } } } },
+        { ref: { parent: { parent: { id: "user_2", parent: { id: "users", parent: null } } } } },
+        { ref: { parent: { parent: { id: "user_1", parent: { id: "users", parent: null } } } } }, // duplicate user
       ],
     });
 
@@ -265,6 +265,22 @@ describe("POST /api/briefing/generate — cron path", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ generated: 2, total: 2 });
     expect(deps.added.map((a) => a.uid).sort()).toEqual(["user_1", "user_2"]);
+  });
+
+  // Regression: collectionGroup("holdings") also matched a "holdings" collection a
+  // user planted deeper in their own tree, whose parent doc then looked like a user.
+  it("only fans out to real users/{uid}/holdings parents", async () => {
+    deps.collectionGroupGet.mockResolvedValueOnce({
+      docs: [
+        { ref: { parent: { parent: { id: "user_1", parent: { id: "users", parent: null } } } } },
+        // users/user_1/conversations/planted/holdings/x → parent doc "planted"
+        { ref: { parent: { parent: { id: "planted", parent: { id: "conversations", parent: { id: "user_1" } } } } } },
+      ],
+    });
+
+    const res = await POST(post({ "x-cron-secret": "s3cret" }));
+    await expect(res.json()).resolves.toEqual({ generated: 1, total: 1 });
+    expect(deps.added.map((a) => a.uid)).toEqual(["user_1"]);
   });
 
   it("skips auth entirely when the cron secret matches", async () => {
@@ -292,7 +308,7 @@ describe("POST /api/briefing/generate — cron path", () => {
     // fan-out counts it as fulfilled — the endpoint reports attempts, not successes.
     deps.holdings.set("user_3", []);
     deps.collectionGroupGet.mockResolvedValueOnce({
-      docs: [{ ref: { parent: { parent: { id: "user_3" } } } }],
+      docs: [{ ref: { parent: { parent: { id: "user_3", parent: { id: "users", parent: null } } } } }],
     });
     await expect((await POST(post({ "x-cron-secret": "s3cret" }))).json()).resolves.toEqual({
       generated: 1,

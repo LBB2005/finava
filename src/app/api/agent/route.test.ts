@@ -8,8 +8,7 @@ const deps = vi.hoisted(() => ({
   runDiscoverySynthesis: vi.fn(),
   userRateLimit: vi.fn(),
   checkUsageLimit: vi.fn(),
-  checkDeepResearchAllowed: vi.fn(),
-  recordDeepResearchRun: vi.fn(),
+  reserveDeepResearchRun: vi.fn(),
   usageRun: vi.fn((_store: { userId: string }, fn: () => unknown) => fn()),
   loadDnaSummary: vi.fn(),
 }));
@@ -35,8 +34,7 @@ vi.mock("@/lib/rateLimit", () => ({
 
 vi.mock("@/lib/usage", () => ({
   checkUsageLimit: deps.checkUsageLimit,
-  checkDeepResearchAllowed: deps.checkDeepResearchAllowed,
-  recordDeepResearchRun: deps.recordDeepResearchRun,
+  reserveDeepResearchRun: deps.reserveDeepResearchRun,
   makeRunContext: (u: string) => ({ userId: u }),
   usageStore: { run: deps.usageRun },
 }));
@@ -62,8 +60,7 @@ beforeEach(() => {
   }));
   deps.userRateLimit.mockReturnValue(null);
   deps.checkUsageLimit.mockResolvedValue(null);
-  deps.checkDeepResearchAllowed.mockResolvedValue(null);
-  deps.recordDeepResearchRun.mockResolvedValue(undefined);
+  deps.reserveDeepResearchRun.mockResolvedValue(null);
   deps.loadDnaSummary.mockResolvedValue(null);
   deps.runCeoAgent.mockImplementation(async (_prompt, _portfolio, emit) => {
     emit({ type: "message", message: "done" });
@@ -141,7 +138,7 @@ describe("POST /api/agent", () => {
     expect(deps.runCeoAgent).not.toHaveBeenCalled();
   });
 
-  it("checks and records deep-research initiation before streaming", async () => {
+  it("reserves the deep-research run (check + count, atomically) before streaming", async () => {
     deps.withAuthRaw.mockReturnValueOnce(async () => ({
       userId: "user_123",
       body: { userPrompt: "Deep dive", deepResearch: true },
@@ -150,8 +147,7 @@ describe("POST /api/agent", () => {
     const res = await POST(agentRequest({ userPrompt: "Deep dive", deepResearch: true }));
     await readSse(res);
 
-    expect(deps.checkDeepResearchAllowed).toHaveBeenCalledWith("user_123");
-    expect(deps.recordDeepResearchRun).toHaveBeenCalledWith("user_123");
+    expect(deps.reserveDeepResearchRun).toHaveBeenCalledWith("user_123");
     expect(deps.usageRun).toHaveBeenCalledWith({ userId: "user_123" }, expect.any(Function));
     expect(deps.runCeoAgent).toHaveBeenCalledWith(
       "Deep dive",
@@ -194,7 +190,7 @@ describe("POST /api/agent", () => {
   });
 
   it("dispatches deterministic discovery waves without charging a new deep run", async () => {
-    const wave = { names: ["AAPL"] };
+    const wave = { tickers: ["AAPL"], sectors: [], waveIndex: 0, totalWaves: 1, valuationTickers: [] };
     deps.withAuthRaw.mockReturnValueOnce(async () => ({
       userId: "user_123",
       body: { wave },
@@ -204,12 +200,17 @@ describe("POST /api/agent", () => {
     await expect(readSse(res)).resolves.toContain('"type":"wave"');
 
     expect(deps.runDiscoveryWave).toHaveBeenCalledWith(wave, expect.any(Function));
-    expect(deps.checkDeepResearchAllowed).not.toHaveBeenCalled();
+    expect(deps.reserveDeepResearchRun).not.toHaveBeenCalled();
     expect(deps.runCeoAgent).not.toHaveBeenCalled();
   });
 
   it("dispatches discovery synthesis waves", async () => {
-    const wave = { synthesize: true, candidates: ["AAPL"] };
+    const wave = {
+      synthesize: true,
+      query: "cheap cloud",
+      picks: [{ ticker: "AAPL", name: "Apple", sector: "Tech", score: 70, grade: "B", fitRank: 1, f: {}, reason: "fits" }],
+      evidence: { waves: [], valuation: {} },
+    };
     deps.withAuthRaw.mockReturnValueOnce(async () => ({
       userId: "user_123",
       body: { wave },
@@ -220,6 +221,28 @@ describe("POST /api/agent", () => {
 
     expect(deps.runDiscoverySynthesis).toHaveBeenCalledWith(wave, expect.any(Function));
     expect(deps.runDiscoveryWave).not.toHaveBeenCalled();
+  });
+
+  // Discover continuations are client-built, so they are clamped server-side; a
+  // malformed one is refused before any stream, rate-limit token, or spend.
+  it("400s a malformed discovery payload without running anything", async () => {
+    for (const wave of [{ names: ["AAPL"] }, { synthesize: true, candidates: ["AAPL"] }, { tickers: ["A", "B", "C", "D", "E", "F"], waveIndex: 0, totalWaves: 1 }]) {
+      deps.withAuthRaw.mockReturnValueOnce(async () => ({ userId: "user_123", body: { wave } }));
+      const res = await POST(agentRequest({ wave }));
+      expect(res.status).toBe(400);
+    }
+    expect(deps.runDiscoveryWave).not.toHaveBeenCalled();
+    expect(deps.runDiscoverySynthesis).not.toHaveBeenCalled();
+  });
+
+  it("never forwards a client-chosen crew to a wave", async () => {
+    const wave = { tickers: ["AAPL"], waveIndex: 0, totalWaves: 1, agents: { batch: Array(50).fill("run_risk_agent"), valuation: [] } };
+    deps.withAuthRaw.mockReturnValueOnce(async () => ({ userId: "user_123", body: { wave } }));
+    await readSse(await POST(agentRequest({ wave })));
+    expect(deps.runDiscoveryWave).toHaveBeenCalledWith(
+      { tickers: ["AAPL"], sectors: [], waveIndex: 0, totalWaves: 1, valuationTickers: [] },
+      expect.any(Function)
+    );
   });
 
   it("emits stream errors instead of throwing after the stream starts", async () => {

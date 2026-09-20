@@ -4,10 +4,11 @@
 // whichever is freshest. Slim is the list-row read (cache-only, batched).
 import { useMemo } from "react";
 import useSWR from "swr";
+import { authFetch } from "@/lib/authFetch";
 import type { TickerFacts, TickerFactsSlim } from "@/lib/facts/types";
 
 const json = (url: string) =>
-  fetch(url).then(async (r) => {
+  authFetch(url).then(async (r) => {
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
     return body;

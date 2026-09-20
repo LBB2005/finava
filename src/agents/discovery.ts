@@ -21,6 +21,7 @@ import {
 import { checkCache, saveCache } from "@/lib/agentMemory";
 import { isScoutFallbackPick } from "./sub-agents/scout-fallback";
 import { toUserFacingError } from "@/lib/userFacingError";
+import { recordUsage } from "@/lib/usage";
 import { DATA_ACCURACY_RULE } from "@/lib/dataAccuracy";
 import { promptClockLine } from "@/lib/promptClock";
 import type { AgentEvent } from "@/types/chat";
@@ -297,6 +298,17 @@ Write the final ranked report now.`;
         messages,
       })
       .finalMessage();
+    // A direct Anthropic call, so it meters itself (generate() would do it for
+    // us). It used to be missed entirely, making synthesis a free 24K-output
+    // Sonnet completion for anyone who could reach /api/agent.
+    void recordUsage({
+      agent: "discovery-synthesis",
+      model: MODEL,
+      inputTokens: response.usage?.input_tokens,
+      outputTokens: response.usage?.output_tokens,
+      cacheRead: response.usage?.cache_read_input_tokens,
+      cacheWrite: response.usage?.cache_creation_input_tokens,
+    });
     for (const block of response.content) {
       if (block.type === "text" && block.text.trim()) emit({ type: "ceo_thinking", content: block.text });
     }

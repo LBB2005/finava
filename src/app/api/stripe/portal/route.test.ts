@@ -14,6 +14,7 @@ vi.mock("@/lib/firebase-admin", () => ({
 }));
 vi.mock("@/lib/stripe", () => ({
   stripeConfigured: deps.stripeConfigured,
+  billingBaseUrl: () => process.env.NEXT_PUBLIC_APP_URL || null,
   stripe: { billingPortal: { sessions: { create: deps.portalCreate } } },
 }));
 
@@ -49,5 +50,14 @@ describe("POST /api/stripe/portal", () => {
   it("returns 502 when Stripe portal creation fails", async () => {
     deps.portalCreate.mockRejectedValueOnce(new Error("down"));
     expect((await POST()).status).toBe(502);
+  });
+});
+
+describe("billing base URL", () => {
+  // Regression: an unset NEXT_PUBLIC_APP_URL sent paying customers to localhost.
+  it("refuses to build return URLs when the app URL isn't configured", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "";
+    const res = await POST();
+    expect(res.status).toBe(503);
   });
 });

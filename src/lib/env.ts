@@ -30,10 +30,6 @@ const clientSchema = z.object({
   NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1),
   NEXT_PUBLIC_APP_NAME: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().optional(),
-  NEXT_PUBLIC_ADMIN_UIDS: z.string().optional(),
-  // Read by the client admin gate but previously undeclared here.
-  NEXT_PUBLIC_ADMIN_EMAILS: z.string().optional(),
-  NEXT_PUBLIC_BETA_ADMIN_ONLY: z.string().optional(),
 });
 
 // STATIC access so the values are inlined into the client bundle at build.
@@ -46,9 +42,6 @@ const clientRaw = {
   NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
-  NEXT_PUBLIC_ADMIN_UIDS: process.env.NEXT_PUBLIC_ADMIN_UIDS,
-  NEXT_PUBLIC_ADMIN_EMAILS: process.env.NEXT_PUBLIC_ADMIN_EMAILS,
-  NEXT_PUBLIC_BETA_ADMIN_ONLY: process.env.NEXT_PUBLIC_BETA_ADMIN_ONLY,
 };
 
 // ── Server ──────────────────────────────────────────────────────────────────

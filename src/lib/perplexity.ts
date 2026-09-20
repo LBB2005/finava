@@ -6,7 +6,7 @@ const KEY = process.env.PERPLEXITY_API_KEY;
 
 // Perplexity doesn't return token counts, so we meter a flat estimated cost per
 // call (1 credit = $0.001). sonar-pro is the pricier model. TUNE to live rates.
-const PERPLEXITY_FLAT_CREDITS: Record<string, number> = {
+export const PERPLEXITY_FLAT_CREDITS: Record<string, number> = {
   "sonar-pro": 150, // ≈ $0.15
   sonar: 80, // ≈ $0.08
 };

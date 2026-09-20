@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { adminAuth } from "@/lib/firebase-admin";
 import { requireAuth } from "@/lib/requireAuth";
-import { stripe, stripeConfigured, getOrCreateCustomer } from "@/lib/stripe";
+import { stripe, stripeConfigured, getOrCreateCustomer, billingBaseUrl } from "@/lib/stripe";
 import { PLANS, priceIdFor, type BillingCadence, type PlanName } from "@/lib/plans";
 
 export const runtime = "nodejs";
@@ -59,7 +59,11 @@ export async function POST(req: Request) {
     /* no-op */
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = billingBaseUrl();
+  if (!appUrl) {
+    console.error("[stripe] NEXT_PUBLIC_APP_URL is not set; refusing to build return URLs");
+    return NextResponse.json({ error: "Billing is not configured." }, { status: 503 });
+  }
 
   try {
     const customerId = await getOrCreateCustomer(userId, email);

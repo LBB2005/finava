@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSnapshots } from "@/lib/finnhub";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
 import { MAX_BATCH_TICKERS, parseTickersParam } from "@/lib/tickers";
 
 export async function GET(req: Request) {
-  const limited = await rateLimitGuard(req, "quotes");
-  if (limited) return limited;
+  const gate = await guardDataRoute("quotes");
+  if (gate.error) return gate.error;
 
   const { searchParams } = new URL(req.url);
   const tickers = parseTickersParam(searchParams.get("tickers") ?? "");

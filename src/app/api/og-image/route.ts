@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import http from "node:http";
 import https from "node:https";
 import { resolvePinnedIp, pinnedLookup, type PinnedIp } from "@/lib/ssrfGuard";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
 
 export const runtime = "nodejs";
 
@@ -24,6 +24,9 @@ const UA =
 const MAX_URLS = 10;
 const MAX_HOPS = 5;
 const PER_FETCH_TIMEOUT = 4500;
+// The per-socket timeout above is an IDLE timeout: a host that drips a byte every
+// few seconds never trips it. This caps one URL's whole redirect chain.
+const PER_URL_DEADLINE_MS = 10_000;
 const HEAD_BYTE_CAP = 260_000;
 const MAX_HEADER_SIZE = 262_144; // 256 KB — Yahoo's headers overflow the 16 KB default
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // hold a resolved image for a day
@@ -51,6 +54,9 @@ function safeUrl(raw: string): URL | null {
     return null;
   }
   if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  // Default ports only: an article page never needs another, and an explicit
+  // port turns this into a port scanner for whatever public hosts it can reach.
+  if (u.port && u.port !== "80" && u.port !== "443") return null;
   const host = u.hostname.toLowerCase();
   if (host === "localhost" || host.endsWith(".local")) return null;
   return u;
@@ -176,17 +182,22 @@ async function resolve(startUrl: string): Promise<OgResult> {
   const hit = cache.get(startUrl);
   const now = Date.now();
   if (hit && hit.expires > now) return hit.result;
-  const result = await resolveUncached(startUrl);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<OgResult>((r) => {
+    timer = setTimeout(() => r({ image: null, domain: null }), PER_URL_DEADLINE_MS);
+  });
+  const result = await Promise.race([resolveUncached(startUrl), deadline]).finally(() => clearTimeout(timer));
   if (cache.size >= MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value!); // evict oldest
   cache.set(startUrl, { result, expires: now + (result.image ? CACHE_TTL_MS : MISS_TTL_MS) });
   return result;
 }
 
 export async function POST(req: NextRequest) {
-  // Server-side fetch primitive — throttle per client so it can't be used as a
-  // high-volume scanning/SSRF probe even within the resolved-IP allowlist.
-  const limited = await rateLimitGuard(req, "og-image", { capacity: 20, refillPerSec: 1 });
-  if (limited) return limited;
+  // Server-side fetch primitive: signed-in callers only (the stock News tab is the
+  // one caller), throttled per user so it can't be used as a high-volume
+  // scanning/SSRF probe even within the resolved-IP allowlist.
+  const gate = await guardDataRoute("og-image", { capacity: 20, refillPerSec: 1 });
+  if (gate.error) return gate.error;
 
   const body = await req.json().catch(() => null);
   const urls: string[] = Array.isArray(body?.urls)
@@ -197,6 +208,6 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(
     { results: Object.fromEntries(entries) },
-    { headers: { "Cache-Control": "public, max-age=3600, s-maxage=86400" } }
+    { headers: { "Cache-Control": "private, max-age=3600" } }
   );
 }

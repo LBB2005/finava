@@ -3,17 +3,23 @@
 
 import { NextResponse } from "next/server";
 import { getStockCandles, isChartRange } from "@/lib/stockData";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
+import { isValidTicker } from "@/lib/tickers";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
-  const limited = await rateLimitGuard(req, "stock-candles", { capacity: 20, refillPerSec: 0.5 });
-  if (limited) return limited;
+  const gate = await guardDataRoute("stock-candles", { capacity: 20, refillPerSec: 0.5 });
+  if (gate.error) return gate.error;
 
   const { ticker } = await params;
   const symbol = (ticker ?? "").trim().toUpperCase();
+  // The symbol goes into provider URLs (Finnhub query, Polygon path) and a shared
+  // cache key, so it must be a ticker and nothing else — `%26`/`%2F` decode here.
+  if (symbol && !isValidTicker(symbol)) {
+    return NextResponse.json({ error: "Invalid ticker symbol." }, { status: 400 });
+  }
   const { searchParams } = new URL(req.url);
   const range = searchParams.get("range");
 

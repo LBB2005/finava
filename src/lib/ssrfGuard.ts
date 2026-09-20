@@ -48,13 +48,24 @@ export function isPrivateIp(ip: string): boolean {
     if (full === "0000:0000:0000:0000:0000:0000:0000:0000") return true; // :: unspecified
     if (/^f[cd]/.test(full)) return true; // fc00::/7 unique-local
     if (/^fe[89ab]/.test(full)) return true; // fe80::/10 link-local
-    // ffff-mapped v4 in the low 32 bits (::ffff:a.b.c.d rendered as hex).
-    const hexMapped = full.match(/^0000:0000:0000:0000:0000:ffff:([0-9a-f]{4}):([0-9a-f]{4})$/);
-    if (hexMapped) {
-      const hi = parseInt(hexMapped[1], 16);
-      const lo = parseInt(hexMapped[2], 16);
-      return isPrivateIp(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`);
-    }
+    if (full.startsWith("ff")) return true; // ff00::/8 multicast
+    if (full.startsWith("2001:0db8:")) return true; // 2001:db8::/32 documentation
+    if (full.startsWith("0100:0000:0000:0000:")) return true; // 100::/64 discard
+    const v4 = (hiHex: string, loHex: string) => {
+      const hi = parseInt(hiHex, 16);
+      const lo = parseInt(loHex, 16);
+      return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+    };
+    // IPv4 embedded in the low 32 bits: ffff-mapped (::ffff:a.b.c.d), the
+    // deprecated IPv4-compatible form (::a.b.c.d, e.g. ::7f00:1), and NAT64
+    // (64:ff9b::/96), which on a NAT64 network routes to that v4 address.
+    const low32 = full.match(
+      /^(?:0000:0000:0000:0000:0000:(?:ffff|0000)|0064:ff9b:0000:0000:0000:0000):([0-9a-f]{4}):([0-9a-f]{4})$/
+    );
+    if (low32) return isPrivateIp(v4(low32[1], low32[2]));
+    // 6to4 (2002::/16) carries the v4 address in bits 16–47.
+    const sixToFour = full.match(/^2002:([0-9a-f]{4}):([0-9a-f]{4}):/);
+    if (sixToFour) return isPrivateIp(v4(sixToFour[1], sixToFour[2]));
     return false;
   }
 
@@ -62,7 +73,7 @@ export function isPrivateIp(ip: string): boolean {
   if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
     return true; // unparseable → treat as unsafe
   }
-  const [a, b] = parts;
+  const [a, b, c] = parts;
   return (
     a === 0 || // 0.0.0.0/8
     a === 10 || // 10.0.0.0/8
@@ -70,7 +81,13 @@ export function isPrivateIp(ip: string): boolean {
     (a === 169 && b === 254) || // link-local / cloud metadata (169.254.169.254)
     (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
     (a === 192 && b === 168) || // 192.168.0.0/16
-    (a === 100 && b >= 64 && b <= 127) // 100.64.0.0/10 CGNAT
+    (a === 100 && b >= 64 && b <= 127) || // 100.64.0.0/10 CGNAT
+    (a === 192 && b === 0 && c === 0) || // 192.0.0.0/24 IETF protocol assignments
+    (a === 192 && b === 0 && c === 2) || // 192.0.2.0/24 documentation
+    (a === 198 && (b === 18 || b === 19)) || // 198.18.0.0/15 benchmarking
+    (a === 198 && b === 51 && c === 100) || // 198.51.100.0/24 documentation
+    (a === 203 && b === 0 && c === 113) || // 203.0.113.0/24 documentation
+    a >= 224 // 224.0.0.0/4 multicast + 240.0.0.0/4 reserved (incl. broadcast)
   );
 }
 

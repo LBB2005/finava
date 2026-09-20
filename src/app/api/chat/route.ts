@@ -396,6 +396,7 @@ COMPLIANCE (non-negotiable): Finava is an impersonal research publication, not a
               inputTokens: final.usage?.input_tokens,
               outputTokens: final.usage?.output_tokens,
               cacheRead: final.usage?.cache_read_input_tokens,
+              cacheWrite: final.usage?.cache_creation_input_tokens,
             });
           } catch { /* metering is best-effort */ }
           // Follow-up chips come from the answer the user just read, not from

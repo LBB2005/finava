@@ -16,6 +16,7 @@ import { runSentimentAgent } from "@/agents/sub-agents/sentiment-agent";
 import { runAnalystAgent } from "@/agents/sub-agents/analyst-agent";
 import { checkCache, saveCache } from "@/lib/agentMemory";
 import { secretMatches } from "@/lib/secretMatches";
+import { EXTERNAL_DATA_RULE } from "@/lib/externalContent";
 
 export const maxDuration = 300;
 
@@ -111,6 +112,8 @@ Write a **Weekly Portfolio Briefing** in this exact structure:
 
 ${DATA_ACCURACY_RULE}
 
+${EXTERNAL_DATA_RULE} The agent reports above can quote such blocks; the same applies there.
+
 Be specific, cite data points from the reports, and keep it scannable. Start with "# Weekly Briefing — ${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}".`,
     });
 
@@ -134,7 +137,17 @@ Be specific, cite data points from the reports, and keep it scannable. Start wit
 async function generateForAllUsers(): Promise<NextResponse> {
   // Find all users who have at least one holding (via collectionGroup query)
   const holdingsSnap = await db.collectionGroup("holdings").get();
-  const userIds = [...new Set(holdingsSnap.docs.map((d) => d.ref.parent.parent!.id))];
+  // Only users/{uid}/holdings. A collectionGroup query matches ANY collection
+  // named "holdings", and a user could once plant one deeper in their own tree
+  // (a "/" in a client-supplied id), making its parent doc look like a user.
+  const userIds = [
+    ...new Set(
+      holdingsSnap.docs
+        .map((d) => d.ref.parent.parent)
+        .filter((u): u is NonNullable<typeof u> => !!u && u.parent.id === "users" && !u.parent.parent)
+        .map((u) => u.id)
+    ),
+  ];
 
   const results = await Promise.allSettled(userIds.map((uid) => generateForUser(uid)));
   const succeeded = results.filter((r) => r.status === "fulfilled").length;

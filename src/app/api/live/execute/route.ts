@@ -89,6 +89,11 @@ export const POST = withHarness(async (req) => {
 
   const tradingDay = easternDay();
   const runId = parsed.data.runId ?? tradingDay;
+  // Orders only ever go out for TODAY's decisions: a past run's decisions would
+  // be executed at today's prices, which is not what was published pre-open.
+  if (runId !== tradingDay) {
+    return apiError("invalid_run", "Only today's run can be executed", 400);
+  }
   const mode = executionMode();
 
   const state = await getRunState(runId);

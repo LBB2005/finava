@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import useSWR from "swr";
+import { authFetch } from "@/lib/authFetch";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
 import { useNewsImages } from "@/hooks/useNewsImages";
@@ -218,8 +219,9 @@ interface FinancialsResponse {
   };
 }
 
-const publicJson = (url: string) =>
-  fetch(url).then((r) => {
+// Signed-in only: the financials route spends shared SEC/Finnhub quota.
+const authedJson = (url: string) =>
+  authFetch(url).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   });
@@ -359,7 +361,7 @@ export function OverviewTab({
   // A cached narrative can quote an older score; say so rather than let two numbers disagree silently.
   const canonicalTotal = facts.data?.score.value?.total ?? null;
   const staleNarrative = !!verdict && status !== "streaming" && canonicalTotal != null && verdict.score !== canonicalTotal;
-  const fin = useSWR<FinancialsResponse>(`/api/stock/${encodeURIComponent(ticker)}/financials`, publicJson, {
+  const fin = useSWR<FinancialsResponse>(`/api/stock/${encodeURIComponent(ticker)}/financials`, authedJson, {
     revalidateOnFocus: false, shouldRetryOnError: false, dedupingInterval: 300_000,
   });
 

@@ -97,8 +97,10 @@ const FALLBACK_PRICE: Price = { in: 3, out: 15 };
 // `@/lib/plans`; re-exported here for the metering call-sites that already
 // import from this module.
 export { CREDIT_USD };
-// Cached input tokens (Anthropic prompt cache) are ~10% the price of fresh input.
+// Anthropic prompt-cache pricing relative to fresh input: a cache READ costs
+// ~10%, a cache WRITE (5-minute TTL, the only kind this app requests) 125%.
 const CACHE_READ_MULTIPLIER = 0.1;
+const CACHE_WRITE_MULTIPLIER = 1.25;
 
 function priceFor(model: string): Price {
   if (MODEL_PRICING[model]) return MODEL_PRICING[model];
@@ -111,18 +113,31 @@ function priceFor(model: string): Price {
   return FALLBACK_PRICE;
 }
 
-/** Convert a single call's token counts into cost-weighted credits. */
+/**
+ * Convert a single call's token counts into cost-weighted credits.
+ *
+ * Counts follow ANTHROPIC's convention: `inputTokens` is fresh (uncached) input
+ * only, and cache reads/writes are reported separately — they are NOT inside
+ * `inputTokens`, so nothing is subtracted. (The old code subtracted cache reads
+ * from it, so a turn with a big cached prompt metered ~0 input, and cache writes
+ * weren't metered at all — a client could park ~190K tokens of its own text in
+ * the cached system prompt and be charged for a one-word answer.) A caller with
+ * an OpenAI-style `prompt_tokens`, which already INCLUDES cached tokens, passes
+ * it as `inputTokens` and omits the cache fields: that bills cached tokens at the
+ * full rate — over-metering, never under-metering.
+ */
 export function creditsFor(
   model: string,
   inputTokens: number,
   outputTokens: number,
-  cacheReadTokens = 0
+  cacheReadTokens = 0,
+  cacheWriteTokens = 0
 ): number {
   const p = priceFor(model);
-  const freshInput = Math.max(0, inputTokens - cacheReadTokens);
   const usd =
-    (freshInput * p.in +
+    (inputTokens * p.in +
       cacheReadTokens * p.in * CACHE_READ_MULTIPLIER +
+      cacheWriteTokens * p.in * CACHE_WRITE_MULTIPLIER +
       outputTokens * p.out) /
     1_000_000;
   return Math.round((usd / CREDIT_USD) * 100) / 100;
@@ -182,6 +197,8 @@ export interface RecordUsageInput {
   outputTokens?: number | null;
   /** Anthropic cache_read_input_tokens, if any (billed at a fraction of input). */
   cacheRead?: number | null;
+  /** Anthropic cache_creation_input_tokens, if any (billed at a premium over input). */
+  cacheWrite?: number | null;
   /** Explicit userId; falls back to the AsyncLocalStorage store when omitted. */
   userId?: string;
   /**
@@ -205,13 +222,16 @@ export function recordUsage(input: RecordUsageInput): Promise<void> {
   const inputTokens = input.inputTokens ?? 0;
   const outputTokens = input.outputTokens ?? 0;
   const cacheRead = input.cacheRead ?? 0;
+  const cacheWrite = input.cacheWrite ?? 0;
   const flat = input.flatCredits ?? 0;
-  if (inputTokens <= 0 && outputTokens <= 0 && flat <= 0) return Promise.resolve();
+  if (inputTokens <= 0 && outputTokens <= 0 && cacheRead <= 0 && cacheWrite <= 0 && flat <= 0) {
+    return Promise.resolve();
+  }
 
   const credits =
     flat > 0
       ? flat
-      : creditsFor(input.model, inputTokens, outputTokens, cacheRead);
+      : creditsFor(input.model, inputTokens, outputTokens, cacheRead, cacheWrite);
 
   // Attribute the call to the run in scope: the running total is what lets a long
   // crew abort before it blows its per-run cap, and the per-call entry is what
@@ -350,88 +370,75 @@ function nextUtcMonthStart(): string {
 // caps above, each plan has a monthly RUN allowance; the no-card trial has its
 // own lifetime cap.
 
-/**
- * Returns a 429 when the user has exhausted their Deep Research run allowance for
- * the period, or null when a run is permitted. Fails OPEN on a degraded read.
- */
-export async function checkDeepResearchAllowed(
-  userId: string
-): Promise<NextResponse | null> {
-  const ent = await resolvePlan(userId);
-  if (ent.degraded) return null;
-
-  let doc: UsageDoc | undefined;
-  try {
-    doc = (await db.collection("userUsage").doc(userId).get()).data() as
-      | UsageDoc
-      | undefined;
-  } catch (e) {
-    console.error("[usage] deep-research check failed (allowing):", e);
-    return null;
-  }
-
-  // Trial: a single lifetime cap across the whole 3-day window.
-  if (ent.source === "trial") {
-    const used = doc?.trialDeepRuns ?? 0;
-    if (used < TRIAL_DEEP_RESEARCH_CAP) return null;
-    return NextResponse.json(
-      {
-        error: "deep_research_limit",
-        scope: "trial",
-        used,
-        limit: TRIAL_DEEP_RESEARCH_CAP,
-        plan: ent.plan,
-        upgradeTo: nextPaidPlan(ent.plan),
-      },
-      { status: 429 }
-    );
-  }
-
-  const limit = ent.config.deepResearchPerMonth;
-  if (!Number.isFinite(limit)) return null; // fair-use unlimited
-
-  const used = doc?.deepRuns?.[monthKey()] ?? 0;
-  if (used < limit) return null;
-
+function deepResearchLimitResponse(
+  ent: Awaited<ReturnType<typeof resolvePlan>>,
+  scope: "trial" | "monthly",
+  used: number,
+  limit: number
+): NextResponse {
   return NextResponse.json(
     {
       error: "deep_research_limit",
-      scope: "monthly",
+      scope,
       used,
       limit,
       plan: ent.plan,
       upgradeTo: nextPaidPlan(ent.plan),
-      resetsAt: nextUtcMonthStart(),
+      ...(scope === "monthly" ? { resetsAt: nextUtcMonthStart() } : {}),
     },
     { status: 429 }
   );
 }
 
 /**
- * Record one Deep Research run. Fire-and-forget; never throws. Increments the
- * month bucket, and the trial lifetime counter when the run is trial-sourced.
+ * Check AND count one Deep Research run, atomically. Returns a 429 when the
+ * allowance is spent; otherwise the run is counted and null is returned.
+ *
+ * One Firestore transaction (read the count, write count+1) so a burst of
+ * concurrent requests can't all read the same "used" and slip past the cap —
+ * the old check followed by a fire-and-forget increment let a Free user's
+ * four-request burst start four deep runs against a one-run month. Counted at
+ * START, not completion: a failed run still counts, an accepted anti-abuse
+ * trade-off. Fails OPEN (like the credit cap) on a degraded plan read or a
+ * Firestore error — the per-run cost cap still bounds each run.
  */
-export async function recordDeepResearchRun(userId: string): Promise<void> {
-  const inc = admin.firestore.FieldValue.increment;
-  let isTrial = false;
-  try {
-    const ent = await resolvePlan(userId);
-    isTrial = ent.source === "trial";
-  } catch {
-    // If we can't tell, just count the monthly bucket.
-  }
-  const patch: Record<string, unknown> = {
-    deepRuns: { [monthKey()]: inc(1) },
-    updatedAt: new Date().toISOString(),
-  };
-  if (isTrial) patch.trialDeepRuns = inc(1);
+export async function reserveDeepResearchRun(
+  userId: string
+): Promise<NextResponse | null> {
+  const ent = await resolvePlan(userId);
+  const ref = db.collection("userUsage").doc(userId);
+  const mk = monthKey();
+  const updatedAt = new Date().toISOString();
 
-  return db
-    .collection("userUsage")
-    .doc(userId)
-    .set(patch, { merge: true })
-    .then(() => undefined)
-    .catch((e) => console.error("[usage] deep-run record failed:", e));
+  if (ent.degraded) {
+    // Tier unknown: allow, but still count the month bucket (best-effort).
+    await ref
+      .set({ deepRuns: { [mk]: admin.firestore.FieldValue.increment(1) }, updatedAt }, { merge: true })
+      .catch((e) => console.error("[usage] deep-run record failed:", e));
+    return null;
+  }
+
+  const trial = ent.source === "trial";
+  const limit = trial ? TRIAL_DEEP_RESEARCH_CAP : ent.config.deepResearchPerMonth;
+  try {
+    return await db.runTransaction(async (tx) => {
+      const doc = (await tx.get(ref)).data() as UsageDoc | undefined;
+      const monthUsed = doc?.deepRuns?.[mk] ?? 0;
+      const used = trial ? doc?.trialDeepRuns ?? 0 : monthUsed;
+      if (Number.isFinite(limit) && used >= limit) {
+        return deepResearchLimitResponse(ent, trial ? "trial" : "monthly", used, limit);
+      }
+      // Absolute values we just read, inside the transaction — set-with-merge
+      // deep-merges the month map, so other months' counts are untouched.
+      const patch: Record<string, unknown> = { deepRuns: { [mk]: monthUsed + 1 }, updatedAt };
+      if (trial) patch.trialDeepRuns = (doc?.trialDeepRuns ?? 0) + 1;
+      tx.set(ref, patch, { merge: true });
+      return null;
+    });
+  } catch (e) {
+    console.error("[usage] deep-research reservation failed (allowing):", e);
+    return null;
+  }
 }
 
 // ── Summary for the UI ───────────────────────────────────────────────────────

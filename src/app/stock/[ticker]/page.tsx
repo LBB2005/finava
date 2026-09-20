@@ -56,15 +56,16 @@ function StockPageInner() {
   const facts = useTickerFacts(ticker || null);
   const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get("tab")) ?? "Overview");
 
-  // ?run=1 deep link (rail "Generate", notifications): start a metered run once
-  // the page is mounted. runFinava self-dedupes, so a re-render can't double-fire.
+  // ?run=1 deep link: land on the Finava tab, but DON'T start a run. A URL can
+  // come from anywhere (another site, a link in a model-written answer), and a
+  // forced run spends the user's credits and our model budget — so a paid run
+  // only ever starts from a click inside the app.
   useEffect(() => {
     if (ticker && searchParams.get("run") === "1") {
       // Deep-link intent: this fires once per ticker to land the user on the tab
       // they asked for, so the extra render is the point, not a cascade.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setTab("Finava");
-      void runFinava(ticker, { force: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker]);

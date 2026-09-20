@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, Cell, PieChart, Pie,
 } from "recharts";
 import { seriesColor, gridProps, axisProps, ChartTooltip } from "@/lib/chartTheme";
+import { sanitizeChartColors } from "@/lib/chartColor";
 
 export interface ChartData {
   type: "bar" | "line" | "area" | "donut";
@@ -137,6 +138,8 @@ export default function ChartBlock({ raw }: { raw: string }) {
   try {
     chart = JSON.parse(raw) as ChartData;
     if (!chart.data || !Array.isArray(chart.data)) throw new Error("invalid");
+    // Model-written colours reach CSS; strip anything that could fetch a URL.
+    chart = sanitizeChartColors(chart);
   } catch {
     return (
       <div

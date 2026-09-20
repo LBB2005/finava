@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PageContextSchema } from "@/lib/pageContext";
+import { isSafeDocId } from "@/lib/docId";
 
 const OptionalTrimmedString = (max: number) =>
   z.preprocess(
@@ -8,7 +9,9 @@ const OptionalTrimmedString = (max: number) =>
   );
 
 export const CreateConversationSchema = z.object({
-  id: OptionalTrimmedString(128),
+  id: OptionalTrimmedString(128).refine((id) => id === undefined || isSafeDocId(id), {
+    message: "invalid conversation id",
+  }),
   title: OptionalTrimmedString(200).nullable().optional(),
   context: z.string().max(50_000).nullable().optional(),
   /** Page snapshot (ticker + data) the chat was started from, persisted so

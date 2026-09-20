@@ -45,6 +45,38 @@ describe("isPrivateIp", () => {
     }
   });
 
+  // Ranges added in the 2026-09 audit: non-public v4 blocks, plus every IPv6
+  // form that embeds (and on some networks routes to) an IPv4 address.
+  it("flags special-purpose IPv4 blocks", () => {
+    for (const ip of [
+      "192.0.0.8", "192.0.2.1", "198.18.0.1", "198.19.255.254", "198.51.100.7",
+      "203.0.113.9", "224.0.0.1", "239.255.255.250", "240.0.0.1", "255.255.255.255",
+    ]) {
+      expect(isPrivateIp(ip)).toBe(true);
+    }
+    for (const ip of ["198.17.255.255", "198.20.0.1", "223.255.255.255", "192.0.1.1"]) {
+      expect(isPrivateIp(ip)).toBe(false);
+    }
+  });
+
+  it("flags IPv6 forms that embed a private IPv4, and IPv6 multicast/documentation", () => {
+    for (const ip of [
+      "::7f00:1", // IPv4-compatible loopback (hex)
+      "64:ff9b::7f00:1", // NAT64 → 127.0.0.1
+      "64:ff9b::a9fe:a9fe", // NAT64 → 169.254.169.254 (metadata)
+      "2002:7f00:0001::1", // 6to4 → 127.0.0.1
+      "2002:a9fe:a9fe::", // 6to4 → 169.254.169.254
+      "ff02::1", // multicast
+      "2001:db8::1", // documentation
+      "100::1", // discard
+    ]) {
+      expect(isPrivateIp(ip)).toBe(true);
+    }
+    for (const ip of ["64:ff9b::808:808", "2002:0808:0808::1"]) {
+      expect(isPrivateIp(ip)).toBe(false); // embeds 8.8.8.8 — public
+    }
+  });
+
   it("allows public IPv6", () => {
     for (const ip of ["2606:4700:4700::1111", "2001:4860:4860::8888", "::ffff:8.8.8.8"]) {
       expect(isPrivateIp(ip)).toBe(false);

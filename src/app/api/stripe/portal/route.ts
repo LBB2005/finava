@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase-admin";
 import { requireAuth } from "@/lib/requireAuth";
-import { stripe, stripeConfigured } from "@/lib/stripe";
+import { stripe, stripeConfigured, billingBaseUrl } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -25,7 +25,11 @@ export async function POST() {
     return NextResponse.json({ error: "no_customer" }, { status: 404 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = billingBaseUrl();
+  if (!appUrl) {
+    console.error("[stripe] NEXT_PUBLIC_APP_URL is not set; refusing to build return URLs");
+    return NextResponse.json({ error: "Billing is not configured." }, { status: 503 });
+  }
 
   try {
     const session = await stripe.billingPortal.sessions.create({

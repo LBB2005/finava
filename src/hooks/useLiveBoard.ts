@@ -1,10 +1,11 @@
 "use client";
 import useSWR from "swr";
+import { authFetch } from "@/lib/authFetch";
 import { useMemo } from "react";
 import type { LiveRow } from "@/lib/research";
 
 const fetcher = (url: string) =>
-  fetch(url).then((r) => {
+  authFetch(url).then((r) => {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   });

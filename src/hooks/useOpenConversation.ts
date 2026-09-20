@@ -74,7 +74,7 @@ export async function openConversationById(id: string): Promise<boolean> {
   const { setMessages, setConversationId, setPageContextForConv } = useChatStore.getState();
   setConversationId(id);
   try {
-    const res = await authFetch(`/api/conversations/${id}`);
+    const res = await authFetch(`/api/conversations/${encodeURIComponent(id)}`);
     if (!res.ok) return false;
     const full: Conversation = await res.json();
     if (!useChatStore.getState().streamsByConv[id]?.isStreaming) {

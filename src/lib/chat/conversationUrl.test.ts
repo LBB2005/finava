@@ -36,3 +36,13 @@ describe("onStoreConversationChange (new chat, opened from sidebar)", () => {
     expect(onStoreConversationChange("a", "a")).toEqual({ kind: "none" });
   });
 });
+
+describe("onUrlConversationChange — untrusted ?c= links", () => {
+  // Regression: `?c=..%2Fuser` opened /api/conversations/../user, i.e. /api/user.
+  it("never opens a path-altering id", async () => {
+    const { onUrlConversationChange } = await import("./conversationUrl");
+    expect(onUrlConversationChange("../user", null)).toEqual({ kind: "clear" });
+    expect(onUrlConversationChange("a/b", "x")).toEqual({ kind: "clear" });
+    expect(onUrlConversationChange("9b2f6c1e-3d4a", null)).toEqual({ kind: "open", id: "9b2f6c1e-3d4a" });
+  });
+});

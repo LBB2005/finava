@@ -33,7 +33,7 @@
     "lightweight-charts": "^5.2.1",
     "marked": "^18.0.3",
     "motion": "^12.40.0",
-    "next": "16.2.6",
+    "next": "16.3.5",
     "openai": "^6.39.1",
     "papaparse": "^5.5.3",
     "plaid": "^42.2.0",
@@ -57,7 +57,7 @@
     "@vitest/coverage-v8": "^4.1.8",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.8"

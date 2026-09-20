@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebase-admin";
 import { getHealthSnapshot } from "@/lib/providerHealth";
+import { rateLimitGuard } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 // A health check must never be cached — it has to reflect live state each hit.
@@ -17,6 +18,12 @@ export const dynamic = "force-dynamic";
  * signal about our own stack, so a vendor outage can't page uptime monitoring.
  */
 export async function GET(req: Request) {
+  // Public, and every hit costs a shared-store read (plus a Firestore read on the
+  // full probe). Generous for the banner's 60 s poll and uptime monitors; a flood
+  // gets 429s instead of running up reads.
+  const limited = await rateLimitGuard(req, "health", { capacity: 30, refillPerSec: 1 });
+  if (limited) return limited;
+
   const providers = await getHealthSnapshot();
 
   // The in-app banner polls every 60s per open tab; it only needs provider state,

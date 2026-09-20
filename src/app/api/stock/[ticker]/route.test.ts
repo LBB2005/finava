@@ -3,11 +3,11 @@ import { NextResponse } from "next/server";
 
 const deps = vi.hoisted(() => ({
   getStockBundle: vi.fn(),
-  rateLimitGuard: vi.fn(),
+  guardDataRoute: vi.fn(),
 }));
 
 vi.mock("@/lib/stockData", () => ({ getStockBundle: deps.getStockBundle }));
-vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
+vi.mock("@/lib/dataRouteGuard", () => ({ guardDataRoute: deps.guardDataRoute }));
 
 import { GET } from "./route";
 
@@ -16,13 +16,13 @@ const ctx = (ticker: string) => ({ params: Promise.resolve({ ticker }) });
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.FINNHUB_API_KEY = "fh_key";
-  deps.rateLimitGuard.mockReturnValue(null);
+  deps.guardDataRoute.mockResolvedValue({ userId: "u1" });
   deps.getStockBundle.mockResolvedValue({ ticker: "AAPL", quote: { price: 200 }, profile: { name: "Apple" } });
 });
 
 describe("GET /api/stock/[ticker]", () => {
   it("applies rate limits and validates ticker/provider configuration", async () => {
-    deps.rateLimitGuard.mockReturnValueOnce(NextResponse.json({ error: "slow" }, { status: 429 }));
+    deps.guardDataRoute.mockResolvedValueOnce({ error: NextResponse.json({ error: "slow" }, { status: 429 }) });
     expect((await GET(new Request("http://test.local"), ctx("AAPL"))).status).toBe(429);
     expect((await GET(new Request("http://test.local"), ctx("  "))).status).toBe(400);
     expect((await GET(new Request("http://test.local"), ctx("BAD!"))).status).toBe(400);

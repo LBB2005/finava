@@ -1,20 +1,20 @@
 // Aggregated per-ticker bundle for the stock research page.
 //
-// Mirrors src/app/api/quotes/route.ts: server-side, app-level API keys, no user
-// auth required (works under the dev bypass). Each field is failure-isolated in
+// Mirrors src/app/api/quotes/route.ts: server-side, app-level API keys, signed-in
+// callers only (see guardDataRoute). Each field is failure-isolated in
 // getStockBundle — one failing source nulls its field rather than 500-ing.
 
 import { NextResponse } from "next/server";
 import { getStockBundle } from "@/lib/stockData";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
 import { isValidTicker } from "@/lib/tickers";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
-  const limited = await rateLimitGuard(req, "stock", { capacity: 20, refillPerSec: 0.5 });
-  if (limited) return limited;
+  const gate = await guardDataRoute("stock", { capacity: 20, refillPerSec: 0.5 });
+  if (gate.error) return gate.error;
 
   const { ticker } = await params;
   const symbol = (ticker ?? "").trim().toUpperCase();

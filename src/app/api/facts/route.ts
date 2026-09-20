@@ -1,15 +1,15 @@
 // Cache-only score headlines for list rows (watchlist, board, portfolio).
 // Never computes: a name nobody has opened reads "Not scored yet".
 import { NextResponse } from "next/server";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
 import { parseTickersParam, MAX_BATCH_TICKERS } from "@/lib/tickers";
 import { getTickerFactsSlim } from "@/lib/facts/ticker";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-  const limited = await rateLimitGuard(req, "facts-batch", { capacity: 30, refillPerSec: 1 });
-  if (limited) return limited;
+  const gate = await guardDataRoute("facts-batch", { capacity: 30, refillPerSec: 1 });
+  if (gate.error) return gate.error;
 
   const raw = new URL(req.url).searchParams.get("tickers") ?? "";
   const tickers = [...new Set(parseTickersParam(raw))].slice(0, MAX_BATCH_TICKERS);

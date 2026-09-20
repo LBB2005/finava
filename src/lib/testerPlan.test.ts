@@ -92,6 +92,17 @@ describe("readTesterPlan", () => {
     });
   });
 
+  it("refuses to answer for an account that is not on the tester allowlist", async () => {
+    const { readTesterPlan } = await import("./testerPlan");
+    getUserByEmail.mockResolvedValue({ uid: "stranger" });
+    isAdminUid.mockResolvedValue(false);
+
+    const res = await readTesterPlan({ email: "someone@example.com" });
+
+    // No uid in the response: the lookup must not reveal who is registered.
+    expect(res).toEqual({ ok: false, status: 403, error: expect.any(String) });
+  });
+
   it("treats a junk stored value as no assignment", async () => {
     fs.store.set("userSettings/tester1", { betaPlan: "Platinum" });
     const { readTesterPlan } = await import("./testerPlan");

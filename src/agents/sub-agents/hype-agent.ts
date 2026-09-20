@@ -7,6 +7,9 @@
 
 import { getSkillsPrompt } from "@/agents/skills";
 import { perplexityAsOfFilters } from "@/lib/asOfScope";
+import { recordUsage } from "@/lib/usage";
+import { PERPLEXITY_FLAT_CREDITS } from "@/lib/perplexity";
+import { fenceExternal } from "@/lib/externalContent";
 
 const PERPLEXITY_API = "https://api.perplexity.ai/chat/completions";
 
@@ -87,6 +90,12 @@ NOTABLE QUOTES/POSTS:
     }
 
     const data = await res.json();
+    // A direct Perplexity call, so it meters itself (it was missed entirely).
+    void recordUsage({
+      agent: "hype",
+      model: "perplexity/sonar-pro",
+      flatCredits: PERPLEXITY_FLAT_CREDITS["sonar-pro"] ?? 100,
+    });
     const content = data.choices?.[0]?.message?.content ?? "";
 
     // Append citations if returned
@@ -96,7 +105,9 @@ NOTABLE QUOTES/POSTS:
         ? `\n\nSOURCES:\n${citations.slice(0, 5).map((c, i) => `[${i + 1}] ${c}`).join("\n")}`
         : "";
 
-    return content + citationBlock;
+    // Social posts and web pages quoted verbatim, handed straight to the crew lead:
+    // fenced so injected instructions in them read as data, never as orders.
+    return fenceExternal("perplexity social/news hype research", content + citationBlock);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[hype-agent] error:", msg);

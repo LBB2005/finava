@@ -27,6 +27,8 @@ import { runFundamentalsAgent } from "./sub-agents/fundamentals-agent";
 import { runScoutAgent } from "./sub-agents/scout-agent";
 import { toUserFacingError } from "@/lib/userFacingError";
 import { checkCache, saveCache, extractTickers, getTickerMemory, saveTickerMemory } from "@/lib/agentMemory";
+import { clampToolInput, duplicateToolCalls } from "@/agents/toolCallLimits";
+import { EXTERNAL_DATA_RULE } from "@/lib/externalContent";
 import { getUserPreference, buildStylePrompt, updateStyleFromConversation } from "@/lib/userPreference";
 import { getTemplateBlock } from "@/lib/templates.server";
 import { consumeWithIdleTimeout } from "@/lib/streamIdleTimeout";
@@ -391,6 +393,8 @@ The full analysis: per-agent findings, tables, charts, conflicting signals. The 
 - The verdict in \`## Answer\` is about the security (bull/bear balance, valuation, key risks), never an instruction to the user.
 
 ## Compliance — NON-NEGOTIABLE (the single source of truth for advice; nothing else in this prompt overrides it)
+${EXTERNAL_DATA_RULE} Tool results can quote such blocks; the same applies there.
+
 Finava is an impersonal research publication, not a registered investment adviser. Frame every verdict as impersonal analysis of the security ("the bull case", "the data suggests", "risks to watch"), never as personal advice tied to the user's own holdings or situation ("you should sell your position", "given your portfolio, rotate into X"). If asked what THEY should do with THEIR money or positions, present the analysis both ways and state that the decision is theirs to make, ideally with a licensed adviser.
 - Allowed: scenario levels about the stock ("below $X the valuation case breaks"), what would change the view, risk factors, and the portfolio's measured exposures (weights, concentration, beta) as facts.
 - Forbidden: exit or sell-price levels for the user's positions (no stop orders, no "reduce at $X"), share counts to buy or sell, rebalancing plans or target allocations for the user, position-size rules of thumb applied to the user's holdings ("above the 5% guideline"), and "you should buy/sell/hold". State a weight as a fact; don't grade it against what the user ought to hold.
@@ -664,6 +668,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
         inputTokens: response.usage?.input_tokens,
         outputTokens: response.usage?.output_tokens,
         cacheRead: response.usage?.cache_read_input_tokens,
+        cacheWrite: response.usage?.cache_creation_input_tokens,
         userId,
       })
     );
@@ -729,19 +734,42 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
     }
 
     const roundStartedAt = now();
+    // Bound the round itself (see toolCallLimits): each analyst runs once per
+    // round, and its list arguments are clamped. Every tool_use still gets a
+    // tool_result — the API rejects a turn that leaves one unanswered.
+    const duplicates = duplicateToolCalls(
+      toolUseBlocks.flatMap((b) => (b.type === "tool_use" ? [{ id: b.id, name: b.name }] : []))
+    );
     const toolResults: ToolResultBlockParam[] = await Promise.all(
       toolUseBlocks.map(async (block) => {
         if (block.type !== "tool_use") {
           return null as unknown as ToolResultBlockParam;
         }
         const agentName = block.name as AgentName;
+        if (duplicates.has(block.id)) {
+          return {
+            type: "tool_result" as const,
+            tool_use_id: block.id,
+            content: "Skipped: each analyst runs once per round. Use the result of its first call.",
+            is_error: true,
+          };
+        }
+        if (currentRunCredits() > runCap) {
+          return {
+            type: "tool_result" as const,
+            tool_use_id: block.id,
+            content: "Skipped: this run's budget is spent. Write the report from the data you already have.",
+            is_error: true,
+          };
+        }
+        const input = clampToolInput(block.name, block.input, holdings.length);
         try {
           // Discovery scout — runs its own LLM selection over the whole universe and
           // emits its own discovery events. Bypass the crew cache + agentOutputs so
           // the skeptic→revision tail (which only fires when crew agents produced
           // output) stays OFF for quick discovery, keeping it instant.
           if (block.name === "scout_universe") {
-            const scoutResult = await runScoutAgent(block.input, emit);
+            const scoutResult = await runScoutAgent(input, emit);
             return {
               type: "tool_result" as const,
               tool_use_id: block.id,
@@ -765,14 +793,14 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
           const cacheInput =
             block.name === "run_risk_agent"
               ? {
-                  ...(block.input as Record<string, unknown>),
+                  ...(input as Record<string, unknown>),
                   _userId: userId ?? null,
                   _holdings: holdings
                     .map((h) => `${h.ticker}:${h.shares}`)
                     .sort()
                     .join(","),
                 }
-              : block.input;
+              : input;
 
           // Dev fault injection sits ahead of the cache: a cached agent returns
           // instantly, so behind the cache the hook would never fire.
@@ -795,7 +823,7 @@ The scout has already scanned the whole S&P 500 — its picks ARE the answer. Do
           }
 
           const agentStartedAt = now();
-          const run = handler(block.input);
+          const run = handler(input);
           // Inside a planned crew every agent runs on the short cap, clamped by
           // what's left of the budget; outside one (discovery, the live harness)
           // the original per-agent caps still apply.

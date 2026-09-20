@@ -58,10 +58,30 @@ describe("securityHeaderRules", () => {
     expect(globalHeaders()["Cross-Origin-Opener-Policy"]).toBe("same-origin-allow-popups");
   });
 
-  it("ships the CSP report-only so a wrong directive cannot break checkout or Plaid", () => {
+  it("ships the full CSP report-only so a wrong directive cannot break checkout or Plaid", () => {
     const headers = globalHeaders();
     expect(headers["Content-Security-Policy-Report-Only"]).toBeTruthy();
-    expect(headers["Content-Security-Policy"]).toBeUndefined();
+  });
+
+  // Report-only enforces nothing, so the directives that can't break any flow are
+  // ENFORCED in their own header — nothing that governs scripts, frames or fetches.
+  it("enforces only the break-proof directives", () => {
+    const enforced = globalHeaders()["Content-Security-Policy"];
+    expect(enforced).toBe("object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+    for (const risky of ["script-src", "connect-src", "frame-src", "img-src", "default-src"]) {
+      expect(enforced).not.toContain(risky);
+    }
+  });
+
+  it("reports violations somewhere a human can read them", () => {
+    expect(directives()["report-uri"]).toBe("/api/csp-report");
+    expect(directives()["report-to"]).toBe("csp");
+    expect(globalHeaders()["Reporting-Endpoints"]).toBe('csp="/api/csp-report"');
+  });
+
+  it("allows the Firebase auth helper iframe, which sign-in needs", () => {
+    vi.stubEnv("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", "lucra-ce8de.firebaseapp.com");
+    expect(directives()["frame-src"]).toContain("https://lucra-ce8de.firebaseapp.com");
   });
 });
 

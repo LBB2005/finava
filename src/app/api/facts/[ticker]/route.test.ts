@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
 import { tickerFactsFixture } from "@/test/factsFixture";
 
-const deps = vi.hoisted(() => ({ rateLimitGuard: vi.fn(), getTickerFacts: vi.fn() }));
-vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
+const deps = vi.hoisted(() => ({ guardDataRoute: vi.fn(), getTickerFacts: vi.fn() }));
+vi.mock("@/lib/dataRouteGuard", () => ({ guardDataRoute: deps.guardDataRoute }));
 vi.mock("@/lib/facts/ticker", () => ({ getTickerFacts: deps.getTickerFacts }));
 
 import { GET } from "./route";
@@ -12,7 +12,7 @@ const ctx = (ticker: string) => ({ params: Promise.resolve({ ticker }) });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  deps.rateLimitGuard.mockResolvedValue(null);
+  deps.guardDataRoute.mockResolvedValue({ userId: "u1" });
   deps.getTickerFacts.mockResolvedValue(tickerFactsFixture("AAPL"));
 });
 
@@ -35,7 +35,7 @@ describe("GET /api/facts/[ticker]", () => {
   });
 
   it("honours the rate limit", async () => {
-    deps.rateLimitGuard.mockResolvedValueOnce(NextResponse.json({ error: "slow" }, { status: 429 }));
+    deps.guardDataRoute.mockResolvedValueOnce({ error: NextResponse.json({ error: "slow" }, { status: 429 }) });
     expect((await GET(new Request("http://t"), ctx("AAPL"))).status).toBe(429);
   });
 

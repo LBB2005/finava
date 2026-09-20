@@ -2,6 +2,7 @@ import { generate } from "@/lib/llm";
 import { getMarketSnapshot, getMarketNews } from "@/lib/finnhub";
 import { getSkillsPrompt } from "@/agents/skills";
 import { perplexitySearch } from "@/lib/perplexity";
+import { fenceExternal, EXTERNAL_DATA_RULE } from "@/lib/externalContent";
 
 export async function runMacroAgent(input: unknown): Promise<string> {
   const { sectors = [] } = input as { sectors?: string[] };
@@ -44,7 +45,7 @@ export async function runMacroAgent(input: unknown): Promise<string> {
 
   const text = await generate({
     agent: "macro",
-    system: getSkillsPrompt("macro"),
+    system: [getSkillsPrompt("macro"), EXTERNAL_DATA_RULE].join("\n\n"),
     maxTokens: 10000,
     reasoning: 8000,
     prompt: `Analyze the current macro and market environment.${sectors.length ? ` Portfolio sectors: ${sectors.join(", ")}.` : ""}
@@ -53,9 +54,9 @@ Market snapshot (SPY, QQQ, IWM, sector ETFs):
 ${marketData}
 
 Recent market headlines:
-${newsData}
+${newsData ? fenceExternal("finnhub market headlines", newsData) : "(none)"}
 
-${perplexityContext ? `Deep macro research (Perplexity):\n${perplexityContext}` : ""}
+${perplexityContext ? `Deep macro research (Perplexity):\n${fenceExternal("perplexity macro research", perplexityContext)}` : ""}
 
 Provide:
 1. Overall market regime (risk-on/off, bull/bear)

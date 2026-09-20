@@ -13,6 +13,7 @@ vi.mock("@/lib/requireAuth", () => ({ requireAuth: deps.requireAuth }));
 vi.mock("@/lib/firebase-admin", () => ({ adminAuth: { getUser: deps.getUser } }));
 vi.mock("@/lib/stripe", () => ({
   stripeConfigured: deps.stripeConfigured,
+  billingBaseUrl: () => process.env.NEXT_PUBLIC_APP_URL || null,
   getOrCreateCustomer: deps.getOrCreateCustomer,
   stripe: { checkout: { sessions: { create: deps.checkoutCreate } } },
 }));
@@ -78,5 +79,14 @@ describe("POST /api/stripe/checkout", () => {
 
     expect(res.status).toBe(502);
     expect(deps.getOrCreateCustomer).toHaveBeenCalledWith("user_123", null);
+  });
+});
+
+describe("billing base URL", () => {
+  // Regression: an unset NEXT_PUBLIC_APP_URL sent paying customers to localhost.
+  it("refuses to build return URLs when the app URL isn't configured", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "";
+    const res = await POST(new Request("http://t/", { method: "POST", body: JSON.stringify({ plan: "Pro", cadence: "monthly" }) }));
+    expect(res.status).toBe(503);
   });
 });

@@ -10,6 +10,16 @@ const deps = vi.hoisted(() => {
     rateLimitGuard: vi.fn(),
     afterCb: null as null | (() => Promise<void>),
     db: {
+      // Serial transactions over the same store (Firestore transactions are serializable).
+      runTransaction: async <T,>(fn: (tx: {
+        get: (ref: { get: () => Promise<unknown> }) => Promise<unknown>;
+        set: (ref: { set: (v: unknown, o?: unknown) => Promise<void> }, v: unknown, o?: unknown) => void;
+      }) => Promise<T>): Promise<T> => {
+        const writes: Array<() => Promise<void>> = [];
+        const out = await fn({ get: (r) => r.get(), set: (r, v, o) => void writes.push(() => r.set(v, o)) });
+        for (const w of writes) await w();
+        return out;
+      },
       collection: (col: string) => ({
         doc: (id: string) => {
           const key = `${col}/${id}`;
@@ -84,5 +94,27 @@ describe("POST /api/waitlist", () => {
     const res = await POST(req({ email: "dup@example.com" }));
     expect(res.status).toBe(200);
     expect(deps.afterCb).toBeNull(); // no confirmation scheduled
+  });
+});
+
+describe("POST /api/waitlist — email-bomb resistance", () => {
+  // Regression: every exact-new string got a confirmation, so sub-address and
+  // dot variants aimed unlimited Finava mail at one inbox.
+  it("sends one confirmation per delivering mailbox, whatever the variant", async () => {
+    for (const email of ["victim@gmail.com", "victim+1@gmail.com", "v.ictim@gmail.com", "VICTIM+2@googlemail.com"]) {
+      await POST(req({ email }));
+      await deps.afterCb?.();
+      deps.afterCb = null;
+    }
+    expect(deps.sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops sending confirmations once the global daily cap is spent", async () => {
+    deps.store.set(`waitlistStats/${new Date().toISOString().slice(0, 10)}`, { confirmations: 300 });
+    const res = await POST(req({ email: "fresh@example.com" }));
+    await deps.afterCb?.();
+    expect(res.status).toBe(200); // the signup itself still succeeds
+    expect(deps.sendEmail).not.toHaveBeenCalled();
+    expect(deps.store.has("waitlist/fresh@example.com")).toBe(true);
   });
 });

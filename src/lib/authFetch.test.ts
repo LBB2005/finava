@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const deps = vi.hoisted(() => ({
   currentUser: null as null | { getIdToken: ReturnType<typeof vi.fn> },
+  authStateReady: vi.fn(),
 }));
 
 vi.mock("@/lib/firebase", () => ({
@@ -9,6 +10,7 @@ vi.mock("@/lib/firebase", () => ({
     get currentUser() {
       return deps.currentUser;
     },
+    authStateReady: () => deps.authStateReady(),
   },
 }));
 
@@ -32,6 +34,17 @@ describe("authFetch", () => {
 
     await expect(getAuthToken()).resolves.toBe("firebase-token");
     expect(deps.currentUser.getIdToken).toHaveBeenCalled();
+  });
+
+  it("waits for Firebase to restore the session before reading currentUser", async () => {
+    // Simulate a page load: the user only appears once the initial auth state resolves.
+    let release!: () => void;
+    deps.authStateReady.mockReturnValue(new Promise<void>((r) => (release = r)));
+    const pending = getAuthToken();
+    deps.currentUser = { getIdToken: vi.fn().mockResolvedValue("restored-token") };
+    release();
+
+    await expect(pending).resolves.toBe("restored-token");
   });
 
   it("uses the dev bypass token only outside production when the local toggle is on", async () => {

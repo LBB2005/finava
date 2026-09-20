@@ -345,6 +345,7 @@ const anthropicRevise: ReviseFn = async ({ messages, systemPrompt, maxTokens, on
     inputTokens: revision.usage?.input_tokens,
     outputTokens: revision.usage?.output_tokens,
     cacheRead: revision.usage?.cache_read_input_tokens,
+    cacheWrite: revision.usage?.cache_creation_input_tokens,
   });
 
   // Prefer the exact text the client saw; fall back to the assembled message

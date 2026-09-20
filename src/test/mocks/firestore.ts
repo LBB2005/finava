@@ -34,5 +34,26 @@ export function makeFirestoreMock(seed: Record<string, unknown> = {}) {
     })),
   });
 
-  return { db: { collection: (c: string) => collectionRef(c) }, store };
+  // Transactions run one at a time: real Firestore transactions are
+  // serializable (optimistic concurrency with retries), so a serialized mock is
+  // a faithful model for testing read-then-write logic under concurrency.
+  let txChain: Promise<unknown> = Promise.resolve();
+  const runTransaction = <T,>(fn: (tx: {
+    get: (ref: ReturnType<typeof docRef>) => ReturnType<ReturnType<typeof docRef>["get"]>;
+    set: (ref: ReturnType<typeof docRef>, v: unknown, opts?: { merge?: boolean }) => void;
+  }) => Promise<T>): Promise<T> => {
+    const run = txChain.then(async () => {
+      const writes: Array<() => Promise<void>> = [];
+      const result = await fn({
+        get: (ref) => ref.get(),
+        set: (ref, v, opts) => void writes.push(() => ref.set(v, opts)),
+      });
+      for (const w of writes) await w();
+      return result;
+    });
+    txChain = run.catch(() => {});
+    return run;
+  };
+
+  return { db: { collection: (c: string) => collectionRef(c), runTransaction }, store };
 }

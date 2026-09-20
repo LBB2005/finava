@@ -470,7 +470,15 @@ function directAttempts(
         const text = (r.content ?? [])
           .map((b) => (b.type === "text" ? b.text : ""))
           .join("");
-        return { text, inputTokens: r.usage?.input_tokens, outputTokens: r.usage?.output_tokens };
+        // Fold cache reads/writes into input at the full rate (the OpenRouter path's
+        // convention): Anthropic reports them outside input_tokens, and leaving
+        // them out would meter a cached system prompt as free.
+        const u = r.usage;
+        const inputTokens =
+          (u?.input_tokens ?? 0) +
+          (u?.cache_read_input_tokens ?? 0) +
+          (u?.cache_creation_input_tokens ?? 0);
+        return { text, inputTokens, outputTokens: u?.output_tokens };
       },
     });
   }

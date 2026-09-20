@@ -14,7 +14,9 @@ import {
   type QuarterlyMetric,
 } from "@/lib/edgar";
 import { getEarnings } from "@/lib/finnhub";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
+import { financialsMemo } from "@/lib/responseMemo";
+import { isValidTicker } from "@/lib/tickers";
 
 export interface FinancialsQuarter {
   year: number;
@@ -66,15 +68,25 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ ticker: string }> }
 ) {
-  const limited = await rateLimitGuard(req, "stock-financials", {
+  const gate = await guardDataRoute("stock-financials", {
     capacity: 20,
     refillPerSec: 0.5,
   });
-  if (limited) return limited;
+  if (gate.error) return gate.error;
 
   const { ticker } = await params;
   const symbol = (ticker ?? "").trim().toUpperCase();
+  // The symbol goes into provider URLs (Finnhub query, Polygon path) and a shared
+  // cache key, so it must be a ticker and nothing else — `%26`/`%2F` decode here.
+  if (symbol && !isValidTicker(symbol)) {
+    return NextResponse.json({ error: "Invalid ticker symbol." }, { status: 400 });
+  }
   if (!symbol) return NextResponse.json({ error: "Missing ticker." }, { status: 400 });
+
+  // Served from memory when fresh: the companyfacts file behind this is too big
+  // for Next's fetch cache, so every miss is a multi-megabyte SEC download.
+  const memoised = financialsMemo.get(symbol);
+  if (memoised) return NextResponse.json(memoised);
 
   let cik: string | null;
   try {
@@ -177,7 +189,7 @@ export async function GET(
         ? balance.equity / balance.sharesOutstanding
         : null;
 
-    return NextResponse.json({
+    const body = {
       ticker: symbol,
       quarters,
       fcfIsProxy,
@@ -212,7 +224,9 @@ export async function GET(
         },
       },
       asOf: new Date().toISOString(),
-    });
+    };
+    financialsMemo.set(symbol, body);
+    return NextResponse.json(body);
   } catch (err) {
     console.error("[stock financials]", symbol, err);
     return NextResponse.json(

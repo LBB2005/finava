@@ -9,6 +9,7 @@ const deps = vi.hoisted(() => ({
   rebuildHoldings: vi.fn(),
   set: vi.fn(),
   update: vi.fn(),
+  itemCount: 0,
 }));
 
 vi.mock("@/lib/requireAuth", () => ({ requireAuth: deps.requireAuth }));
@@ -16,6 +17,8 @@ vi.mock("@/lib/entitlements", () => ({ requireEntitlement: deps.requireEntitleme
 vi.mock("@/lib/plaid", () => ({
   plaidClient: { itemPublicTokenExchange: deps.itemPublicTokenExchange },
   plaidConfigured: deps.plaidConfigured,
+  MAX_PLAID_ITEMS: 5,
+  plaidItemLimitReached: (n: number) => n >= 5,
 }));
 vi.mock("@/lib/plaidSync", () => ({ rebuildHoldings: deps.rebuildHoldings }));
 // Deterministic encryption so we can assert ciphertext (not the raw token) is stored.
@@ -23,7 +26,12 @@ vi.mock("@/lib/crypto", () => ({ encryptSecret: (t: string) => `ENC(${t})` }));
 vi.mock("@/lib/firebase-admin", () => ({
   db: {
     collection: () => ({
-      doc: () => ({ collection: () => ({ doc: () => ({ set: deps.set, update: deps.update }) }) }),
+      doc: () => ({
+        collection: () => ({
+          doc: () => ({ set: deps.set, update: deps.update }),
+          count: () => ({ get: async () => ({ data: () => ({ count: deps.itemCount }) }) }),
+        }),
+      }),
     }),
   },
 }));
@@ -39,6 +47,7 @@ function req(body: unknown = { public_token: "public-sandbox-1", institution: { 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  deps.itemCount = 0;
   deps.requireAuth.mockResolvedValue({ userId: "user_1" });
   deps.requireEntitlement.mockResolvedValue(null);
   deps.plaidConfigured.mockReturnValue(true);
@@ -93,5 +102,15 @@ describe("POST /api/plaid/exchange", () => {
     const res = await POST(req());
     expect(res.status).toBe(500);
     await expect(res.json()).resolves.toEqual({ error: "Failed to link account" });
+  });
+});
+
+describe("POST /api/plaid/exchange — connection cap", () => {
+  it("refuses a new Item once the user is at the connection cap, before exchanging", async () => {
+    deps.itemCount = 5;
+    const res = await POST(req());
+    expect(res.status).toBe(409);
+    expect(deps.itemPublicTokenExchange).not.toHaveBeenCalled();
+    expect(deps.set).not.toHaveBeenCalled();
   });
 });

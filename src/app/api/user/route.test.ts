@@ -12,6 +12,9 @@ const deps = vi.hoisted(() => ({
   resolvePlan: vi.fn(),
   capabilitiesFor: vi.fn(),
   sanitizeAppearance: vi.fn(),
+  ledgerGet: vi.fn(),
+  batchSet: vi.fn(),
+  batchCommit: vi.fn(),
 }));
 
 vi.mock("@/lib/requireAuth", () => ({ requireAuth: deps.requireAuth }));
@@ -30,7 +33,10 @@ vi.mock("@/lib/firebase-admin", () => ({
     collection: vi.fn((name: string) => ({
       doc: vi.fn(() => {
         if (name === "userSettings") {
-          return { get: deps.settingsGet, set: deps.settingsSet };
+          return { kind: "settings", get: deps.settingsGet, set: deps.settingsSet };
+        }
+        if (name === "trialLedger") {
+          return { kind: "ledger", get: deps.ledgerGet };
         }
         if (name === "users") {
           return {
@@ -44,6 +50,7 @@ vi.mock("@/lib/firebase-admin", () => ({
         return { get: vi.fn(), set: vi.fn() };
       }),
     })),
+    batch: vi.fn(() => ({ set: deps.batchSet, commit: deps.batchCommit })),
   },
 }));
 
@@ -53,8 +60,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
   deps.requireAuth.mockResolvedValue({ userId: "user_123" });
+  deps.ledgerGet.mockResolvedValue({ exists: false });
+  deps.batchCommit.mockResolvedValue(undefined);
   deps.getUser.mockResolvedValue({
     uid: "user_123",
+    providerData: [{ providerId: "google.com", uid: "google-sub-1" }],
     displayName: "Liam",
     email: "liam@example.com",
     photoURL: "https://example.com/liam.png",
@@ -132,12 +142,19 @@ describe("GET /api/user", () => {
 
     await GET();
 
-    expect(deps.settingsSet).toHaveBeenCalledWith(
+    expect(deps.batchSet).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "settings" }),
       { trialEndsAt: "2026-06-18T12:00:00.000Z", trialInitialized: true },
       { merge: true }
     );
+    // The sign-in identity is recorded so the trial can't be re-farmed.
+    expect(deps.batchSet).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "ledger" }),
+      { firstTrialAt: "2026-06-15T12:00:00.000Z" }
+    );
+    expect(deps.batchCommit).toHaveBeenCalled();
 
-    deps.settingsSet.mockClear();
+    deps.batchSet.mockClear();
     deps.settingsGet.mockResolvedValueOnce({
       exists: true,
       data: () => ({ trialInitialized: true }),
@@ -145,7 +162,20 @@ describe("GET /api/user", () => {
 
     await GET();
 
+    expect(deps.batchSet).not.toHaveBeenCalled();
     expect(deps.settingsSet).not.toHaveBeenCalled();
+  });
+
+  // Regression: account deletion wipes userSettings and a re-sign-in mints a new
+  // UID, so "delete account, sign back in" used to re-farm the trial forever.
+  it("never re-grants a trial to a sign-in identity that already had one", async () => {
+    deps.settingsGet.mockResolvedValueOnce({ exists: true, data: () => ({}) });
+    deps.ledgerGet.mockResolvedValue({ exists: true });
+
+    await GET();
+
+    expect(deps.batchSet).not.toHaveBeenCalled();
+    expect(deps.settingsSet).toHaveBeenCalledWith({ trialInitialized: true }, { merge: true });
   });
 
   it("does not stamp trials for paid active users", async () => {
@@ -157,6 +187,7 @@ describe("GET /api/user", () => {
     await GET();
 
     expect(deps.settingsSet).not.toHaveBeenCalled();
+    expect(deps.batchSet).not.toHaveBeenCalled();
   });
 
   it("returns a stable 500 response on profile lookup failures", async () => {
@@ -239,5 +270,18 @@ describe("PATCH /api/user", () => {
 
     expect(res.status).toBe(500);
     await expect(res.json()).resolves.toEqual({ error: "Failed to update user" });
+  });
+});
+
+describe("trialIdentityKeys", () => {
+  it("hashes each provider identity, and is stable across accounts", async () => {
+    const { trialIdentityKeys } = await import("@/lib/trialLedger");
+    const a = trialIdentityKeys({ providerData: [{ providerId: "google.com", uid: "sub-1" }] as never });
+    const b = trialIdentityKeys({ providerData: [{ providerId: "google.com", uid: "sub-1" }] as never });
+    expect(a).toEqual(b);
+    expect(a[0]).toMatch(/^[0-9a-f]{64}$/);
+    // No raw identity in the key.
+    expect(a[0]).not.toContain("sub-1");
+    expect(trialIdentityKeys({ providerData: [] as never })).toEqual([]);
   });
 });

@@ -45,7 +45,7 @@ import { POST } from "./route";
 beforeEach(() => {
   vi.clearAllMocks();
   vi.setSystemTime(new Date("2026-06-15T12:00:00Z"));
-  deps.convGet.mockResolvedValue({ exists: true });
+  deps.convGet.mockResolvedValue({ exists: true, data: () => ({}) });
   deps.convUpdate.mockResolvedValue(undefined);
   // Fire-and-forget title generation: the route attaches a `.catch`, so the mock
   // must return a promise (it no-ops internally in production).

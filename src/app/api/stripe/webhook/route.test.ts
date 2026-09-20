@@ -214,6 +214,43 @@ describe("POST /api/stripe/webhook", () => {
     );
   });
 
+  // Regression: a past_due UPDATE never started the grace clock, and the
+  // invoice.payment_failed that would have was dropped as stale when it arrived
+  // after this (later-stamped) update — so the 7-day grace never expired.
+  it("starts the grace clock when a past_due update arrives first", async () => {
+    deps.constructEvent.mockReturnValueOnce(
+      event("customer.subscription.updated", subscription({ status: "past_due" }))
+    );
+    deps.mapSubscriptionToPlan.mockReturnValueOnce({ plan: "Pro", subscriptionStatus: "past_due" });
+    deps.getUserSettingsDoc.mockResolvedValueOnce({ data: () => ({}) });
+
+    await POST(webhookRequest());
+
+    expect(deps.setUserSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscriptionStatus: "past_due",
+        pastDueSince: new Date(1_700_000_000 * 1000).toISOString(),
+      }),
+      { merge: true }
+    );
+  });
+
+  it("keeps an already-running grace clock on a later past_due update", async () => {
+    deps.constructEvent.mockReturnValueOnce(
+      event("customer.subscription.updated", subscription({ status: "past_due" }))
+    );
+    deps.mapSubscriptionToPlan.mockReturnValueOnce({ plan: "Pro", subscriptionStatus: "past_due" });
+    deps.getUserSettingsDoc.mockResolvedValueOnce({
+      data: () => ({ pastDueSince: "2024-01-01T00:00:00.000Z" }),
+    });
+
+    await POST(webhookRequest());
+
+    const written = deps.setUserSettings.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(written.subscriptionStatus).toBe("past_due");
+    expect(written).not.toHaveProperty("pastDueSince");
+  });
+
   it("downgrades to Free and deletes subscription fields on subscription deletion", async () => {
     deps.constructEvent.mockReturnValueOnce(
       event("customer.subscription.deleted", subscription({ status: "canceled" }))

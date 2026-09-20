@@ -12,6 +12,8 @@ import {
   adminUids,
   isAdminEmail,
   isAdminUid,
+  isOwnerUid,
+  ownerUids,
 } from "./adminAllowlist";
 
 beforeEach(() => {
@@ -29,6 +31,29 @@ describe("env list parsing", () => {
 
     expect([...adminUids()]).toEqual(["uid_a", "uid_b"]);
     expect([...adminEmails()]).toEqual(["tester@example.com", "second@example.com"]);
+  });
+});
+
+describe("ownerUids / isOwnerUid", () => {
+  it("trims entries and matches exactly", () => {
+    vi.stubEnv("OWNER_UIDS", " owner_a , owner_b ,, ");
+    expect([...ownerUids()]).toEqual(["owner_a", "owner_b"]);
+    expect(isOwnerUid("owner_b")).toBe(true);
+    expect(isOwnerUid("OWNER_B")).toBe(false);
+  });
+
+  it("is empty (nobody is an operator) when unset", () => {
+    vi.stubEnv("OWNER_UIDS", "");
+    expect(ownerUids().size).toBe(0);
+    expect(isOwnerUid("anyone")).toBe(false);
+  });
+
+  it("is independent of the tester allowlist", () => {
+    vi.stubEnv("ADMIN_UIDS", "tester_uid");
+    vi.stubEnv("ADMIN_EMAILS", "tester@example.com");
+    vi.stubEnv("OWNER_UIDS", "owner_uid");
+    expect(isOwnerUid("tester_uid")).toBe(false);
+    expect(isOwnerUid("owner_uid")).toBe(true);
   });
 });
 

@@ -18,8 +18,11 @@ const h = vi.hoisted(() => {
     streamFinal: { value: null as unknown },
     streamThrows: { value: false },
     streamArgs: [] as Array<{ messages: Array<{ content: string }> }>,
+    recordUsage: vi.fn(async () => {}),
   };
 });
+
+vi.mock("@/lib/usage", () => ({ recordUsage: h.recordUsage }));
 
 vi.mock("@/agents/ceo", () => ({
   agentDispatch: h.dispatch,
@@ -125,6 +128,27 @@ describe("runDiscoverySynthesis", () => {
       // replace: the revision already streamed as deltas; this emit is the whole report.
       expect.objectContaining({ type: "final_response", content: expect.stringContaining("[revised]"), replace: true }),
     );
+  });
+
+  // Regression: this direct Anthropic call was never metered, so synthesis was a
+  // free 24K-output Sonnet completion for any signed-in user.
+  it("meters the synthesis draft, cache tokens included", async () => {
+    h.recordUsage.mockClear();
+    h.streamFinal.value = {
+      content: [{ type: "text", text: "Ranked draft" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 1200, output_tokens: 3400, cache_read_input_tokens: 50, cache_creation_input_tokens: 900 },
+    };
+    const { runDiscoverySynthesis } = await import("./discovery");
+    await runDiscoverySynthesis(req as never, () => {});
+    expect(h.recordUsage).toHaveBeenCalledWith({
+      agent: "discovery-synthesis",
+      model: "test-model",
+      inputTokens: 1200,
+      outputTokens: 3400,
+      cacheRead: 50,
+      cacheWrite: 900,
+    });
   });
 
   it("never ranks stocks as the answer to an ETF request", async () => {

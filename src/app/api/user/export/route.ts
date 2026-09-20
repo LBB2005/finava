@@ -29,11 +29,13 @@ export async function GET() {
   try {
     const userRef = db.collection("users").doc(userId);
 
-    const [firebaseUser, settingsSnap, usageSnap, collections] = await Promise.all([
+    const [firebaseUser, settingsSnap, usageSnap, collections, memorySnap] = await Promise.all([
       adminAuth.getUser(userId).catch(() => null),
       db.collection("userSettings").doc(userId).get(),
       db.collection("userUsage").doc(userId).get(),
       userRef.listCollections(),
+      // Portfolio-derived insights kept in a top-level collection, keyed by userId.
+      db.collection("tickerMemory").where("userId", "==", userId).get(),
     ]);
 
     const data: Record<string, unknown> = {};
@@ -54,6 +56,7 @@ export async function GET() {
       );
       data[col.id] = docs;
     }
+    data.tickerMemory = memorySnap.docs.map((d) => redact(serializeDoc(d.id, d.data())));
 
     const exportPayload = {
       exportedAt: new Date().toISOString(),

@@ -2,15 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const deps = vi.hoisted(() => ({
   getBoardData: vi.fn(),
-  rateLimitGuard: vi.fn(),
+  guardDataRoute: vi.fn(),
 }));
 
 vi.mock("@/lib/leaderboardData", () => ({ getBoardData: deps.getBoardData }));
-vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
+vi.mock("@/lib/dataRouteGuard", () => ({ guardDataRoute: deps.guardDataRoute }));
 vi.mock("@/lib/extraUniverse", () => ({
   ALL_CONSTITUENTS: [{ ticker: "AAPL" }, { ticker: "MSFT" }],
 }));
 vi.mock("@/lib/tickers", () => ({
+  MAX_BATCH_TICKERS: 3,
   parseTickersParam: (s: string) => (s ? s.split(",").filter(Boolean) : []),
 }));
 
@@ -22,14 +23,14 @@ function req(qs = "") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  deps.rateLimitGuard.mockResolvedValue(null); // allow by default
+  deps.guardDataRoute.mockResolvedValue({ userId: "u1" }); // allow by default
   deps.getBoardData.mockResolvedValue([{ ticker: "AAPL", price: 1 }]);
 });
 
 describe("GET /api/leaderboard", () => {
   it("returns the limiter response when throttled", async () => {
     const limited = new Response("rate limited", { status: 429 });
-    deps.rateLimitGuard.mockResolvedValueOnce(limited);
+    deps.guardDataRoute.mockResolvedValueOnce({ error: limited });
     const res = await GET(req());
     expect(res.status).toBe(429);
     expect(deps.getBoardData).not.toHaveBeenCalled();
@@ -52,6 +53,13 @@ describe("GET /api/leaderboard", () => {
   it("uses the explicit ticker list when provided", async () => {
     await GET(req("?tickers=NVDA,TSLA"));
     expect(deps.getBoardData).toHaveBeenCalledWith(["NVDA", "TSLA"]);
+  });
+
+  // Regression: a client-chosen list of never-seen symbols was an uncached
+  // per-symbol Finnhub fan-out that drained the shared key in one request.
+  it("passes board names freely but bounds off-board names to one quote batch", async () => {
+    await GET(req("?tickers=AAPL,X1,X2,MSFT,X3,X4,X5"));
+    expect(deps.getBoardData).toHaveBeenCalledWith(["AAPL", "MSFT", "X1", "X2", "X3"]);
   });
 
   it("500s when the data layer throws", async () => {

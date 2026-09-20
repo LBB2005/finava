@@ -61,6 +61,7 @@ import {
   easternMinutes,
   runStep,
   StepVersionMismatchError,
+  withHarness,
 } from "./harness";
 
 const SECRET = "s3cret-harness-value";
@@ -185,6 +186,15 @@ describe("runStep", () => {
     expect(next.result).toBe("b");
   });
 
+  // Regression: runId was free text and became a Firestore doc path.
+  it("refuses a run id that isn't an ET trading day, before touching the store", async () => {
+    const body = vi.fn(async () => "x");
+    for (const bad of ["../liveConfig", "2026-09-02/steps", "", "today"]) {
+      await expect(runStep(bad, "scout", body)).rejects.toThrow("YYYY-MM-DD");
+    }
+    expect(body).not.toHaveBeenCalled();
+  });
+
   it("does not record a step whose body threw, so a retry re-runs it", async () => {
     await expect(
       runStep("2026-09-02", "wave_0", async () => {
@@ -279,5 +289,31 @@ describe("runStep — cross-version replay", () => {
     // wave_0 was first recorded under the NEW build, so it replays cleanly.
     const again = await runStep("2026-09-02", "wave_0", async () => "c");
     expect(again).toEqual({ result: "b", replayed: true });
+  });
+});
+
+describe("withHarness error bodies", () => {
+  // The runner is a GitHub Actions job in a PUBLIC repo, so every response body
+  // lands in a public log. Raw error text (provider balance/quota messages,
+  // internal URLs) must stay in the server log.
+  it("returns a generic 500 that doesn't echo the error", async () => {
+    const handler = withHarness(async () => {
+      throw new Error("OpenRouter 402: balance $3.12 remaining at https://internal.example/x");
+    });
+    const res = await handler(req({ "x-live-secret": SECRET }));
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(text).not.toContain("OpenRouter");
+    expect(text).not.toContain("internal.example");
+    expect(text).toContain("step_failed");
+  });
+
+  it("maps a bad run id to a 400", async () => {
+    const handler = withHarness(async () => {
+      await runStep("../x", "scout", async () => 1);
+      return new Response("unreachable");
+    });
+    const res = await handler(req({ "x-live-secret": SECRET }));
+    expect(res.status).toBe(400);
   });
 });

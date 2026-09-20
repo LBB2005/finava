@@ -6,6 +6,8 @@ const BASE = "https://finnhub.io/api/v1";
 const KEY = process.env.FINNHUB_API_KEY;
 const FETCH_TIMEOUT_MS = 10_000;
 
+// Every caller URL-encodes its interpolations: tickers can arrive from model
+// output, and a raw `&`/`#` in one rewrote the query (a `#` truncated `&token=`).
 async function fhFetch(path: string, revalidate = 30) {
   const sep = path.includes("?") ? "&" : "?";
   // Retry transient 429/5xx/network blips before giving up (see fetchWithRetry):
@@ -53,7 +55,7 @@ export interface TickerSnapshot {
 // Throw in that case so getSnapshots drops the ticker instead of surfacing $0 as a
 // real price — a fabricated zero is worse than a missing row in a finance app.
 export async function getQuote(ticker: string): Promise<TickerSnapshot> {
-  const d = await fhFetch(`/quote?symbol=${ticker}`);
+  const d = await fhFetch(`/quote?symbol=${encodeURIComponent(ticker)}`);
   const price = d.c;
   if (typeof price !== "number" || price <= 0) {
     throw new Error(`No quote available for ${ticker}`);
@@ -154,7 +156,7 @@ export async function getCandles(
   if (KEY) {
     try {
       const data = await fhFetch(
-        `/stock/candle?symbol=${ticker}&resolution=${resolution}&from=${fromTs}&to=${toTs}`
+        `/stock/candle?symbol=${encodeURIComponent(ticker)}&resolution=${encodeURIComponent(resolution)}&from=${fromTs}&to=${toTs}`
       ) as CandleResponse;
       if (data?.s === "ok" && Array.isArray(data.c) && data.c.length > 0) {
         return data;
@@ -183,17 +185,17 @@ export async function getCandles(
 
 // Company news
 export async function getCompanyNews(ticker: string, fromDate: string, toDate: string) {
-  return fhFetch(`/company-news?symbol=${ticker}&from=${fromDate}&to=${toDate}`);
+  return fhFetch(`/company-news?symbol=${encodeURIComponent(ticker)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`);
 }
 
 // General market news
 export async function getMarketNews(category: "general" | "forex" | "crypto" | "merger" = "general") {
-  return fhFetch(`/news?category=${category}`);
+  return fhFetch(`/news?category=${encodeURIComponent(category)}`);
 }
 
 // Reported financials (annual/quarterly)
 export async function getFinancialsReported(ticker: string, freq: "annual" | "quarterly" = "annual") {
-  return fhFetch(`/stock/financials-reported?symbol=${ticker}&freq=${freq}`);
+  return fhFetch(`/stock/financials-reported?symbol=${encodeURIComponent(ticker)}&freq=${encodeURIComponent(freq)}`);
 }
 
 // Basic financials metrics (P/E, EV/EBITDA, margins, avg volume, etc.).
@@ -201,23 +203,23 @@ export async function getFinancialsReported(ticker: string, freq: "annual" | "qu
 // fetches them across the whole universe, so a short TTL would hammer the
 // free-tier rate limit on every refresh.
 export async function getBasicFinancials(ticker: string) {
-  return fhFetch(`/stock/metric?symbol=${ticker}&metric=all`, 3600);
+  return fhFetch(`/stock/metric?symbol=${encodeURIComponent(ticker)}&metric=all`, 3600);
 }
 
 // Historical EPS surprises
 export async function getEarnings(ticker: string) {
-  return fhFetch(`/stock/earnings?symbol=${ticker}&limit=8`);
+  return fhFetch(`/stock/earnings?symbol=${encodeURIComponent(ticker)}&limit=8`);
 }
 
 // Upcoming earnings calendar
 export async function getEarningsCalendar(fromDate: string, toDate: string, ticker?: string) {
-  const sym = ticker ? `&symbol=${ticker}` : "";
-  return fhFetch(`/calendar/earnings?from=${fromDate}&to=${toDate}${sym}`);
+  const sym = ticker ? `&symbol=${encodeURIComponent(ticker)}` : "";
+  return fhFetch(`/calendar/earnings?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}${sym}`);
 }
 
 // Insider transactions (Form 4)
 export async function getInsiderTransactions(ticker: string) {
-  return fhFetch(`/stock/insider-transactions?symbol=${ticker}`);
+  return fhFetch(`/stock/insider-transactions?symbol=${encodeURIComponent(ticker)}`);
 }
 
 // Recommendation trends (analyst ratings).
@@ -226,34 +228,34 @@ export async function getInsiderTransactions(ticker: string) {
 // persist and accumulate across refreshes instead of re-hitting the free-tier
 // rate limit (60/min) every cycle, so analyst coverage converges to full.
 export async function getRecommendationTrends(ticker: string) {
-  return fhFetch(`/stock/recommendation?symbol=${ticker}`, 21600);
+  return fhFetch(`/stock/recommendation?symbol=${encodeURIComponent(ticker)}`, 21600);
 }
 
 // Analyst price targets (also cached 6h — see getRecommendationTrends).
 export async function getPriceTarget(ticker: string) {
-  return fhFetch(`/stock/price-target?symbol=${ticker}`, 21600);
+  return fhFetch(`/stock/price-target?symbol=${encodeURIComponent(ticker)}`, 21600);
 }
 
 // Company profile
 export async function getCompanyProfile(ticker: string) {
-  return fhFetch(`/stock/profile2?symbol=${ticker}`);
+  return fhFetch(`/stock/profile2?symbol=${encodeURIComponent(ticker)}`);
 }
 
 // Peers
 export async function getPeers(ticker: string) {
-  return fhFetch(`/stock/peers?symbol=${ticker}`);
+  return fhFetch(`/stock/peers?symbol=${encodeURIComponent(ticker)}`);
 }
 
 // Institutional ownership — largest holders by position size. Cached 12h
 // (13F-derived, moves on a quarterly cadence). Premium-gated on some plans;
 // callers wrap in try/catch and degrade to "owners unavailable".
 export async function getOwnership(ticker: string) {
-  return fhFetch(`/stock/ownership?symbol=${ticker}&limit=20`, 43200);
+  return fhFetch(`/stock/ownership?symbol=${encodeURIComponent(ticker)}&limit=20`, 43200);
 }
 
 // Mutual-fund / ETF ownership of a ticker. Cached 12h (see getOwnership).
 export async function getFundOwnership(ticker: string) {
-  return fhFetch(`/stock/fund-ownership?symbol=${ticker}&limit=20`, 43200);
+  return fhFetch(`/stock/fund-ownership?symbol=${encodeURIComponent(ticker)}&limit=20`, 43200);
 }
 
 // Symbol search — resolve a company name to its ticker(s). Cached 24h; used by

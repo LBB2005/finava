@@ -29,3 +29,14 @@ export const plaidClient = new PlaidApi(configuration);
 export function plaidConfigured(): boolean {
   return Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
 }
+
+/**
+ * Most brokerage connections (Plaid Items) one user may hold. Plaid bills per
+ * Item per month, and nothing used to stop one account linking the same
+ * brokerage over and over — each link a new billed Item that outlived any trial.
+ */
+export const MAX_PLAID_ITEMS = 5;
+
+export function plaidItemLimitReached(existingItems: number): boolean {
+  return existingItems >= MAX_PLAID_ITEMS;
+}

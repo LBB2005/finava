@@ -42,10 +42,22 @@ export type RateLimitOptions = {
 export function consumeToken(key: string, opts: RateLimitOptions): boolean {
   const now = Date.now();
   let bucket = buckets.get(key);
-  if (!bucket) {
-    // Crude bound on memory: drop everything once the map gets large. Losing
-    // bucket state just means a brief burst allowance for everyone — acceptable.
-    if (buckets.size >= MAX_BUCKETS) buckets.clear();
+  if (bucket) {
+    // Re-insert so Map order tracks recency (least-recently-used first).
+    buckets.delete(key);
+    buckets.set(key, bucket);
+  } else {
+    // Bound memory by evicting the least-recently-used tenth. This used to
+    // clear() the whole map — so anyone able to mint ~10K fresh keys (IPs, or
+    // an IPv6 block) reset EVERY bucket at will, including the per-user LLM
+    // spend guards that share this map.
+    if (buckets.size >= MAX_BUCKETS) {
+      let drop = Math.ceil(MAX_BUCKETS / 10);
+      for (const k of buckets.keys()) {
+        if (drop-- <= 0) break;
+        buckets.delete(k);
+      }
+    }
     bucket = { tokens: opts.capacity, last: now };
     buckets.set(key, bucket);
   }
@@ -126,10 +138,33 @@ function tooManyRequests(): NextResponse {
   );
 }
 
-/** Identity for unauthenticated routes: first hop of x-forwarded-for, else a shared key. */
+/**
+ * Identity for unauthenticated routes: first hop of x-forwarded-for (Vercel
+ * overwrites that header, so it can't be spoofed), else a shared key.
+ *
+ * An IPv6 client is keyed by its /64: one host or home connection is normally
+ * handed a whole /64, so a per-address key let a single client rotate through
+ * billions of fresh buckets.
+ */
 export function clientKey(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
-  return fwd?.split(",")[0]?.trim() || "anonymous";
+  const ip = fwd?.split(",")[0]?.trim();
+  if (!ip) return "anonymous";
+  return ip.includes(":") ? ipv6Slash64(ip) : ip;
+}
+
+function ipv6Slash64(ip: string): string {
+  const addr = ip.replace(/^\[|\]$/g, "").split("%")[0].toLowerCase();
+  const [head, tail] = addr.split("::");
+  const headGroups = head ? head.split(":") : [];
+  const tailGroups = tail !== undefined && tail ? tail.split(":") : [];
+  const missing = 8 - headGroups.length - tailGroups.length;
+  const groups =
+    addr.includes("::") && missing >= 0
+      ? [...headGroups, ...Array(missing).fill("0"), ...tailGroups]
+      : headGroups;
+  if (groups.length < 4) return addr; // not a parseable IPv6 address — key it verbatim
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 /**

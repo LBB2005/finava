@@ -1,8 +1,8 @@
 // A ticker's facts: every number the stock page shows, sourced and dated.
-// Public read-only market data (same posture as /api/stock/[ticker]/score).
+// Read-only market data for signed-in callers (see guardDataRoute).
 // `?cachedOnly=1` skips the expensive score/DCF assembly for a fast first paint.
 import { NextResponse } from "next/server";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
 import { isValidTicker } from "@/lib/tickers";
 import { getTickerFacts } from "@/lib/facts/ticker";
 
@@ -11,8 +11,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(req: Request, { params }: { params: Promise<{ ticker: string }> }) {
-  const limited = await rateLimitGuard(req, "facts", { capacity: 30, refillPerSec: 0.5 });
-  if (limited) return limited;
+  const gate = await guardDataRoute("facts", { capacity: 30, refillPerSec: 0.5 });
+  if (gate.error) return gate.error;
 
   const { ticker } = await params;
   const symbol = (ticker ?? "").trim().toUpperCase();

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { CountryCode, Products } from "plaid";
-import { plaidClient, plaidConfigured } from "@/lib/plaid";
+import { MAX_PLAID_ITEMS, plaidClient, plaidConfigured, plaidItemLimitReached } from "@/lib/plaid";
+import { db } from "@/lib/firebase-admin";
 import { requireAuth } from "@/lib/requireAuth";
 import { requireEntitlement } from "@/lib/entitlements";
 
@@ -18,6 +19,17 @@ export async function POST() {
     return NextResponse.json(
       { error: "Plaid is not configured (missing PLAID_CLIENT_ID/PLAID_SECRET)" },
       { status: 503 }
+    );
+  }
+
+  // Plaid bills per Item: cap the connections one user can create (see MAX_PLAID_ITEMS).
+  const itemCount = (
+    await db.collection("users").doc(userId).collection("plaidItems").count().get()
+  ).data().count;
+  if (plaidItemLimitReached(itemCount)) {
+    return NextResponse.json(
+      { error: "connection_limit", message: `You can link up to ${MAX_PLAID_ITEMS} brokerage connections. Disconnect one first.` },
+      { status: 409 }
     );
   }
 

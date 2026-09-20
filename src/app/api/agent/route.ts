@@ -7,15 +7,15 @@ import { pageContextPrompt } from "@/lib/pageContext";
 import { userRateLimit } from "@/lib/rateLimit";
 import {
   checkUsageLimit,
-  checkDeepResearchAllowed,
-  recordDeepResearchRun,
+  reserveDeepResearchRun,
   usageStore,
   makeRunContext,
 } from "@/lib/usage";
 import { logRunCost } from "@/lib/usageRunCost";
 import { loadDnaSummary } from "@/lib/investorDnaStore";
 import type { AgentEvent } from "@/types/chat";
-import type { WaveRequest, SynthesizeRequest } from "@/lib/scoutTypes";
+import { sanitizeSynthesizeRequest, sanitizeWaveRequest } from "@/lib/discoverRequests";
+import { apiError } from "@/lib/apiError";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -40,6 +40,15 @@ export async function POST(req: Request) {
     conversationId,
   } = body;
 
+  // Discover continuations are client-built from earlier responses, so they are
+  // clamped server-side before anything runs (see discoverRequests). Rejected up
+  // front — before the rate limiter or meter — so a malformed body costs nothing.
+  const synthesis = wave?.synthesize ? sanitizeSynthesizeRequest(wave) : null;
+  const waveRun = wave && !wave.synthesize ? sanitizeWaveRequest(wave) : null;
+  if (wave && !synthesis && !waveRun) {
+    return apiError("validation_error", "Invalid discovery request", 400);
+  }
+
   // Fold the viewed-page snapshot into the CEO's context block so the crew scopes
   // its work to the stock the user is looking at (and resolves "this"/"it" to that
   // ticker), without threading a new arg through every sub-agent.
@@ -63,12 +72,10 @@ export async function POST(req: Request) {
   // stranded mid-session by the cap.
   const isDeepInitiation = !wave && (!!deepResearch || tier === "deep");
   if (isDeepInitiation) {
-    const deepLimited = await checkDeepResearchAllowed(userId);
+    // Check-and-count in one transaction, so a concurrent burst can't all pass
+    // the check before any increment lands.
+    const deepLimited = await reserveDeepResearchRun(userId);
     if (deepLimited) return deepLimited;
-    // Increment at run START (not completion) so a burst of concurrent runs
-    // can't all slip past the pre-check. A failed run still counts — an
-    // accepted anti-abuse trade-off.
-    void recordDeepResearchRun(userId);
   }
 
   // Which lane is spending. Picks the per-run cap and buckets the run_cost
@@ -91,13 +98,13 @@ export async function POST(req: Request) {
         };
 
         try {
-          if (wave && wave.synthesize) {
-            // Final discovery synthesis — one Sonnet pass, no crew. Shape is
-            // validated inside runDiscoverySynthesis; cast through unknown.
-            await runDiscoverySynthesis(wave as unknown as SynthesizeRequest, emit);
-          } else if (wave) {
-            // One deterministic crew wave over ≤5 names.
-            await runDiscoveryWave(wave as unknown as WaveRequest, emit);
+          if (synthesis) {
+            // Final discovery synthesis — one Sonnet pass, no crew. Metered in
+            // runDiscoverySynthesis; the request was clamped above.
+            await runDiscoverySynthesis(synthesis, emit);
+          } else if (waveRun) {
+            // One deterministic crew wave over ≤5 names, always the default crew.
+            await runDiscoveryWave(waveRun, emit);
           } else {
             // Normal CEO turn (incl. quick discover + deep shortlist emit).
             // Investor DNA, inferred from holdings (W4-2). Not for discover: a

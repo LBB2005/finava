@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   const gate = await requireAdmin();
   if (gate.error) return gate.error;
 
-  let body: { issue?: number; test?: string } = {};
+  let body: { issue?: number; test?: unknown } = {};
   try {
     body = await request.json();
   } catch {
@@ -56,16 +56,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No such issue" }, { status: 404 });
   }
   const content = weeklyUpdateEmail(issue);
+  const issueKey = issue.issueLabel;
 
-  // Dry run — send to a single test address, no Firestore writes.
-  if (body.test) {
+  // Dry run — send to ONE test address, no Firestore writes. sendEmail accepts an
+  // array, so an unchecked `test` was a free-form bulk sender.
+  if (body.test !== undefined) {
+    if (typeof body.test !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.test)) {
+      return NextResponse.json({ error: "test must be a single email address" }, { status: 400 });
+    }
     const result = await sendEmail(body.test, content);
     return NextResponse.json({ test: body.test, result });
   }
 
-  // Collect recipients from the waitlist.
+  // Collect recipients from the waitlist, skipping anyone who already has this
+  // issue — a double-click or a retried request must not mail the list twice.
   const snap = await db.collection("waitlist").get();
   const recipients = snap.docs
+    .filter((d) => d.data().lastWeeklyIssue !== issueKey)
     .map((d) => (d.data().email as string) || d.id)
     .filter((e) => typeof e === "string" && e.includes("@"));
 
@@ -75,7 +82,6 @@ export async function POST(request: Request) {
 
   let sent = 0;
   let failed = 0;
-  const issueKey = issue.issueLabel;
 
   // Bounded concurrency so a large list doesn't open hundreds of sockets.
   for (let i = 0; i < recipients.length; i += SEND_CONCURRENCY) {

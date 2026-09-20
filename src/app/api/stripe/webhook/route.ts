@@ -100,13 +100,22 @@ export async function POST(req: Request) {
           stripeSubscriptionId: sub.id,
           ...subscriptionPatch(sub),
         };
+        const pastDue = patch.subscriptionStatus === "past_due";
         // A healthy subscription clears any past-due grace clock.
-        if (patch.subscriptionStatus !== "past_due") {
-          patch.pastDueSince = FieldValue.delete();
-        }
-        const applied = await applySubscriptionEvent(uid, event.created, patch, {
-          advanceClock: true,
-        });
+        if (!pastDue) patch.pastDueSince = FieldValue.delete();
+        // A past_due update STARTS the clock when nothing has yet. Leaving that
+        // to invoice.payment_failed alone meant a failure delivered after this
+        // (later-stamped) update was dropped as stale, and with no pastDueSince
+        // the 7-day grace never expired.
+        const applied = await applySubscriptionEvent(
+          uid,
+          event.created,
+          (existing) =>
+            pastDue && !existing.pastDueSince
+              ? { ...patch, pastDueSince: new Date(event.created * 1000).toISOString() }
+              : patch,
+          { advanceClock: true }
+        );
         if (!applied) {
           console.log(`[stripe/webhook] ignored stale ${event.type} for ${uid}`);
         }

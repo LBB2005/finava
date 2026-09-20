@@ -2,18 +2,24 @@
 // 15-factor engine). Kept for callers of this path; the stock page reads
 // /api/facts/[ticker] directly. A score we can't compute is null with a note.
 import { NextResponse } from "next/server";
-import { rateLimitGuard } from "@/lib/rateLimit";
+import { guardDataRoute } from "@/lib/dataRouteGuard";
+import { isValidTicker } from "@/lib/tickers";
 import { getTickerFacts } from "@/lib/facts/ticker";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(req: Request, { params }: { params: Promise<{ ticker: string }> }) {
-  const limited = await rateLimitGuard(req, "stock-score", { capacity: 20, refillPerSec: 0.5 });
-  if (limited) return limited;
+  const gate = await guardDataRoute("stock-score", { capacity: 20, refillPerSec: 0.5 });
+  if (gate.error) return gate.error;
 
   const { ticker } = await params;
   const symbol = (ticker ?? "").trim().toUpperCase();
+  // The symbol goes into provider URLs (Finnhub query, Polygon path) and a shared
+  // cache key, so it must be a ticker and nothing else — `%26`/`%2F` decode here.
+  if (symbol && !isValidTicker(symbol)) {
+    return NextResponse.json({ error: "Invalid ticker symbol." }, { status: 400 });
+  }
   if (!symbol) return NextResponse.json({ error: "Missing ticker." }, { status: 400 });
 
   try {

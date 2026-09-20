@@ -22,14 +22,14 @@ const deps = vi.hoisted(() => ({
   requested: [] as { url: string; options: Record<string, unknown> }[],
   resolvePinnedIp: vi.fn(),
   pinnedLookup: vi.fn(() => "LOOKUP_FN"),
-  rateLimitGuard: vi.fn(),
+  guardDataRoute: vi.fn(),
 }));
 
 vi.mock("@/lib/ssrfGuard", () => ({
   resolvePinnedIp: deps.resolvePinnedIp,
   pinnedLookup: deps.pinnedLookup,
 }));
-vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
+vi.mock("@/lib/dataRouteGuard", () => ({ guardDataRoute: deps.guardDataRoute }));
 
 /** Minimal node:http(s) `get` stand-in driving the route's response handling.
  *  The same implementation backs both modules — the route picks one by scheme. */
@@ -121,7 +121,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   deps.responses.clear();
   deps.requested.length = 0;
-  deps.rateLimitGuard.mockResolvedValue(null);
+  deps.guardDataRoute.mockResolvedValue({ userId: "u1" });
   deps.resolvePinnedIp.mockResolvedValue({ address: "93.184.216.34", family: 4 });
 });
 
@@ -135,26 +135,36 @@ describe("POST /api/og-image", () => {
     });
   });
 
-  it("sets a cacheable Cache-Control header", async () => {
+  it("sets a browser-only Cache-Control header (the route is per-user now)", async () => {
     const res = await POST(post({ urls: [] }));
-    expect(res.headers.get("Cache-Control")).toBe("public, max-age=3600, s-maxage=86400");
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=3600");
   });
 
   it("returns the rate-limit response without scraping anything", async () => {
-    deps.rateLimitGuard.mockResolvedValueOnce(
-      NextResponse.json({ error: "Too many requests" }, { status: 429 }),
-    );
+    deps.guardDataRoute.mockResolvedValueOnce({
+      error: NextResponse.json({ error: "Too many requests" }, { status: 429 }),
+    });
     const res = await POST(post({ urls: [uniqueUrl()] }));
     expect(res.status).toBe(429);
     expect(deps.requested).toHaveLength(0);
   });
 
-  it("throttles this route as a server-side fetch primitive", async () => {
+  it("requires a session and throttles per user, as a server-side fetch primitive", async () => {
     await POST(post({ urls: [] }));
-    expect(deps.rateLimitGuard).toHaveBeenCalledWith(expect.anything(), "og-image", {
+    expect(deps.guardDataRoute).toHaveBeenCalledWith("og-image", {
       capacity: 20,
       refillPerSec: 1,
     });
+  });
+
+  it("refuses non-default ports without connecting", async () => {
+    const res = await POST(post({ urls: ["https://example.com:8443/a", "http://example.com:22/"] }));
+    const body = await res.json();
+    expect(Object.values(body.results)).toEqual([
+      { image: null, domain: null },
+      { image: null, domain: null },
+    ]);
+    expect(deps.requested).toHaveLength(0);
   });
 
   it("strips a leading www. from the reported domain", async () => {

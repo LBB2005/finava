@@ -50,29 +50,22 @@ function isPublicRoute(pathname: string): boolean {
 // Dev-only auth bypass: never available in a production build.
 const DEV_ENABLED = process.env.NODE_ENV !== "production";
 
-// Private-beta lockdown (mirrors the server gate in requireAuth). When on, only
-// allowlisted accounts may use the app; any other signed-in Google user is signed
-// back out. Matching on email as well as UID is what lets a brand-new tester in on
-// their first sign-in, before they have a UID to list.
-const BETA_ADMIN_ONLY = process.env.NEXT_PUBLIC_BETA_ADMIN_ONLY === "1";
-const ADMIN_UIDS = new Set(
-  (process.env.NEXT_PUBLIC_ADMIN_UIDS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-);
-const ADMIN_EMAILS = new Set(
-  (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
-);
-
-// This is UX only — the server gate in requireAuth is the real boundary — but keep
-// the emailVerified rule identical so the two can't disagree.
-function isAllowlisted(u: User): boolean {
-  if (ADMIN_UIDS.has(u.uid)) return true;
-  return !!u.email && u.emailVerified && ADMIN_EMAILS.has(u.email.toLowerCase());
+// Private-beta lockdown. The allowlist lives ONLY on the server (requireAuth):
+// the client asks /api/auth/access once per page load and treats a 403
+// "Private beta" as locked out. It used to mirror the allowlist from
+// NEXT_PUBLIC_ADMIN_UIDS / NEXT_PUBLIC_ADMIN_EMAILS, which shipped every tester's
+// email address to every visitor in the public JS bundle. UX only — every API
+// route re-checks, so a network failure here fails open, never closed.
+async function isBetaBlocked(u: User): Promise<boolean> {
+  try {
+    const token = await u.getIdToken();
+    const res = await fetch("/api/auth/access", { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status !== 403) return false;
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return body.error === "Private beta";
+  } catch {
+    return false;
+  }
 }
 
 // Stand-in for a Firebase user. Has no real UID/token, so authenticated
@@ -90,14 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [realUser, setRealUser] = useState<User | null>(null);
   const [devBypass, setDevBypass] = useState(false);
   const [betaDenied, setBetaDenied] = useState(false);
+  // A real, non-allowlisted user under the beta lockdown is treated as
+  // not-signed-in: the server rejects their token anyway, so never mount the
+  // app shell for them.
+  const [betaLockedOut, setBetaLockedOut] = useState(false);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
-
-  // A real, non-admin user under the beta lockdown is treated as not-signed-in:
-  // the server rejects their token anyway, so never mount the app shell for them.
-  const betaLockedOut =
-    BETA_ADMIN_ONLY && realUser !== null && !isAllowlisted(realUser);
 
   const user = betaLockedOut
     ? null
@@ -116,7 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Handle redirect result on page load (after Google redirect back)
     getRedirectResult(auth).catch(() => {});
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    // Auth state can change again while an access check is in flight (sign in,
+    // then out); only the newest change may commit its result.
+    let seq = 0;
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const mine = ++seq;
+      const blocked = firebaseUser ? await isBetaBlocked(firebaseUser) : false;
+      if (mine !== seq) return;
+      setBetaLockedOut(blocked);
       setRealUser(firebaseUser);
       setLoading(false);
     });
@@ -176,7 +175,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (typeof window !== "undefined") localStorage.removeItem("finava_dev_auth");
     }
     await firebaseSignOut(auth);
-    router.push("/login");
+    // A full navigation, not router.push: the SWR cache (portfolio, conversations)
+    // and the chat store live in memory and aren't keyed by user, so a soft
+    // navigation left the previous account's data on screen — and in the next
+    // account's first prompt — on a shared browser.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a hard navigation is the point: it drops in-memory state
+    window.location.assign("/login");
   }
 
   return (

@@ -17,6 +17,8 @@ const deps = vi.hoisted(() => ({
   usageDelete: vi.fn(),
   waitlistDelete: vi.fn(),
   sharesGet: vi.fn(),
+  memoryGet: vi.fn(),
+  deleteRefsInBatches: vi.fn(),
   recursiveDelete: vi.fn(),
 }));
 
@@ -35,6 +37,7 @@ vi.mock("@/lib/stripe", () => ({
   },
 }));
 vi.mock("@/lib/firebase-admin", () => ({
+  deleteRefsInBatches: deps.deleteRefsInBatches,
   adminAuth: {
     getUser: deps.getUser,
     deleteUser: deps.deleteUser,
@@ -56,7 +59,7 @@ vi.mock("@/lib/firebase-admin", () => ({
         if (name === "waitlist") return { delete: deps.waitlistDelete };
         return { delete: vi.fn() };
       }),
-      where: vi.fn(() => ({ get: deps.sharesGet })),
+      where: vi.fn(() => ({ get: name === "tickerMemory" ? deps.memoryGet : deps.sharesGet })),
     })),
   },
 }));
@@ -65,6 +68,8 @@ import { POST } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  deps.memoryGet.mockResolvedValue({ docs: [] });
+  deps.deleteRefsInBatches.mockResolvedValue(undefined);
   deps.requireAuth.mockResolvedValue({ userId: "user_123" });
   deps.getUser.mockResolvedValue({ email: "liam@example.com" });
   deps.plaidConfigured.mockReturnValue(true);
@@ -175,5 +180,23 @@ describe("POST /api/user/delete", () => {
 
     expect(res.status).toBe(200);
     expect(deps.deleteUser).toHaveBeenCalledWith("user_123");
+  });
+});
+
+describe("POST /api/user/delete — top-level per-user rows", () => {
+  // Regression: tickerMemory rows (portfolio-derived insights, no TTL) survived deletion.
+  it("erases the user's tickerMemory rows", async () => {
+    const refs = [{ id: "m1" }, { id: "m2" }];
+    deps.memoryGet.mockResolvedValueOnce({ docs: refs.map((ref) => ({ ref })) });
+    deps.subscriptionsList.mockResolvedValue({ data: [] });
+    deps.settingsGet.mockResolvedValue({ data: () => ({}) });
+    deps.sharesGet.mockResolvedValue({ docs: [] });
+    deps.plaidItemsGet.mockResolvedValue({ docs: [] });
+    deps.deleteUser.mockResolvedValue(undefined);
+
+    const res = await POST();
+
+    expect(res.status).toBe(200);
+    expect(deps.deleteRefsInBatches).toHaveBeenCalledWith(refs);
   });
 });

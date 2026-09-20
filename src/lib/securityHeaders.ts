@@ -20,6 +20,20 @@
 /** Flip to "Content-Security-Policy" to enforce once report-only is clean. */
 const CSP_HEADER_KEY = "Content-Security-Policy-Report-Only";
 
+/** Where browsers POST violation reports (see /api/csp-report). */
+const CSP_REPORT_PATH = "/api/csp-report";
+
+/**
+ * The directives that are safe to ENFORCE today, shipped as a second, enforcing
+ * header next to the report-only one. None of them governs scripts, frames or
+ * fetches, so none can break Google sign-in, Plaid Link or the Stripe redirect —
+ * and together they block plugin embeds, `<base>` hijacking, form posts to
+ * attacker origins, and framing.
+ */
+export function enforcedContentSecurityPolicy(): string {
+  return [`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`].join("; ");
+}
+
 /** Google identity: the sign-in popup's script, its frame, and the token APIs. */
 const GOOGLE_SCRIPT = "https://apis.google.com";
 const GOOGLE_FRAME = "https://accounts.google.com";
@@ -44,6 +58,11 @@ export function contentSecurityPolicy(): string {
   // React's development build evaluates code to reconstruct server stacks in the
   // browser; production needs no eval.
   const dev = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
+  // Firebase Auth's helper iframe (<authDomain>/__/auth/iframe) is loaded on every
+  // popup/redirect sign-in and on page load in Safari — omitting it here is what
+  // would break sign-in the day this policy is enforced.
+  const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
+  const firebaseAuthFrame = authDomain ? ` https://${authDomain}` : "";
 
   return [
     `default-src 'self'`,
@@ -56,12 +75,16 @@ export function contentSecurityPolicy(): string {
     // publisher domains, so image origins can't be enumerated.
     `img-src 'self' https: data: blob:`,
     `connect-src 'self' ${FIREBASE_AUTH_API} ${FIREBASE_TOKEN_API} ${GOOGLE_SCRIPT} ${PLAID}`,
-    `frame-src 'self' ${GOOGLE_FRAME} ${PLAID}`,
+    `frame-src 'self'${firebaseAuthFrame} ${GOOGLE_FRAME} ${PLAID}`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
     `frame-ancestors 'none'`,
     `upgrade-insecure-requests`,
+    // Report-only with nowhere to report is invisible; these make violations
+    // show up in the server logs, so the policy can be enforced with evidence.
+    `report-uri ${CSP_REPORT_PATH}`,
+    `report-to csp`,
   ].join("; ");
 }
 
@@ -98,6 +121,8 @@ export function securityHeaderRules(): HeaderRule[] {
         // `same-origin` would do — that breaks signInWithPopup.
         { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
         { key: CSP_HEADER_KEY, value: contentSecurityPolicy() },
+        { key: "Content-Security-Policy", value: enforcedContentSecurityPolicy() },
+        { key: "Reporting-Endpoints", value: `csp="${CSP_REPORT_PATH}"` },
       ],
     },
   ];

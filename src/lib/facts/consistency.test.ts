@@ -22,6 +22,8 @@ const deps = vi.hoisted(() => ({
 
 vi.mock("@/lib/firebase-admin", () => ({ get db() { return fs.current!.db; } }));
 vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: async () => null }));
+// The data routes now require a session (guardDataRoute); these tests exercise the numbers, not auth.
+vi.mock("@/lib/dataRouteGuard", () => ({ guardDataRoute: async () => ({ userId: "u1" }) }));
 vi.mock("@/lib/llm", () => ({ generate: vi.fn() }));
 vi.mock("@/lib/sentiment/grok", () => ({ getGrokSentiment: vi.fn() }));
 vi.mock("@/agents/skills", () => ({ getSkillsPrompt: () => "" }));

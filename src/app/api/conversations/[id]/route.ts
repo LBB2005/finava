@@ -3,6 +3,7 @@ import { db, serializeDoc, deleteRefsInBatches } from "@/lib/firebase-admin";
 import { apiError } from "@/lib/apiError";
 import { withRoute } from "@/lib/withRoute";
 import { UpdateConversationSchema } from "@/lib/schemas/conversation";
+import { isSafeDocId } from "@/lib/docId";
 
 function convDoc(uid: string, id: string) {
   return db.collection("users").doc(uid).collection("conversations").doc(id);
@@ -15,6 +16,8 @@ export const GET = withRoute(
   {},
   async ({ userId }, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
+    // "/" in an id addresses a different path (see docId).
+    if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
     const docRef = convDoc(userId, id);
     const snap = await docRef.get();
     if (!snap.exists) {
@@ -34,6 +37,8 @@ export const DELETE = withRoute(
   {},
   async ({ userId }, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
+    // "/" in an id addresses a different path (see docId).
+    if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
     const docRef = convDoc(userId, id);
     // Delete all messages first, then the conversation doc itself.
     const msgSnap = await docRef.collection("messages").get();
@@ -46,6 +51,8 @@ export const PATCH = withRoute(
   { body: UpdateConversationSchema },
   async ({ userId, body }, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
+    // "/" in an id addresses a different path (see docId).
+    if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
     const { title, archived } = body;
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (title !== undefined) updates.title = title;

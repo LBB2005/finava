@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db, serializeDoc } from "@/lib/firebase-admin";
 import { requireAuth } from "@/lib/requireAuth";
 import { sanitizeFormats } from "@/lib/templates";
+import { isSafeDocId } from "@/lib/docId";
+import { apiError } from "@/lib/apiError";
 
 function playbookDoc(uid: string, id: string) {
   return db.collection("users").doc(uid).collection("playbooks").doc(id);
@@ -18,6 +20,8 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   const { userId, error } = await requireAuth();
   if (error) return error;
   const { id } = await ctx.params;
+  // "/" in an id addresses a different path (see docId).
+  if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
   try {
     const ref = playbookDoc(userId, id);
     const snap = await ref.get();
@@ -51,6 +55,8 @@ export async function DELETE(_req: Request, ctx: RouteCtx) {
   const { userId, error } = await requireAuth();
   if (error) return error;
   const { id } = await ctx.params;
+  // "/" in an id addresses a different path (see docId).
+  if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
   try {
     await playbookDoc(userId, id).delete();
     return NextResponse.json({ ok: true });

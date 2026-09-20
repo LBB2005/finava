@@ -5,6 +5,7 @@ import { apiError } from "@/lib/apiError";
 import { withRoute } from "@/lib/withRoute";
 import { toWatchlist } from "@/lib/watchlist";
 import { UpdateWatchlistSchema } from "@/lib/schemas/watchlist";
+import { isSafeDocId } from "@/lib/docId";
 
 function docFor(uid: string, id: string) {
   return db.collection("users").doc(uid).collection("watchlists").doc(id);
@@ -14,6 +15,8 @@ export const PATCH = withRoute(
   { body: UpdateWatchlistSchema },
   async ({ userId, body }, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
+    // "/" in an id addresses a different path (see docId).
+    if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
 
     const data: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (body.name !== undefined) data.name = body.name;
@@ -34,6 +37,8 @@ export const DELETE = withRoute(
   {},
   async ({ userId }, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
+    // "/" in an id addresses a different path (see docId).
+    if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
     const docRef = docFor(userId, id);
     const existing = await docRef.get();
     if (!existing.exists) {

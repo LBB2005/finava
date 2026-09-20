@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { secretMatches } from "@/lib/secretMatches";
 import { requireAdmin } from "@/lib/requireAdmin";
 import { apiError } from "@/lib/apiError";
-import { makeRunContext } from "@/lib/runContext";
+import { currentRequestId, makeRunContext } from "@/lib/runContext";
 import { db } from "@/lib/firebase-admin";
 import { logger } from "@/lib/logger";
 import { chargeStep, BudgetExceededError } from "./budget";
@@ -100,6 +100,17 @@ export function easternMinutes(at: Date = new Date()): number {
 // Idempotent steps
 // ---------------------------------------------------------------------------
 
+/** A run id IS its ET trading day. */
+export const RUN_ID_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Thrown when a caller names a run that can't exist; mapped to a 400. */
+export class InvalidRunIdError extends Error {
+  constructor(readonly runId: string) {
+    super("runId must be an ET trading day (YYYY-MM-DD)");
+    this.name = "InvalidRunIdError";
+  }
+}
+
 /** liveRuns is mutable working state, not the append-only ledger. */
 function runRef(runId: string) {
   return db.collection("liveRuns").doc(runId);
@@ -157,6 +168,9 @@ export async function runStep<T>(
   step: string,
   fn: () => Promise<T>
 ): Promise<StepRecord<T>> {
+  // Every step route funnels through here, so the id is checked once, centrally:
+  // a free-text runId became a Firestore doc path.
+  if (!RUN_ID_RE.test(runId)) throw new InvalidRunIdError(runId);
   const snap = await runRef(runId).get();
   const steps = (snap.data()?.steps ?? {}) as Record<
     string,
@@ -222,6 +236,9 @@ export function withHarness(
             currentPromptHash: err.currentHash,
           });
         }
+        if (err instanceof InvalidRunIdError) {
+          return apiError("invalid_run", err.message, 400);
+        }
         if (err instanceof BudgetExceededError) {
           log.error("run aborted on budget", { runId: err.runId, step: err.step, spent: err.spent });
           return apiError("budget_exceeded", err.message, 429, {
@@ -231,13 +248,17 @@ export function withHarness(
             cap: err.cap,
           });
         }
+        const requestId = currentRequestId();
         log.error("harness step failed", {
           path: new URL(req.url).pathname,
           err: err instanceof Error ? err.message : String(err),
         });
+        // Generic body: the caller is a GitHub Actions runner whose logs are
+        // PUBLIC, and raw error text carries provider messages (balances, quota
+        // text) and internal URLs. The detail is in the server log, by request id.
         return apiError(
           "step_failed",
-          err instanceof Error ? err.message : "Harness step failed",
+          `Harness step failed${requestId ? ` (request ${requestId})` : ""}. See server logs.`,
           500
         );
       } finally {

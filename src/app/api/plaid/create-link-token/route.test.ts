@@ -6,6 +6,7 @@ const deps = vi.hoisted(() => ({
   requireEntitlement: vi.fn(),
   linkTokenCreate: vi.fn(),
   plaidConfigured: vi.fn(),
+  itemCount: 0,
 }));
 
 vi.mock("@/lib/requireAuth", () => ({ requireAuth: deps.requireAuth }));
@@ -13,6 +14,17 @@ vi.mock("@/lib/entitlements", () => ({ requireEntitlement: deps.requireEntitleme
 vi.mock("@/lib/plaid", () => ({
   plaidClient: { linkTokenCreate: deps.linkTokenCreate },
   plaidConfigured: deps.plaidConfigured,
+  MAX_PLAID_ITEMS: 5,
+  plaidItemLimitReached: (n: number) => n >= 5,
+}));
+vi.mock("@/lib/firebase-admin", () => ({
+  db: {
+    collection: () => ({
+      doc: () => ({
+        collection: () => ({ count: () => ({ get: async () => ({ data: () => ({ count: deps.itemCount }) }) }) }),
+      }),
+    }),
+  },
 }));
 
 import { POST } from "./route";
@@ -23,6 +35,7 @@ beforeEach(() => {
   deps.requireEntitlement.mockResolvedValue(null); // entitled
   deps.plaidConfigured.mockReturnValue(true);
   deps.linkTokenCreate.mockResolvedValue({ data: { link_token: "link-sandbox-abc" } });
+  deps.itemCount = 0;
 });
 
 describe("POST /api/plaid/create-link-token", () => {
@@ -62,5 +75,16 @@ describe("POST /api/plaid/create-link-token", () => {
     deps.linkTokenCreate.mockRejectedValueOnce({ response: { data: { error_code: "X" } } });
     const res = await POST();
     expect(res.status).toBe(500);
+  });
+});
+
+describe("POST /api/plaid/create-link-token — connection cap", () => {
+  // Regression: Plaid bills per Item and nothing capped how many one user linked.
+  it("refuses to open Link once the user is at the connection cap", async () => {
+    deps.itemCount = 5;
+    const res = await POST();
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({ error: "connection_limit" });
+    expect(deps.linkTokenCreate).not.toHaveBeenCalled();
   });
 });

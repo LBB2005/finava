@@ -114,6 +114,11 @@ export async function readTesterPlan(
       ? { ok: false, status: 400, error: "Provide a uid or an email." }
       : { ok: false, status: 404, error: "No account for that email yet." };
   }
+  // Same rule as assignTesterPlan: this only answers for allowlisted testers, so
+  // it can't double as an "is this email registered, and what's its UID" oracle.
+  if (!(await isAdminUid(resolved.uid))) {
+    return { ok: false, status: 403, error: "That account is not on the tester allowlist." };
+  }
   const snap = await db.collection("userSettings").doc(resolved.uid).get();
   const stored = snap.data()?.betaPlan;
   return { ok: true, uid: resolved.uid, plan: isPlanName(stored) ? stored : null };

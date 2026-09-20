@@ -4,8 +4,28 @@ import { db } from "@/lib/firebase-admin";
 import { sendEmail } from "@/lib/email/client";
 import { waitlistConfirmationEmail } from "@/lib/email/templates";
 import { rateLimitGuard } from "@/lib/rateLimit";
+import { normalizeMailbox } from "@/lib/email/normalize";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Most confirmation emails sent per UTC day, across ALL signups. Per-IP limits
+ * can't bound a distributed flood of fresh addresses, and every confirmation
+ * spends finava.ai's sender reputation; past the cap, signups still save but
+ * the confirmation is skipped (it's a courtesy, not a gate).
+ */
+const DAILY_CONFIRMATION_CAP = 300;
+
+/** Count one confirmation against today's cap; false once the cap is spent. */
+async function takeConfirmationSlot(): Promise<boolean> {
+  const ref = db.collection("waitlistStats").doc(new Date().toISOString().slice(0, 10));
+  return db.runTransaction(async (tx) => {
+    const sent = ((await tx.get(ref)).data()?.confirmations as number | undefined) ?? 0;
+    if (sent >= DAILY_CONFIRMATION_CAP) return false;
+    tx.set(ref, { confirmations: sent + 1 }, { merge: true });
+    return true;
+  });
+}
 
 export async function POST(request: Request) {
   // Public, unauthenticated, and sends an email + writes Firestore on first
@@ -27,7 +47,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const ref = db.collection("waitlist").doc(email);
+    // Keyed on the delivering MAILBOX, not the exact string, so sub-address and
+    // dot variants of one inbox are one signup — at most one confirmation each.
+    const ref = db.collection("waitlist").doc(normalizeMailbox(email));
     const existing = await ref.get();
     const isNew = !existing.exists;
 
@@ -48,6 +70,7 @@ export async function POST(request: Request) {
     // affect the already-sent reply.
     if (isNew) {
       after(async () => {
+        if (!(await takeConfirmationSlot().catch(() => false))) return;
         const result = await sendEmail(email, waitlistConfirmationEmail());
         await ref.set(
           {

@@ -47,10 +47,25 @@ describe("creditsFor (pure cost-weighting)", () => {
     // sonnet: in $3/M, out $15/M → (1000*3 + 1000*15)/1e6 = 0.018 USD → 18 credits.
     expect(creditsFor("anthropic/claude-sonnet-4.6", 1000, 1000)).toBe(18);
   });
-  it("discounts cached input tokens to 10% of fresh input", async () => {
+  it("adds cache reads at 10% of input ON TOP of fresh input (Anthropic counts them separately)", async () => {
     const { creditsFor } = await import("./usage");
-    // 1000 in (500 cached): (500*3 + 500*3*0.1 + 1000*15)/1e6 = 0.01665 → 16.65.
-    expect(creditsFor("anthropic/claude-sonnet-4.6", 1000, 1000, 500)).toBeCloseTo(16.65, 6);
+    // 1000 fresh in + 500 cache read: (1000*3 + 500*3*0.1 + 1000*15)/1e6 = 0.01815 → 18.15.
+    expect(creditsFor("anthropic/claude-sonnet-4.6", 1000, 1000, 500)).toBeCloseTo(18.15, 6);
+  });
+  // Regression: cache reads used to be SUBTRACTED from fresh input (which already
+  // excludes them), so a huge cached prompt metered ~0; cache writes weren't
+  // metered at all. A client-supplied 190K-token portfolioContext was nearly free.
+  it("never lets a large cached prompt meter as free", async () => {
+    const { creditsFor } = await import("./usage");
+    const oneWordAnswer = creditsFor("anthropic/claude-sonnet-4.6", 20, 2, 0, 190_000);
+    // 190K tokens written to cache at 1.25 × $3/M = $0.7125 → ~712 credits.
+    expect(oneWordAnswer).toBeGreaterThan(700);
+    expect(creditsFor("anthropic/claude-sonnet-4.6", 20, 2, 190_000)).toBeGreaterThan(55);
+  });
+  it("bills cache writes at 125% of input", async () => {
+    const { creditsFor } = await import("./usage");
+    // 1000 cache-write tokens: 1000*3*1.25/1e6 = 0.00375 → 3.75.
+    expect(creditsFor("anthropic/claude-sonnet-4.6", 0, 0, 0, 1000)).toBeCloseTo(3.75, 6);
   });
   it("falls back to the most-expensive tier for an unknown model", async () => {
     const { creditsFor } = await import("./usage");
@@ -223,16 +238,17 @@ describe("recordUsage — the run-credit choke point", () => {
   });
 });
 
-describe("checkDeepResearchAllowed", () => {
-  it("allows a run under the monthly limit", async () => {
-    const { checkDeepResearchAllowed } = await import("./usage");
-    await expect(checkDeepResearchAllowed("u1")).resolves.toBeNull();
+describe("reserveDeepResearchRun", () => {
+  it("allows a run under the monthly limit and counts it", async () => {
+    const { reserveDeepResearchRun } = await import("./usage");
+    await expect(reserveDeepResearchRun("u1")).resolves.toBeNull();
+    expect(fs.store.get("userUsage/u1")).toMatchObject({ deepRuns: { [monthKey()]: 1 } });
   });
 
-  it("429s once the monthly allowance is spent, naming the upgrade", async () => {
-    const { checkDeepResearchAllowed } = await import("./usage");
+  it("429s once the monthly allowance is spent, naming the upgrade, and does not count", async () => {
+    const { reserveDeepResearchRun } = await import("./usage");
     fs.store.set("userUsage/u1", { deepRuns: { [monthKey()]: 5 } });
-    const res = await checkDeepResearchAllowed("u1");
+    const res = await reserveDeepResearchRun("u1");
     expect(res!.status).toBe(429);
     await expect(res!.json()).resolves.toMatchObject({
       error: "deep_research_limit",
@@ -240,78 +256,61 @@ describe("checkDeepResearchAllowed", () => {
       used: 5,
       limit: 5,
     });
+    expect(fs.store.get("userUsage/u1")).toMatchObject({ deepRuns: { [monthKey()]: 5 } });
   });
 
-  it("allows unlimited runs on a fair-use plan", async () => {
+  // Regression: the check and the (fire-and-forget) increment were separate, so
+  // a concurrent burst all read the same count and all started a deep run.
+  it("admits exactly the allowance from a concurrent burst", async () => {
+    resolvePlan.mockResolvedValue(
+      plan({ config: { daily: 100, weekly: 500, monthly: 1500, deepResearchPerMonth: 1 } }),
+    );
+    const { reserveDeepResearchRun } = await import("./usage");
+    const results = await Promise.all([1, 2, 3, 4].map(() => reserveDeepResearchRun("u1")));
+    expect(results.filter((r) => r === null)).toHaveLength(1);
+    expect(results.filter((r) => r?.status === 429)).toHaveLength(3);
+    expect(fs.store.get("userUsage/u1")).toMatchObject({ deepRuns: { [monthKey()]: 1 } });
+  });
+
+  it("allows (and still counts) unlimited runs on a fair-use plan", async () => {
     resolvePlan.mockResolvedValue(
       plan({ config: { daily: 1, weekly: 1, monthly: 1, deepResearchPerMonth: Infinity } }),
     );
-    const { checkDeepResearchAllowed } = await import("./usage");
+    const { reserveDeepResearchRun } = await import("./usage");
     fs.store.set("userUsage/u1", { deepRuns: { [monthKey()]: 9999 } });
-    await expect(checkDeepResearchAllowed("u1")).resolves.toBeNull();
+    await expect(reserveDeepResearchRun("u1")).resolves.toBeNull();
+    expect(fs.store.get("userUsage/u1")).toMatchObject({ deepRuns: { [monthKey()]: 10000 } });
   });
 
-  it("caps a trial across its whole window, not per month", async () => {
+  it("caps a trial across its whole window, not per month, and counts both buckets", async () => {
     resolvePlan.mockResolvedValue(plan({ source: "trial" }));
-    const { checkDeepResearchAllowed } = await import("./usage");
+    const { reserveDeepResearchRun } = await import("./usage");
 
     fs.store.set("userUsage/u1", { trialDeepRuns: 4 });
-    await expect(checkDeepResearchAllowed("u1")).resolves.toBeNull();
+    await expect(reserveDeepResearchRun("u1")).resolves.toBeNull();
+    expect(fs.store.get("userUsage/u1")).toMatchObject({ trialDeepRuns: 5, deepRuns: { [monthKey()]: 1 } });
 
-    fs.store.set("userUsage/u1", { trialDeepRuns: 5 });
-    const res = await checkDeepResearchAllowed("u1");
+    const res = await reserveDeepResearchRun("u1");
     expect(res!.status).toBe(429);
     await expect(res!.json()).resolves.toMatchObject({ scope: "trial", used: 5, limit: 5 });
   });
 
-  it("fails OPEN when the plan read is degraded", async () => {
+  it("fails OPEN when the plan read is degraded, still counting the month", async () => {
     resolvePlan.mockResolvedValue(plan({ degraded: true }));
-    const { checkDeepResearchAllowed } = await import("./usage");
-    await expect(checkDeepResearchAllowed("u1")).resolves.toBeNull();
+    const { reserveDeepResearchRun } = await import("./usage");
+    await expect(reserveDeepResearchRun("u1")).resolves.toBeNull();
+    expect(fs.store.get("userUsage/u1")).toMatchObject({ deepRuns: { [monthKey()]: { __inc: 1 } } });
   });
 
-  it("fails OPEN when the usage read throws", async () => {
+  it("fails OPEN when the transaction throws", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { checkDeepResearchAllowed } = await import("./usage");
-    const orig = fs.db.collection;
-    fs.db.collection = () => ({ doc: () => ({ get: async () => { throw new Error("down"); } }) }) as never;
-    await expect(checkDeepResearchAllowed("u1")).resolves.toBeNull();
-    fs.db.collection = orig;
-    spy.mockRestore();
-  });
-});
-
-describe("recordDeepResearchRun", () => {
-  it("increments the month bucket", async () => {
-    const { recordDeepResearchRun } = await import("./usage");
-    await recordDeepResearchRun("u1");
-    expect(fs.store.get("userUsage/u1")).toMatchObject({
-      deepRuns: { [monthKey()]: { __inc: 1 } },
-    });
-  });
-
-  it("also increments the trial lifetime counter for a trial run", async () => {
-    resolvePlan.mockResolvedValue(plan({ source: "trial" }));
-    const { recordDeepResearchRun } = await import("./usage");
-    await recordDeepResearchRun("u1");
-    expect(fs.store.get("userUsage/u1")).toMatchObject({ trialDeepRuns: { __inc: 1 } });
-  });
-
-  it("counts only the month bucket when the plan cannot be resolved", async () => {
-    resolvePlan.mockRejectedValue(new Error("firestore down"));
-    const { recordDeepResearchRun } = await import("./usage");
-    await recordDeepResearchRun("u1");
-    expect(fs.store.get("userUsage/u1")).not.toHaveProperty("trialDeepRuns");
-  });
-
-  it("never throws when the write fails", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { recordDeepResearchRun } = await import("./usage");
-    const orig = fs.db.collection;
-    fs.db.collection = () => ({ doc: () => ({ set: async () => { throw new Error("quota"); } }) }) as never;
-    await expect(recordDeepResearchRun("u1")).resolves.toBeUndefined();
-    fs.db.collection = orig;
-    expect(spy).toHaveBeenCalled();
+    const { reserveDeepResearchRun } = await import("./usage");
+    const orig = fs.db.runTransaction;
+    fs.db.runTransaction = (async () => {
+      throw new Error("down");
+    }) as never;
+    await expect(reserveDeepResearchRun("u1")).resolves.toBeNull();
+    fs.db.runTransaction = orig;
     spy.mockRestore();
   });
 });

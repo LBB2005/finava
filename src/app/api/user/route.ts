@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import type { UserRecord } from "firebase-admin/auth";
+import { trialIdentityKeys } from "@/lib/trialLedger";
 import { adminAuth, db } from "@/lib/firebase-admin";
 import { requireAuth } from "@/lib/requireAuth";
 import { resolvePlan, capabilitiesFor } from "@/lib/entitlements";
@@ -10,12 +12,14 @@ const PAID_STATUSES = new Set(["active", "trialing", "past_due"]);
 
 /**
  * Stamp a 3-day no-card trial on first authenticated read, exactly once. Guarded
- * by `trialInitialized` so it can't be re-farmed by deleting `trialEndsAt`, and
+ * by `trialInitialized` so it can't be re-farmed by deleting `trialEndsAt`, by
+ * the identity ledger so it can't be re-farmed by deleting the account, and
  * skipped entirely for users who already have a paid subscription.
  */
 async function ensureTrial(
   userId: string,
-  settings: FirebaseFirestore.DocumentData | undefined
+  settings: FirebaseFirestore.DocumentData | undefined,
+  firebaseUser: Pick<UserRecord, "providerData">
 ): Promise<void> {
   if (settings?.trialInitialized === true) return;
   const plan = settings?.plan as string | undefined;
@@ -23,11 +27,21 @@ async function ensureTrial(
   const hasPaid = plan && plan !== "Free" && status && PAID_STATUSES.has(status);
   if (hasPaid) return;
 
-  const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000).toISOString();
-  await db
-    .collection("userSettings")
-    .doc(userId)
-    .set({ trialEndsAt, trialInitialized: true }, { merge: true });
+  const settingsRef = db.collection("userSettings").doc(userId);
+  const ledgerRefs = trialIdentityKeys(firebaseUser).map((k) => db.collection("trialLedger").doc(k));
+  const prior = await Promise.all(ledgerRefs.map((r) => r.get()));
+  if (prior.some((d) => d.exists)) {
+    // This sign-in identity already had its trial on an earlier account.
+    await settingsRef.set({ trialInitialized: true }, { merge: true });
+    return;
+  }
+
+  const now = new Date();
+  const trialEndsAt = new Date(now.getTime() + TRIAL_DAYS * 86_400_000).toISOString();
+  const batch = db.batch();
+  batch.set(settingsRef, { trialEndsAt, trialInitialized: true }, { merge: true });
+  for (const ref of ledgerRefs) batch.set(ref, { firstTrialAt: now.toISOString() });
+  await batch.commit();
 }
 
 export async function GET() {
@@ -44,7 +58,7 @@ export async function GET() {
     const settings = settingsDoc.exists ? settingsDoc.data() : {};
 
     // First-touch trial provisioning, then resolve the effective entitlement.
-    await ensureTrial(userId, settings);
+    await ensureTrial(userId, settings, firebaseUser);
     const ent = await resolvePlan(userId);
 
     return NextResponse.json({

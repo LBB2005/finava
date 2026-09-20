@@ -3,6 +3,8 @@ import { db } from "@/lib/firebase-admin";
 import { apiError } from "@/lib/apiError";
 import { withRoute } from "@/lib/withRoute";
 import { generateConversationTitle } from "@/lib/conversationTitle";
+import { isSafeDocId } from "@/lib/docId";
+import { userRateLimit } from "@/lib/rateLimit";
 
 /**
  * Backfill an auto-title for an existing untitled conversation. Called when the
@@ -14,6 +16,8 @@ export const POST = withRoute(
   {},
   async ({ userId }, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
+    // "/" in an id addresses a different path (see docId).
+    if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
     const convRef = db
       .collection("users")
       .doc(userId)
@@ -24,6 +28,11 @@ export const POST = withRoute(
       return apiError("not_found", "Conversation not found", 404);
     }
 
+    // An unmetered model call; throttled per user (same bucket as auto-titling).
+    if (!snap.data()?.title) {
+      const throttled = await userRateLimit(userId, "conv-title", { capacity: 10, refillPerSec: 0.05 });
+      if (throttled) return throttled;
+    }
     await generateConversationTitle(userId, id);
 
     const after = (await convRef.get()).data()?.title ?? null;

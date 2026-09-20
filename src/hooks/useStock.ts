@@ -1,10 +1,11 @@
 "use client";
 import useSWR from "swr";
+import { authFetch } from "@/lib/authFetch";
 import type { StockBundle, ChartRange } from "@/lib/stockData";
 import type { CandleResponse } from "@/lib/finnhub";
 
 const jsonFetcher = (url: string) =>
-  fetch(url).then(async (r) => {
+  authFetch(url).then(async (r) => {
     const body = await r.json().catch(() => ({}));
     if (!r.ok) {
       const err = new Error(body?.error ?? `HTTP ${r.status}`) as Error & { status?: number };
@@ -14,8 +15,8 @@ const jsonFetcher = (url: string) =>
     return body;
   });
 
-/** The full per-ticker bundle for first paint. Uses app-level keys, so it works
- *  under the dev auth bypass (no Firebase token needed). */
+/** The full per-ticker bundle for first paint. Signed-in callers only (the
+ *  route spends shared provider quota); authFetch covers the dev bypass too. */
 export function useStockBundle(ticker: string | null) {
   const key = ticker ? `/api/stock/${encodeURIComponent(ticker)}` : null;
   const { data, error, isLoading, mutate } = useSWR<StockBundle>(key, jsonFetcher, {

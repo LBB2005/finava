@@ -11,8 +11,8 @@
  * verify ownership, so an unverified match would let anyone claim a tester slot by
  * registering that address.
  *
- * SERVER-ONLY (uses the Admin SDK). The client mirror lives in AuthContext and reads
- * NEXT_PUBLIC_ADMIN_UIDS / NEXT_PUBLIC_ADMIN_EMAILS — keep the two pairs in sync.
+ * SERVER-ONLY (uses the Admin SDK). There is deliberately NO client copy: the client
+ * asks GET /api/auth/access, so the list never ships in the public JS bundle.
  *
  * firebase-admin is imported lazily, and only on the email path: importing it eagerly
  * would initialize the SDK (and demand service-account env) in every consumer of the
@@ -29,6 +29,25 @@ function envList(name: string): string[] {
 /** UIDs listed directly in ADMIN_UIDS. */
 export function adminUids(): Set<string> {
   return new Set(envList("ADMIN_UIDS"));
+}
+
+/**
+ * UIDs listed in OWNER_UIDS — the operators allowed to run the admin tools
+ * (tester-plan assignment, the waitlist email blast, the Finava Live harness).
+ *
+ * Deliberately a SEPARATE grant from the tester allowlist above. ADMIN_UIDS /
+ * ADMIN_EMAILS decide who may USE the product during the beta; folding the admin
+ * tools into the same list made every tester an operator, able to lift their own
+ * plan cap, mail the whole waitlist, or drive the trading harness. UID-only (an
+ * operator is never granted by email) and fail-closed: unset means nobody.
+ */
+export function ownerUids(): Set<string> {
+  return new Set(envList("OWNER_UIDS"));
+}
+
+/** Is this UID an operator (OWNER_UIDS)? Sync, no I/O. */
+export function isOwnerUid(userId: string): boolean {
+  return ownerUids().has(userId);
 }
 
 /** Emails listed in ADMIN_EMAILS, lowercased for case-insensitive comparison. */

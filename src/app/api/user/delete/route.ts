@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { adminAuth, db } from "@/lib/firebase-admin";
+import { adminAuth, db, deleteRefsInBatches } from "@/lib/firebase-admin";
 import { requireAuth } from "@/lib/requireAuth";
 import { plaidClient, plaidConfigured } from "@/lib/plaid";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { decryptSecret } from "@/lib/crypto";
+import { normalizeMailbox } from "@/lib/email/normalize";
 
 /**
  * Permanently delete the authenticated user's account and all associated data
@@ -81,13 +82,23 @@ export async function POST() {
     await settingsRef.delete();
     await db.collection("userUsage").doc(userId).delete();
 
+    // Per-user rows in top-level collections, keyed by a userId field rather than
+    // living under users/{uid}. tickerMemory holds insights derived from the
+    // user's own portfolio and conversations, and has no TTL — it was being left
+    // behind by account deletion.
+    const memorySnap = await db.collection("tickerMemory").where("userId", "==", userId).get();
+    await deleteRefsInBatches(memorySnap.docs.map((d) => d.ref));
+
     // Shared conversation snapshots the user published.
     const sharesSnap = await db.collection("shares").where("createdBy", "==", userId).get();
     await Promise.all(sharesSnap.docs.map((d) => db.recursiveDelete(d.ref)));
 
     // Waitlist entry, if their account email is on it.
+    // Keyed by exact address on older signups, by mailbox (normalizeMailbox) on newer.
     if (email) {
-      await db.collection("waitlist").doc(email).delete().catch(() => {});
+      for (const key of new Set([email, email.toLowerCase(), normalizeMailbox(email)])) {
+        await db.collection("waitlist").doc(key).delete().catch(() => {});
+      }
     }
 
     // 4. Firebase Auth record last. Tolerate user-not-found (e.g. the dev-bypass

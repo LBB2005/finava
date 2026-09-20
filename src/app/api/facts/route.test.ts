@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
 
-const deps = vi.hoisted(() => ({ rateLimitGuard: vi.fn(), getTickerFactsSlim: vi.fn() }));
-vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
+const deps = vi.hoisted(() => ({ guardDataRoute: vi.fn(), getTickerFactsSlim: vi.fn() }));
+vi.mock("@/lib/dataRouteGuard", () => ({ guardDataRoute: deps.guardDataRoute }));
 vi.mock("@/lib/facts/ticker", () => ({ getTickerFactsSlim: deps.getTickerFactsSlim }));
 
 import { GET } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  deps.rateLimitGuard.mockResolvedValue(null);
+  deps.guardDataRoute.mockResolvedValue({ userId: "u1" });
   deps.getTickerFactsSlim.mockImplementation(async (ts: string[]) => ts.map((ticker) => ({ ticker, score: { value: null, source: "s", asOf: "a", note: "Not scored yet" } })));
 });
 
@@ -32,7 +32,7 @@ describe("GET /api/facts?tickers=", () => {
   });
 
   it("honours the rate limit", async () => {
-    deps.rateLimitGuard.mockResolvedValueOnce(NextResponse.json({}, { status: 429 }));
+    deps.guardDataRoute.mockResolvedValueOnce({ error: NextResponse.json({}, { status: 429 }) });
     expect((await GET(new Request("http://t/api/facts?tickers=AAPL"))).status).toBe(429);
   });
 });

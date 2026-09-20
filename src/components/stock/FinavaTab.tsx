@@ -155,7 +155,7 @@ export function FinavaTab({ ticker }: { ticker: string }) {
 
   // Cached-first: hydrate the store from the persisted verdict (free) instead
   // of auto-running on mount. Runs start ONLY from explicit actions — the
-  // button below, the rail's Generate/↻, or a ?run=1 deep link.
+  // button below or the rail's Generate/↻ (a ?run=1 link only opens the tab).
   const { neverRun, resolving } = useVerdictCache(ticker);
 
   const verdict = analysis.verdict;

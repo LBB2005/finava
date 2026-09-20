@@ -26,6 +26,12 @@ describe("Alpaca host and config guards", () => {
     expect(mod.ALPACA_TRADING_BASE).toBe("https://paper-api.alpaca.markets");
     expect(mod.isPaperTradingHost()).toBe(true);
     expect(mod.isPaperTradingHost("https://api.alpaca.markets")).toBe(false);
+    // Regression: the check was a substring match, so a LIVE host with the paper
+    // hostname anywhere in the URL passed as "paper".
+    expect(mod.isPaperTradingHost("https://api.alpaca.markets/?paper-api.alpaca.markets")).toBe(false);
+    expect(mod.isPaperTradingHost("https://paper-api.alpaca.markets.evil.example")).toBe(false);
+    expect(mod.isPaperTradingHost("https://paper-api.alpaca.markets/v2")).toBe(true);
+    expect(mod.isPaperTradingHost("not a url")).toBe(false);
     expect(mod.hasAlpacaData()).toBe(false);
 
     process.env.ALPACA_API_KEY = "key";

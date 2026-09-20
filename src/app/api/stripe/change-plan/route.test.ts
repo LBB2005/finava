@@ -51,14 +51,19 @@ describe("POST /api/stripe/change-plan", () => {
     expect((await POST(req({ plan: "Pro" }))).status).toBe(404);
   });
 
-  it("updates the subscription item price with proration", async () => {
+  // Regression: create_prorations granted the new plan immediately and deferred
+  // the charge (uncollected if cancelled at period end), and a declining card
+  // still switched plans. Now the proration is invoiced up front and the change
+  // only applies once that payment succeeds.
+  it("invoices the proration now and applies the change only if payment succeeds", async () => {
     const res = await POST(req({ plan: "Pro", cadence: "annual" }));
 
     expect(res.status).toBe(200);
     expect(deps.retrieve).toHaveBeenCalledWith("sub_123");
     expect(deps.update).toHaveBeenCalledWith("sub_123", {
       items: [{ id: "si_123", price: "price_annual" }],
-      proration_behavior: "create_prorations",
+      proration_behavior: "always_invoice",
+      payment_behavior: "pending_if_incomplete",
     });
     await expect(res.json()).resolves.toEqual({ ok: true });
   });

@@ -31,7 +31,7 @@ import { POST } from "./route";
 beforeEach(() => {
   vi.clearAllMocks();
   deps.convGet
-    .mockResolvedValueOnce({ exists: true })
+    .mockResolvedValueOnce({ exists: true, data: () => ({}) })
     .mockResolvedValueOnce({ data: () => ({ title: "Apple DCF" }) });
   deps.generateConversationTitle.mockResolvedValue(undefined);
 });

@@ -7,6 +7,7 @@ const deps = vi.hoisted(() => ({
   settingsGet: vi.fn(),
   usageGet: vi.fn(),
   listCollections: vi.fn(),
+  memoryGet: vi.fn(),
   serializeDoc: vi.fn((id: string, data: Record<string, unknown>) => ({ id, ...data })),
 }));
 
@@ -21,11 +22,16 @@ vi.mock("@/lib/firebase-admin", () => ({
         if (name === "userUsage") return { get: deps.usageGet };
         return { listCollections: deps.listCollections };
       }),
+      where: vi.fn(() => ({ get: deps.memoryGet })),
     })),
   },
 }));
 
 import { GET } from "./route";
+
+beforeEach(() => {
+  deps.memoryGet.mockResolvedValue({ docs: [] });
+});
 
 const doc = (id: string, data: Record<string, unknown>, subcollections: unknown[] = []) => ({
   id,
@@ -131,5 +137,23 @@ describe("GET /api/user/export", () => {
 
     expect(res.status).toBe(500);
     await expect(res.json()).resolves.toEqual({ error: "Failed to export data" });
+  });
+});
+
+describe("GET /api/user/export — top-level per-user rows", () => {
+  // Regression: portfolio-derived tickerMemory rows were held but never exported.
+  it("includes the user's tickerMemory rows", async () => {
+    deps.requireAuth.mockResolvedValue({ userId: "user_123" });
+    deps.getUser.mockResolvedValue(null);
+    deps.settingsGet.mockResolvedValue({ exists: false });
+    deps.usageGet.mockResolvedValue({ exists: false });
+    deps.listCollections.mockResolvedValue([]);
+    deps.memoryGet.mockResolvedValueOnce({
+      docs: [{ id: "m1", data: () => ({ userId: "user_123", ticker: "AAPL", insight: "x" }) }],
+    });
+
+    const body = JSON.parse(await (await GET()).text());
+
+    expect(body.data.tickerMemory).toEqual([{ id: "m1", userId: "user_123", ticker: "AAPL", insight: "x" }]);
   });
 });

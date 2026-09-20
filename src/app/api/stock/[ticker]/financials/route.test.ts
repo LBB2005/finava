@@ -3,7 +3,7 @@ import aaplFixture from "@/lib/__fixtures__/sec/aapl.json";
 import jpmFixture from "@/lib/__fixtures__/sec/jpm.json";
 
 const deps = vi.hoisted(() => ({
-  rateLimitGuard: vi.fn(),
+  guardDataRoute: vi.fn(),
   getCikByTicker: vi.fn(),
   getCompanyFacts: vi.fn(),
   getEarnings: vi.fn(),
@@ -16,9 +16,10 @@ vi.mock("@/lib/edgar", async (importOriginal) => ({
   getCompanyFacts: deps.getCompanyFacts,
 }));
 vi.mock("@/lib/finnhub", () => ({ getEarnings: deps.getEarnings }));
-vi.mock("@/lib/rateLimit", () => ({ rateLimitGuard: deps.rateLimitGuard }));
+vi.mock("@/lib/dataRouteGuard", () => ({ guardDataRoute: deps.guardDataRoute }));
 
 import { GET } from "./route";
+import { financialsMemo } from "@/lib/responseMemo";
 
 function ctx(ticker: string) {
   return { params: Promise.resolve({ ticker }) };
@@ -105,9 +106,11 @@ const EARNINGS = [
   { actual: 1.0, period: "2025-09-30" }, // 2025 Q3
 ];
 
+beforeEach(() => financialsMemo.clear());
+
 beforeEach(() => {
   vi.clearAllMocks();
-  deps.rateLimitGuard.mockResolvedValue(null);
+  deps.guardDataRoute.mockResolvedValue({ userId: "u1" });
   deps.getCikByTicker.mockResolvedValue("0000123456");
   deps.getCompanyFacts.mockResolvedValue(FACTS);
   deps.getEarnings.mockResolvedValue(EARNINGS);
@@ -184,6 +187,16 @@ describe("GET /api/stock/[ticker]/financials", () => {
     expect(body.ttm.cashflow.fcfMargin).toBeCloseTo(160 / 544, 5);
   });
 
+  // Regression: companyfacts is too big for Next's fetch cache, so every hit was
+  // a multi-megabyte SEC download — an easy way to get the server IP blocked.
+  it("serves a repeat request from memory without re-downloading SEC data", async () => {
+    await GET(new Request("http://t"), ctx("ACME"));
+    const calls = deps.getCompanyFacts.mock.calls.length;
+    const again = await (await GET(new Request("http://t"), ctx("ACME"))).json();
+    expect(again.ticker).toBe("ACME");
+    expect(deps.getCompanyFacts.mock.calls.length).toBe(calls);
+  });
+
   it("survives a Finnhub earnings failure (EPS columns null)", async () => {
     deps.getEarnings.mockRejectedValueOnce(new Error("finnhub down"));
     const body = await (await GET(new Request("http://t"), ctx("ACME"))).json();
@@ -194,7 +207,7 @@ describe("GET /api/stock/[ticker]/financials", () => {
 
 describe("GET financials — real filings (trimmed SEC companyfacts)", () => {
   beforeEach(() => {
-    deps.rateLimitGuard.mockResolvedValue(null);
+    deps.guardDataRoute.mockResolvedValue({ userId: "u1" });
     deps.getCikByTicker.mockResolvedValue("0000320193");
     deps.getEarnings.mockResolvedValue([]);
   });
@@ -239,5 +252,14 @@ describe("GET financials — real filings (trimmed SEC companyfacts)", () => {
     ]);
     const body = await (await GET(new Request("http://localhost/api/stock/AAPL/financials"), ctx("AAPL"))).json();
     expect(body.ttm.income.epsDiluted).toBeNull();
+  });
+});
+
+// Regression: Next decodes route params, so `%26`/`%23`/`%2F` arrive as `&`/`#`/`/`
+// and went straight into Finnhub query strings and the Polygon URL path.
+describe("ticker validation", () => {
+  it.each(["AAPL&X=1", "AAPL#", "../../V2/AGGS", "AAPL?TOKEN=X"])("400s on %s before any upstream call", async (t) => {
+      const res = await GET(new Request("http://t"), ctx(t));
+      expect(res.status).toBe(400);
   });
 });

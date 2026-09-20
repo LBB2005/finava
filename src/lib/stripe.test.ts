@@ -11,7 +11,7 @@ vi.mock("@/lib/firebase-admin", () => ({
   db: { collection: () => ({ doc: () => ({ get: async () => ({ data: () => ({}) }), set: async () => {} }) }) },
 }));
 
-import { mapSubscriptionToPlan, periodEndISO, stripeConfigured } from "./stripe";
+import { billingBaseUrl, mapSubscriptionToPlan, periodEndISO, stripeConfigured } from "./stripe";
 
 type Sub = Parameters<typeof mapSubscriptionToPlan>[0];
 
@@ -64,5 +64,22 @@ describe("stripeConfigured", () => {
     expect(stripeConfigured()).toBe(false);
     vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_123");
     expect(stripeConfigured()).toBe(true);
+  });
+});
+
+describe("billingBaseUrl", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("uses the configured app URL, without a trailing slash", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://finava.ai/");
+    expect(billingBaseUrl()).toBe("https://finava.ai");
+  });
+
+  it("falls back to localhost only outside production", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    vi.stubEnv("NODE_ENV", "development");
+    expect(billingBaseUrl()).toBe("http://localhost:3000");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(billingBaseUrl()).toBeNull();
   });
 });

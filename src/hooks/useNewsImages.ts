@@ -1,5 +1,6 @@
 "use client";
 import useSWR from "swr";
+import { authFetch } from "@/lib/authFetch";
 
 export interface OgResult {
   image: string | null;
@@ -15,7 +16,7 @@ export function useNewsImages(urls: string[]): Record<string, OgResult> {
   const { data } = useSWR<Record<string, OgResult>>(
     key,
     async () => {
-      const res = await fetch("/api/og-image", {
+      const res = await authFetch("/api/og-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ urls }),

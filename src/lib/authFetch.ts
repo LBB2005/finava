@@ -10,6 +10,11 @@ export const DEV_BYPASS_TOKEN = "dev-bypass";
  *  dev sentinel (non-production only) that requireAuth maps to the dev user —
  *  this lets authed APIs work in local/preview dev without a Google sign-in. */
 export async function getAuthToken(): Promise<string | null> {
+  // On a fresh page load Firebase restores the session from IndexedDB
+  // asynchronously; until it has, currentUser is null even for a signed-in user.
+  // Wait for that first resolution so an early request doesn't go out tokenless
+  // and 401 (every data route requires a session). Resolves instantly afterwards.
+  await auth.authStateReady?.();
   const user = auth.currentUser;
   if (user) return user.getIdToken();
   if (

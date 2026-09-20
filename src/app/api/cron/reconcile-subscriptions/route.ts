@@ -52,6 +52,17 @@ function reconcilePatch(sub: import("stripe").Stripe.Subscription): Record<strin
   return patch;
 }
 
+/** Start the grace clock for a past_due user who has none (see the webhook). */
+function withGraceClock(
+  patch: Record<string, unknown>,
+  existing: FirebaseFirestore.DocumentData | undefined
+): Record<string, unknown> {
+  if (patch.subscriptionStatus === "past_due" && !existing?.pastDueSince) {
+    return { ...patch, pastDueSince: new Date().toISOString() };
+  }
+  return patch;
+}
+
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -87,12 +98,14 @@ export async function GET(req: Request) {
       }
 
       const sub = await stripe.subscriptions.retrieve(subId);
-      const patch = reconcilePatch(sub);
+      const patch = withGraceClock(reconcilePatch(sub), data);
 
       const changed =
         patch.plan !== data.plan ||
         patch.subscriptionStatus !== data.subscriptionStatus ||
-        patch.currentPeriodEnd !== (data.currentPeriodEnd ?? null);
+        patch.currentPeriodEnd !== (data.currentPeriodEnd ?? null) ||
+        // A past_due user with no grace clock yet: starting it is a change.
+        (typeof patch.pastDueSince === "string" && !data.pastDueSince);
 
       if (changed) {
         console.warn(

@@ -10,9 +10,17 @@ import type { CandleResponse } from "@/lib/finnhub";
 export const ALPACA_TRADING_BASE =
   process.env.ALPACA_BASE_URL ?? "https://paper-api.alpaca.markets";
 
-/** True only when the configured trading host is Alpaca's paper sandbox. */
+/**
+ * True only when the configured trading host is Alpaca's paper sandbox. An exact
+ * hostname match — a substring test also accepted e.g.
+ * "https://api.alpaca.markets/?paper-api.alpaca.markets", i.e. the LIVE host.
+ */
 export function isPaperTradingHost(base: string = ALPACA_TRADING_BASE): boolean {
-  return base.includes("paper-api.alpaca.markets");
+  try {
+    return new URL(base).hostname === "paper-api.alpaca.markets";
+  } catch {
+    return false;
+  }
 }
 
 // Alpaca market-data API is always served from data.alpaca.markets, regardless of

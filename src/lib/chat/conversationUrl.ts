@@ -1,3 +1,5 @@
+import { isSafeDocId } from "@/lib/docId";
+
 /** The /chat URL for a conversation. The id rides in `?c=` so the route stays one page. */
 export function chatHref(convId: string | null): string {
   return convId ? `/chat?c=${encodeURIComponent(convId)}` : "/chat";
@@ -9,6 +11,9 @@ export type StoreAction = { kind: "none" } | { kind: "write"; href: string; repl
 /** The URL changed (reload, back/forward, a pasted link): the store follows it. */
 export function onUrlConversationChange(urlId: string | null, storeId: string | null): UrlAction {
   if (urlId === storeId) return { kind: "none" };
+  // A `?c=` link can come from anywhere (a pasted URL, a link in a model answer).
+  // The id is built into API paths, so `?c=..%2Fuser` must not open anything.
+  if (urlId && !isSafeDocId(urlId)) return { kind: "clear" };
   return urlId ? { kind: "open", id: urlId } : { kind: "clear" };
 }
 

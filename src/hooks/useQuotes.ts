@@ -1,5 +1,6 @@
 "use client";
 import useSWR from "swr";
+import { authFetch } from "@/lib/authFetch";
 import type { Quote } from "@/types/portfolio";
 import { MAX_BATCH_TICKERS } from "@/lib/tickers";
 
@@ -13,7 +14,7 @@ const fetcher = async (key: string): Promise<Quote[]> => {
   }
   const results = await Promise.all(
     chunks.map((chunk) =>
-      fetch(`/api/quotes?tickers=${chunk.join(",")}`).then((r) => {
+      authFetch(`/api/quotes?tickers=${chunk.join(",")}`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<Quote[]>;
       })

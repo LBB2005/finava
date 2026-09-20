@@ -44,32 +44,32 @@ export async function getAggregates(
   to: string
 ) {
   return polyFetch(
-    `/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=500`
+    `/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/${multiplier}/${timespan}/${from}/${to}?adjusted=true&sort=asc&limit=500`
   );
 }
 
 export async function getTickerDetails(ticker: string) {
-  return polyFetch(`/v3/reference/tickers/${ticker}`);
+  return polyFetch(`/v3/reference/tickers/${encodeURIComponent(ticker)}`);
 }
 
 export async function getNews(tickers: string[], limit = 20) {
-  const tickerParam = tickers.map((t) => `ticker=${t}`).join("&");
+  const tickerParam = tickers.map((t) => `ticker=${encodeURIComponent(t)}`).join("&");
   return polyFetch(`/v2/reference/news?${tickerParam}&limit=${limit}&order=desc&sort=published_utc`);
 }
 
 export async function getFinancials(ticker: string) {
-  return polyFetch(`/vX/reference/financials?ticker=${ticker}&timeframe=annual&limit=4`);
+  return polyFetch(`/vX/reference/financials?ticker=${encodeURIComponent(ticker)}&timeframe=annual&limit=4`);
 }
 
 // Annual financials for factor scoring. Cached 1h — these come from 10-K/10-Q
 // filings and never change intraday, so a short TTL would re-hammer the API on
 // every research-page refresh across the whole S&P 500.
 export async function getAnnualFinancials(ticker: string) {
-  return polyFetch(`/vX/reference/financials?ticker=${ticker}&timeframe=annual&limit=4`, 3600);
+  return polyFetch(`/vX/reference/financials?ticker=${encodeURIComponent(ticker)}&timeframe=annual&limit=4`, 3600);
 }
 
 export async function getOptionsSnapshot(ticker: string) {
-  return polyFetch(`/v3/snapshot/options/${ticker}?limit=250`);
+  return polyFetch(`/v3/snapshot/options/${encodeURIComponent(ticker)}?limit=250`);
 }
 
 export async function getMarketSnapshot() {

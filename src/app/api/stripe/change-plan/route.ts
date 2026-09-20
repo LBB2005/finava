@@ -56,7 +56,12 @@ export async function POST(req: Request) {
 
     await stripe.subscriptions.update(subId, {
       items: [{ id: itemId, price: priceId }],
-      proration_behavior: "create_prorations",
+      // Invoice the proration NOW, and apply the change only if that payment
+      // succeeds. `create_prorations` granted the higher plan immediately and
+      // deferred the charge to the next invoice — which cancelling at period end
+      // left uncollected — and a declining card still switched plans (past_due).
+      proration_behavior: "always_invoice",
+      payment_behavior: "pending_if_incomplete",
     });
 
     return NextResponse.json({ ok: true });

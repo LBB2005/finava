@@ -100,3 +100,16 @@ export function periodEndISO(sub: Stripe.Subscription): string | null {
   const end = fromItem ?? fromSub;
   return end ? new Date(end * 1000).toISOString() : null;
 }
+
+/**
+ * Absolute base URL for Stripe success/cancel/return links, or null when it
+ * can't be trusted. Only NEXT_PUBLIC_APP_URL is used — never a request header,
+ * which would let a crafted Host send a paying customer to another site. The
+ * localhost fallback is for local dev only: in a deployed build an unset value
+ * used to send customers to http://localhost:3000 after paying.
+ */
+export function billingBaseUrl(): string | null {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  return process.env.NODE_ENV === "production" ? null : "http://localhost:3000";
+}

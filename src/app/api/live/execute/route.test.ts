@@ -279,3 +279,20 @@ describe("fills", () => {
     );
   });
 });
+
+describe("which run can be executed", () => {
+  // Regression: any runId was accepted, so a past day's decisions could be
+  // executed at today's prices — not what was published before that open.
+  it("refuses a run other than today's before touching the broker", async () => {
+    const { status, json } = await execute({ runId: "2026-08-28" });
+    expect(status).toBe(400);
+    expect(json.error.code).toBe("invalid_run");
+    expect(deps.placeOrder).not.toHaveBeenCalled();
+    expect(deps.getRunState).not.toHaveBeenCalled();
+  });
+
+  it("accepts today's run explicitly or by default", async () => {
+    expect((await execute({ runId: "2026-09-02" })).status).not.toBe(400);
+    expect((await execute({})).status).not.toBe(400);
+  });
+});
