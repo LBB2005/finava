@@ -15,9 +15,13 @@ import { ranked, type RankedStock } from "@/lib/research";
 import { coerceFilter, applyScreen, type ScreenFilter } from "@/lib/screen";
 import type { AgentEvent } from "@/types/chat";
 import type { ConvictionTier, DiscoverLayout, DiscoverTier, ScoutPick } from "@/lib/scoutTypes";
-import { SCOUT_UNAVAILABLE_FILTERED_LABEL, SCOUT_UNAVAILABLE_LABEL } from "./scout-fallback";
+import {
+  SCOUT_NO_MATCHES_LABEL,
+  SCOUT_UNAVAILABLE_FILTERED_LABEL,
+  SCOUT_UNAVAILABLE_LABEL,
+} from "./scout-fallback";
 
-export { SCOUT_UNAVAILABLE_FILTERED_LABEL, SCOUT_UNAVAILABLE_LABEL };
+export { SCOUT_NO_MATCHES_LABEL, SCOUT_UNAVAILABLE_FILTERED_LABEL, SCOUT_UNAVAILABLE_LABEL };
 
 type EventEmitter = (event: AgentEvent) => void;
 
@@ -132,7 +136,6 @@ export async function runScoutAgent(input: unknown, emit: EventEmitter): Promise
   // 2) Score the whole universe (shared 15-min memo).
   const universe = await getFactorUniverse();
   const yearRanked = ranked("year", universe.stocks); // score/grade per name
-  const byTicker = new Map<string, RankedStock>(yearRanked.map((s) => [s.ticker, s]));
 
   // 3) Optional deterministic hard filter (sector / $ / P/E / move). Soft style
   //    cues are left to the LLM. screenParse also gives a nice interpretation line.
@@ -155,18 +158,38 @@ export async function runScoutAgent(input: unknown, emit: EventEmitter): Promise
       const hard = hardConstraints(coerceFilter(p.filter), sector);
       if (hard) {
         hadHardConstraints = true;
-        const survivors = applyScreen(universe.stocks, { ...hard, limit: 200 });
-        // Apply the hard filter whenever it leaves a usable pool. We must NOT
-        // gate on the full ceiling `n` (quick = 8): a tight screen that yields,
-        // say, 6 healthcare names under $50 should still honour the sector
-        // rather than silently falling back to the whole universe. Deep keeps
-        // its larger floor so the crew has enough coverage.
-        const poolFloor = tier === "deep" ? n : Math.min(n, 4);
-        if (survivors.length >= poolFloor) pool = survivors;
+        // A limit the user stated is binding, however few names survive it — and
+        // zero survivors is a real answer, not a reason to widen the search. The
+        // previous survivor floor (min(QUICK_MAX, 4)) meant a screen matching
+        // three healthcare names under $50 silently reverted to the whole
+        // universe and presented $200 tech names as matches.
+        //
+        // applyScreen's `limit` ranks AND truncates, so eligibility must pass
+        // the full universe size: the old hard-coded 200 dropped eligible names
+        // from a 537-symbol universe before eligibility was even known.
+        pool = applyScreen(universe.stocks, { ...hard, limit: universe.stocks.length });
       }
     }
   } catch {
     // Screen parse is best-effort — fall back to the full universe.
+  }
+
+  // Picks are validated against the ELIGIBLE pool, never the whole universe. This
+  // is the guard that makes a hard constraint non-negotiable: the model ranks
+  // inside the screen, it does not get to overrule it.
+  const byTicker = new Map<string, RankedStock>(pool.map((s) => [s.ticker, s]));
+
+  // 3b) The screen ran and nothing qualified. Say so, and name nothing — there is
+  //     no shortlist to rank, and no LLM call worth paying for.
+  if (hadHardConstraints && pool.length === 0) {
+    interpretation = SCOUT_NO_MATCHES_LABEL;
+    const empty: ScoutPick[] = [];
+    if (tier === "deep") {
+      emit({ type: "deep_shortlist", query, interpretation, picks: empty, layout: "ranked" });
+    } else {
+      emit({ type: "scout_complete", tier: "quick", query, interpretation, picks: empty, layout: "ranked" });
+    }
+    return `The screen for "${query}" ran against the full universe and NO name satisfied the stated limits. Tell the user plainly, in one or two sentences, that nothing currently matches those limits, and suggest relaxing the specific limit most likely to be binding. Name NO ticker whatsoever — there are no matches to name, and naming one would contradict the screen. Then STOP — do not call any tools.`;
   }
 
   // 4) Build a compact, data-grounded table and fit-rank it in ONE LLM call.

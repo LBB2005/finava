@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { AgentEvent } from "@/types/chat";
+import { SCOUT_NO_MATCHES_LABEL } from "./scout-fallback";
 
 // ── Boundary mocks ───────────────────────────────────────────────────────────
 const generate = vi.fn();
@@ -257,15 +258,95 @@ describe("runScoutAgent — hard screen filter", () => {
     expect(passedFilter.sectors).toContain("Energy");
   });
 
-  it("ignores a hard filter that leaves too few survivors (falls back to full pool)", async () => {
+  it("returns no names — not the whole universe — when a hard filter matches nothing", async () => {
     coerceFilter.mockReturnValue({ sectors: ["Utilities"] });
-    applyScreen.mockReturnValue([]); // below the poolFloor → keep full universe
+    applyScreen.mockReturnValue([]); // nothing in the universe is a Utility
     const { emit, events } = collect();
     const { runScoutAgent } = await import("./scout-agent");
-    await runScoutAgent({ query: "defensive utilities", tier: "quick" }, emit);
-    // ABC/DEF still come from the full ranked pool (default scoutSelect mock)
+    const out = await runScoutAgent({ query: "defensive utilities", tier: "quick" }, emit);
+    const ev = events.find((e) => e.type === "scout_complete") as {
+      picks: Array<{ ticker: string }>;
+      interpretation: string;
+    };
+    // The old behaviour surfaced ABC (Healthcare) and DEF (Energy) here.
+    expect(ev.picks).toEqual([]);
+    expect(ev.interpretation).toBe(SCOUT_NO_MATCHES_LABEL);
+    // The narrator must not be handed a ticker it could present as a match.
+    for (const t of ["ABC", "DEF", "GHI", "JKL"]) expect(out).not.toContain(t);
+  });
+});
+
+describe("runScoutAgent — hard constraints are non-negotiable", () => {
+  // The scout validated LLM picks against the FULL universe, so a model pick
+  // outside the screened pool was accepted and shown as a match.
+  it("rejects an LLM pick that is outside the eligible pool", async () => {
+    coerceFilter.mockReturnValue({ sectors: ["Healthcare"], maxPrice: 50 });
+    applyScreen.mockReturnValue([POOL[0]]); // only ABC is eligible
+    generate.mockImplementation(async (o: { agent: string }) => {
+      if (o.agent === "screenParse")
+        return JSON.stringify({ filter: { sectors: ["Healthcare"], maxPrice: 50 } });
+      // DEF is Energy at $25 — it fails the sector filter.
+      return JSON.stringify({
+        picks: [
+          { ticker: "DEF", conviction: "high", reason: "out of pool" },
+          { ticker: "ABC", conviction: "look", reason: "fits screen" },
+        ],
+      });
+    });
+    const { emit, events } = collect();
+    const { runScoutAgent } = await import("./scout-agent");
+    await runScoutAgent({ query: "healthcare under $50", tier: "quick" }, emit);
     const ev = events.find((e) => e.type === "scout_complete") as { picks: Array<{ ticker: string }> };
-    expect(ev.picks.map((p) => p.ticker)).toEqual(["ABC", "DEF"]);
+    expect(ev.picks.map((p) => p.ticker)).toEqual(["ABC"]);
+  });
+
+  it("honours a 3-survivor screen instead of reverting to the full universe", async () => {
+    // poolFloor was min(QUICK_MAX, 4) = 4, so three survivors silently lost the filter.
+    const survivors = [POOL[0], POOL[1], POOL[3]];
+    coerceFilter.mockReturnValue({ minMarketCap: 1e9 });
+    applyScreen.mockReturnValue(survivors);
+    generate.mockImplementation(async (o: { agent: string }) => {
+      if (o.agent === "screenParse") return JSON.stringify({ filter: { minMarketCap: 1e9 } });
+      // GHI is in the universe but NOT among the survivors.
+      return JSON.stringify({ picks: [{ ticker: "GHI", conviction: "high", reason: "mega cap" }] });
+    });
+    const { emit, events } = collect();
+    const { runScoutAgent } = await import("./scout-agent");
+    await runScoutAgent({ query: "large caps over $1B", tier: "quick" }, emit);
+    const ev = events.find((e) => e.type === "scout_complete") as { picks: Array<{ ticker: string }> };
+    expect(ev.picks.map((p) => p.ticker)).not.toContain("GHI");
+  });
+
+  it("does not truncate the eligible pool below the universe size", async () => {
+    // A hard-coded limit of 200 silently dropped names from a 537-symbol universe
+    // before eligibility was even known.
+    // A 250-name universe exceeds the old hard-coded limit of 200.
+    const big = Array.from({ length: 250 }, (_, i) =>
+      stock({ ticker: `T${i}`, score: 50, sector: "Healthcare" })
+    );
+    getFactorUniverse.mockResolvedValue(universe(big));
+    coerceFilter.mockReturnValue({ sectors: ["Healthcare"] });
+    applyScreen.mockReturnValue([big[0]]);
+    const { emit } = collect();
+    const { runScoutAgent } = await import("./scout-agent");
+    await runScoutAgent({ query: "healthcare names", tier: "quick" }, emit);
+    const passed = applyScreen.mock.calls[0][1] as { limit?: number };
+    expect(passed.limit ?? 0).toBeGreaterThanOrEqual(big.length);
+  });
+
+  it("keeps the deterministic fallback inside the eligible pool", async () => {
+    coerceFilter.mockReturnValue({ sectors: ["Healthcare"], maxPrice: 50 });
+    applyScreen.mockReturnValue([POOL[0]]); // ABC only
+    generate.mockImplementation(async (o: { agent: string }) => {
+      if (o.agent === "screenParse")
+        return JSON.stringify({ filter: { sectors: ["Healthcare"], maxPrice: 50 } });
+      throw new Error("scoutSelect down");
+    });
+    const { emit, events } = collect();
+    const { runScoutAgent } = await import("./scout-agent");
+    await runScoutAgent({ query: "healthcare under $50", tier: "quick" }, emit);
+    const ev = events.find((e) => e.type === "scout_complete") as { picks: Array<{ ticker: string }> };
+    expect(ev.picks.map((p) => p.ticker)).toEqual(["ABC"]);
   });
 });
 
