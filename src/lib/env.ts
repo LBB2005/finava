@@ -128,6 +128,14 @@ const serverSchema = z.object({
   LIVE_AGENT_COMMIT: z.string().optional(),
   LIVE_LOG_REPO: z.string().optional(),
 
+  // Investment research (all optional — the feature is off unless
+  // INVESTMENT_RESEARCH_ENABLED is exactly "true", and Jev degrades to a
+  // labelled fixed prior when TYPESAFE_API_KEY is absent, so a missing key
+  // costs scenario probabilities rather than the whole feature).
+  INVESTMENT_RESEARCH_ENABLED: z.string().optional(),
+  TYPESAFE_API_KEY: z.string().optional(),
+  TYPESAFE_MODEL: z.string().optional(),
+
   // Local tooling paths (optional).
   MARKOV_SKILL_PATH: z.string().optional(),
   UV_PATH: z.string().optional(),
@@ -184,6 +192,9 @@ const serverRaw = {
   LIVE_AGENT_VERSION: process.env.LIVE_AGENT_VERSION,
   LIVE_AGENT_COMMIT: process.env.LIVE_AGENT_COMMIT,
   LIVE_LOG_REPO: process.env.LIVE_LOG_REPO,
+  INVESTMENT_RESEARCH_ENABLED: process.env.INVESTMENT_RESEARCH_ENABLED,
+  TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
+  TYPESAFE_MODEL: process.env.TYPESAFE_MODEL,
   MARKOV_SKILL_PATH: process.env.MARKOV_SKILL_PATH,
   UV_PATH: process.env.UV_PATH,
   BOT_STATUS_PATH: process.env.BOT_STATUS_PATH,
