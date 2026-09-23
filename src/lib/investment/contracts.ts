@@ -100,6 +100,20 @@ export const ValuationOutcomeSchema = z.object({
   /** criticalCoverage for the method actually used, as decision.ts consumes it. */
   criticalCoverage: z.number().min(0).max(1),
   valuationVersion: z.string().min(1),
+  /**
+   * The per-share price this valuation measured FROM, as of the run's cutoff.
+   *
+   * Recorded because it cannot be recovered later: `EvidenceItem` persists a
+   * source and a standing but not the value, and re-fetching would substitute
+   * today's price for the one the scenarios were computed against — which would
+   * silently change every return in the report and make the prediction
+   * unresolvable against what was actually forecast.
+   *
+   * Three states, deliberately: a number is the measured price, `null` means the
+   * price was unavailable, and `undefined` means this producer did not record one.
+   * Optional so the many existing construction sites keep compiling.
+   */
+  priceAtAsOf: z.number().positive().nullable().optional(),
 });
 export type ValuationOutcome = z.infer<typeof ValuationOutcomeSchema>;
 
@@ -149,6 +163,11 @@ export const InvestmentReportSchema = z.object({
   versions: ReportVersionsSchema,
   /** Measured, not estimated. Null when a provider would not report it. */
   costUsd: z.number().nullable(),
+  /**
+   * The as-of price the report was measured from, mirrored from the valuation so
+   * the card and the outcome resolver do not have to reach through it.
+   */
+  priceAtAsOf: z.number().positive().nullable().optional(),
   completedAt: z.string().nullable(),
 });
 export type InvestmentReport = z.infer<typeof InvestmentReportSchema>;
