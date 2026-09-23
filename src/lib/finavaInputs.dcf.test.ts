@@ -29,9 +29,12 @@ describe("extractDcfBase", () => {
     expect(extractDcfBase(aapl).netDebt).toBe(((mm.totalDebt as number) ?? 0) - ((mm.cash as number) ?? 0));
   });
 
-  it("returns an all-null base for no filings", () => {
+  it("returns an all-null base for no filings — including net debt", () => {
+    // netDebt used to be 0 here, which asserts "no debt and no cash" about a
+    // company we have no filings for at all, and a fair value was published on it.
     expect(extractDcfBase(null)).toEqual({
-      baseFcf: null, fcfIsProxy: true, sharesEdgar: null, sharesAsOf: null, netDebt: 0,
+      baseFcf: null, fcfIsProxy: true, sharesEdgar: null, sharesAsOf: null,
+      netDebt: null, totalDebt: null, cash: null,
       historicalGrowth: null, fcfConversion: null, revenueCagr3y: null,
     });
   });
@@ -43,7 +46,8 @@ describe("extractDcfBase", () => {
 
 describe("finishDcfInputs", () => {
   const base = {
-    baseFcf: 100e9, fcfIsProxy: false, sharesEdgar: 15e9, sharesAsOf: "2026-07-18", netDebt: -30e9,
+    baseFcf: 100e9, fcfIsProxy: false, sharesEdgar: 15e9, sharesAsOf: "2026-07-18",
+    netDebt: -30e9, totalDebt: 20e9, cash: 50e9,
     historicalGrowth: 0.06, fcfConversion: 1.02, revenueCagr3y: 0.04,
   };
 

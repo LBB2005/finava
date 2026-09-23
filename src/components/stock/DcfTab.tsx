@@ -96,6 +96,19 @@ export function DcfTab({ ticker }: { ticker: string }) {
     );
   }
 
+  // A dash must never be unexplained: when an input is missing the model says
+  // which one, rather than leaving the reader to assume a rendering glitch.
+  const GAP_COPY: Record<string, string> = {
+    no_fcf: "free cash flow is unavailable in the filings",
+    invalid_wacc: "the discount rate is invalid",
+    net_debt_unknown: "total debt or cash is missing from the filings, so net debt cannot be computed",
+    shares_unknown: "shares outstanding are unavailable",
+    terminal_growth_exceeds_wacc: "terminal growth is not below the discount rate",
+  };
+  const gapNote = result.gaps.length
+    ? `No intrinsic value: ${result.gaps.map((g) => GAP_COPY[g] ?? g).join("; ")}.`
+    : null;
+
   const upside = result.upsidePct;
   const upColor = upside == null ? "var(--color-muted)" : upside >= 0 ? "var(--color-bull)" : "var(--color-bear)";
 
@@ -132,11 +145,23 @@ export function DcfTab({ ticker }: { ticker: string }) {
           per share · {price != null ? `vs $${price.toFixed(2)} now` : "no live price"}
           {upside != null ? ` · ${upside >= 0 ? "undervalued" : "overvalued"}` : ""}
         </p>
+        {gapNote && (
+          <p
+            className="mono"
+            style={{ margin: "-8px 0 18px", fontSize: "var(--text-micro)", color: "var(--color-muted)", lineHeight: 1.6 }}
+          >
+            {gapNote}
+          </p>
+        )}
 
         <Fact l="PV of 5-yr cash flows" v={compact(result.pvExplicit)} />
         <Fact l="PV of terminal value" v={compact(result.pvTerminal)} />
         <Fact l="Enterprise value" v={compact(result.pvExplicit + result.pvTerminal)} />
-        <Fact l="Less: net debt" v={compact(inputs.netDebt)} color={inputs.netDebt != null && inputs.netDebt < 0 ? "var(--color-bull)" : undefined} />
+        <Fact
+          l="Less: net debt"
+          v={inputs.netDebt == null ? "Unavailable" : compact(inputs.netDebt)}
+          color={inputs.netDebt != null && inputs.netDebt < 0 ? "var(--color-bull)" : undefined}
+        />
         <Fact l="Equity value" v={compact(result.equityValue)} />
         <Fact l="Shares outstanding" v={inputs.sharesOutstanding != null ? `${(inputs.sharesOutstanding / 1e9).toFixed(2)}B` : "—"} />
         <Fact l="Base free cash flow" v={compact(inputs.baseFcf)} />

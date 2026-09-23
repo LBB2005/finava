@@ -83,7 +83,17 @@ export interface DcfBase {
   fcfIsProxy: boolean;
   sharesEdgar: number | null;
   sharesAsOf: string | null;
-  netDebt: number;
+  /**
+   * Total debt − cash, in USD. NULL when either component is unavailable.
+   *
+   * You cannot net against an unknown: this was `(totalDebt ?? 0) - (cash ?? 0)`,
+   * so a filing with cash but no debt figure produced phantom NET CASH and
+   * inflated the fair value of exactly the companies whose filings are thinnest.
+   * Both components are kept so the UI can say which one was missing.
+   */
+  netDebt: number | null;
+  totalDebt: number | null;
+  cash: number | null;
   historicalGrowth: number | null;
   fcfConversion: number | null;
   revenueCagr3y: number | null;
@@ -94,7 +104,7 @@ const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ?
 /** Everything the DCF needs from SEC companyfacts. `null` facts → an all-null base. */
 export function extractDcfBase(companyFacts: unknown): DcfBase {
   if (!companyFacts) {
-    return { baseFcf: null, fcfIsProxy: true, sharesEdgar: null, sharesAsOf: null, netDebt: 0, historicalGrowth: null, fcfConversion: null, revenueCagr3y: null };
+    return { baseFcf: null, fcfIsProxy: true, sharesEdgar: null, sharesAsOf: null, netDebt: null, totalDebt: null, cash: null, historicalGrowth: null, fcfConversion: null, revenueCagr3y: null };
   }
   const mm = extractFinancialMetrics(companyFacts);
   const series = extractFundamentalTimeSeries(companyFacts, 6);
@@ -110,12 +120,17 @@ export function extractDcfBase(companyFacts: unknown): DcfBase {
   // Cover-page count, not the annual weighted average: the latter is pre-split
   // until the next 10-K (see extractCurrentSharesOutstanding).
   const cur = extractCurrentSharesOutstanding(companyFacts);
+  const totalDebt = numOrNull(mm.totalDebt);
+  const cash = numOrNull(mm.cash);
   return {
     baseFcf,
     fcfIsProxy: capex == null,
     sharesEdgar: cur?.shares ?? numOrNull(mm.sharesOutstanding),
     sharesAsOf: cur?.asOf ?? null,
-    netDebt: (numOrNull(mm.totalDebt) ?? 0) - (numOrNull(mm.cash) ?? 0),
+    // Both components required — see the DcfBase.netDebt note.
+    netDebt: totalDebt != null && cash != null ? totalDebt - cash : null,
+    totalDebt,
+    cash,
     historicalGrowth,
     fcfConversion: baseFcf != null && netIncome != null && netIncome > 0 ? baseFcf / netIncome : null,
     revenueCagr3y,

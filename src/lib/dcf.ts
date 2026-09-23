@@ -19,12 +19,25 @@ export interface DcfInputs {
   currency: string | null;
 }
 
+/**
+ * Why a fair value could not be produced. Named rather than boolean so the UI can
+ * say WHICH input was missing instead of "unavailable" with no explanation.
+ */
+export type DcfGap =
+  | "no_fcf"
+  | "invalid_wacc"
+  | "net_debt_unknown"
+  | "shares_unknown"
+  | "terminal_growth_exceeds_wacc";
+
 export interface DcfResult {
   fairValue: number | null; // intrinsic value per share
   equityValue: number | null; // total equity value
   pvExplicit: number; // PV of the 5 explicit-period cash flows
   pvTerminal: number; // PV of the terminal value
   upsidePct: number | null; // vs currentPrice
+  /** Empty when the model ran fully. Populated instead of guessing an input. */
+  gaps: DcfGap[];
 }
 
 export interface DcfAssumptions {
@@ -51,12 +64,23 @@ export function computeDcf(inputs: DcfInputs, a: DcfAssumptions): DcfResult {
   const terminalGrowth = a.terminalGrowth ?? 0.025;
   const { baseFcf, sharesOutstanding, netDebt, currentPrice } = inputs;
 
-  // Terminal growth must sit below WACC or the Gordon denominator goes non-positive.
-  const tg = Math.min(terminalGrowth, a.wacc - 0.005);
+  const empty = (gaps: DcfGap[]): DcfResult => ({
+    fairValue: null,
+    equityValue: null,
+    pvExplicit: 0,
+    pvTerminal: 0,
+    upsidePct: null,
+    gaps,
+  });
 
-  if (baseFcf == null || baseFcf <= 0 || !Number.isFinite(a.wacc) || a.wacc <= 0) {
-    return { fairValue: null, equityValue: null, pvExplicit: 0, pvTerminal: 0, upsidePct: null };
-  }
+  if (baseFcf == null || baseFcf <= 0) return empty(["no_fcf"]);
+  if (!Number.isFinite(a.wacc) || a.wacc <= 0) return empty(["invalid_wacc"]);
+
+  // Gordon growth requires g < WACC or the denominator is zero or negative. This
+  // used to clamp silently to `wacc - 0.005`, which produced an enormous terminal
+  // value that looked precise and was arbitrary — a fabricated number. Refuse it.
+  if (terminalGrowth >= a.wacc) return empty(["terminal_growth_exceeds_wacc"]);
+  const tg = terminalGrowth;
 
   let pvExplicit = 0;
   let lastFcf = baseFcf;
@@ -71,16 +95,28 @@ export function computeDcf(inputs: DcfInputs, a: DcfAssumptions): DcfResult {
   const pvTerminal = terminalValue / Math.pow(1 + a.wacc, years);
 
   const enterpriseValue = pvExplicit + pvTerminal;
-  const equityValue = enterpriseValue - (netDebt ?? 0);
 
+  // A null netDebt is UNKNOWN, not zero. Treating it as zero silently published a
+  // fair value as if the company had no debt and no cash — and because netDebt was
+  // assembled as `(totalDebt ?? 0) - (cash ?? 0)`, a company with unknown debt and
+  // known cash produced phantom NET CASH, inflating the very companies whose
+  // filings are thinnest. Enterprise value is still reported; the equity bridge is
+  // not guessed.
+  const gaps: DcfGap[] = [];
+  if (netDebt == null) gaps.push("net_debt_unknown");
+  if (!(sharesOutstanding && sharesOutstanding > 0)) gaps.push("shares_unknown");
+
+  const equityValue = netDebt == null ? null : enterpriseValue - netDebt;
   const fairValue =
-    sharesOutstanding && sharesOutstanding > 0 ? equityValue / sharesOutstanding : null;
+    equityValue != null && sharesOutstanding && sharesOutstanding > 0
+      ? equityValue / sharesOutstanding
+      : null;
   const upsidePct =
     fairValue != null && currentPrice && currentPrice > 0
       ? ((fairValue - currentPrice) / currentPrice) * 100
       : null;
 
-  return { fairValue, equityValue, pvExplicit, pvTerminal, upsidePct };
+  return { fairValue, equityValue, pvExplicit, pvTerminal, upsidePct, gaps };
 }
 
 /** The default growth assumption: historical revenue CAGR clamped to [0, 25%],

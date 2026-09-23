@@ -81,10 +81,54 @@ describe("computeDcf", () => {
     expect(cash - debt).toBeCloseTo(1_000_000, 6);
   });
 
-  it("clamps terminal growth below WACC so the Gordon denominator stays positive", () => {
-    const r = computeDcf(baseInputs(), { wacc: 0.09, growth: 0.05, terminalGrowth: 0.2 });
-    expect(Number.isFinite(r.pvTerminal)).toBe(true);
+  it("refuses a terminal growth at or above WACC instead of clamping it", () => {
+    // This used to clamp to `wacc - 0.005`, which produced an enormous terminal
+    // value that looked precise and was entirely arbitrary.
+    for (const terminalGrowth of [0.09, 0.2]) {
+      const r = computeDcf(baseInputs(), { wacc: 0.09, growth: 0.05, terminalGrowth });
+      expect(r.fairValue).toBeNull();
+      expect(r.gaps).toContain("terminal_growth_exceeds_wacc");
+    }
+  });
+
+  it("still values a terminal growth legitimately below WACC", () => {
+    const r = computeDcf(baseInputs(), { wacc: 0.09, growth: 0.05, terminalGrowth: 0.025 });
     expect(r.pvTerminal).toBeGreaterThan(0);
+    expect(r.gaps).toEqual([]);
+  });
+
+  describe("unknown net debt is not zero", () => {
+    it("returns no fair value when net debt is unknown", () => {
+      const r = computeDcf(baseInputs({ netDebt: null }), { wacc: 0.09, growth: 0.08 });
+      expect(r.fairValue).toBeNull();
+      expect(r.equityValue).toBeNull();
+      expect(r.gaps).toContain("net_debt_unknown");
+    });
+
+    it("still reports the enterprise value it could compute", () => {
+      // The equity bridge is what is unknown, not the cash flows.
+      const r = computeDcf(baseInputs({ netDebt: null }), { wacc: 0.09, growth: 0.08 });
+      expect(r.pvExplicit).toBeGreaterThan(0);
+      expect(r.pvTerminal).toBeGreaterThan(0);
+    });
+
+    it("treats an explicit zero as a real zero, not a gap", () => {
+      const r = computeDcf(baseInputs({ netDebt: 0 }), { wacc: 0.09, growth: 0.08 });
+      expect(r.fairValue).not.toBeNull();
+      expect(r.gaps).toEqual([]);
+    });
+
+    it("flags unknown shares separately from unknown net debt", () => {
+      const r = computeDcf(baseInputs({ sharesOutstanding: null }), { wacc: 0.09, growth: 0.08 });
+      expect(r.fairValue).toBeNull();
+      expect(r.gaps).toContain("shares_unknown");
+      expect(r.gaps).not.toContain("net_debt_unknown");
+    });
+
+    it("names both gaps when both inputs are missing", () => {
+      const r = computeDcf(baseInputs({ netDebt: null, sharesOutstanding: null }), { wacc: 0.09, growth: 0.08 });
+      expect(r.gaps).toEqual(expect.arrayContaining(["net_debt_unknown", "shares_unknown"]));
+    });
   });
 
   it("computes upside sign correctly vs current price", () => {
