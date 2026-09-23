@@ -16,6 +16,7 @@ import {
 } from "@/lib/finava";
 import ModelBadge, { PoweredByStrip } from "@/components/ui/ModelBadge";
 import Rule from "@/components/ui/Rule";
+import InvestmentSection from "@/components/investment/InvestmentSection";
 import { slugToBrand, rosterFromBrands, BRAND_META, type Brand } from "@/lib/models";
 
 /* ── tokens / helpers ─────────────────────────────────────────────────────── */
@@ -372,6 +373,11 @@ export function FinavaTab({ ticker }: { ticker: string }) {
             ? `Six computed factor pillars · narrative written by ${narrator} · AI-generated, may contain errors · research color, not investment advice.`
             : "Six computed factor pillars · no AI narrative for this run · research color, not investment advice."}
         </p>
+
+        {/* Horizon-explicit Buy/Watch/Avoid research. Renders nothing unless
+            NEXT_PUBLIC_INVESTMENT_RESEARCH_ENABLED is "true", so this tab is
+            byte-identical to before when the feature is off. */}
+        <InvestmentSection ticker={ticker} price={price} finavaScore={orbScore} />
       </div>
     </div>
   );

@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authFetch } from "@/lib/authFetch";
 import type { InvestmentReport, RunStage, RunStatus } from "@/lib/investment/contracts";
+import type { ResolvedHorizonContract } from "@/lib/investment/schemas";
 
 export interface RunView {
   runId: string;
@@ -28,6 +29,15 @@ export interface RunView {
   reportId: string | null;
   gaps: string[];
   error: string | null;
+  /**
+   * The horizon the SERVER resolved for this run.
+   *
+   * Comes from the server rather than being recomputed here, so the label always
+   * matches the horizon the numbers were actually produced for. When the server
+   * does not supply it, the UI shows no horizon label at all rather than
+   * asserting one it cannot verify.
+   */
+  horizon?: ResolvedHorizonContract;
 }
 
 interface State {

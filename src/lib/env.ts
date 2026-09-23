@@ -30,6 +30,10 @@ const clientSchema = z.object({
   NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1),
   NEXT_PUBLIC_APP_NAME: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().optional(),
+  // Controls only whether the investment-research UI is VISIBLE. The server-side
+  // INVESTMENT_RESEARCH_ENABLED is the authoritative gate on the routes; a public
+  // flag can be read and faked by anyone, so it must never be a security boundary.
+  NEXT_PUBLIC_INVESTMENT_RESEARCH_ENABLED: z.string().optional(),
 });
 
 // STATIC access so the values are inlined into the client bundle at build.
@@ -42,6 +46,7 @@ const clientRaw = {
   NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  NEXT_PUBLIC_INVESTMENT_RESEARCH_ENABLED: process.env.NEXT_PUBLIC_INVESTMENT_RESEARCH_ENABLED,
 };
 
 // ── Server ──────────────────────────────────────────────────────────────────
