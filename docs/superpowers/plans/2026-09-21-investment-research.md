@@ -340,3 +340,49 @@ requirement or an experiment?** §2.2 assumes experiment and sequences it last,
 which is what makes the feature shippable without vendor risk. If Jev is
 actually the point of the exercise, say so and it moves back up — but it should
 still not gate the deterministic engine.
+
+---
+
+## Status — updated 2026-09-22
+
+Branch `feat/investment-research`, 5 commits. Suite green: 2928 tests, typecheck
+and lint clean. Liam's facts-layer work in progress untouched throughout.
+
+### Done
+
+| Task | State |
+|---|---|
+| 0 · Baseline | Verified clean — 238 files / 2806 tests at start, no pre-existing failures |
+| 1 · Scout constraint leak | Fixed (3 line-level edits + honest empty result). The old test that encoded the defect as intent was replaced |
+| 2 · Mandate / horizon / schemas | `horizon.ts`, `schemas.ts`, `policyConfig.ts`. Calendar months ship; trading days report `unsupported_calendar` |
+| 5 · Returns + rating | `returns.ts`, `decision.ts`, `scenarioBuckets.ts`. Deterministic, 87 tests |
+| 9 · Jev **transport** | `jev/client.ts`, `jev/schemas.ts`. Dual-route (direct or Vercel Gateway), 31 tests, all mocked |
+
+118 tests across `src/lib/investment/`.
+
+### Blocked on Liam
+
+1. **`dcf.ts:76` semantics.** `enterpriseValue - (netDebt ?? 0)` treats missing
+   net debt as zero, inflating fair value for companies with thin filings.
+   Fixing it properly changes SHIPPED behaviour — the stock page starts showing
+   "unavailable" where it now shows a number. Alternative: build the corrected
+   model additively in `investment/valuation.ts` and leave `dcf.ts` alone.
+   **Default if unanswered: additive.**
+2. **`AI_GATEWAY_API_KEY`** in `.env.local` (plus re-adding
+   `INVESTMENT_RESEARCH_ENABLED=true`), for the live Jev smoke test. Not blocking
+   any code — the engine runs on the labelled fixed prior without it.
+
+### Remaining, in order
+
+| # | Task | Notes |
+|---|---|---|
+| 3 | Valuation inputs | Forward-multiple model, `validateValuationInputs`, historical-range for short horizons. Gated on the dcf decision above |
+| 4 | Evidence + claims | Snapshot freeze, dated filing excerpts, structured claims, skeptic pass. Reuse `live/transcripts.ts` chunking; adapter named `callTranscripts.ts` |
+| 9b | Jev **question sets** | `jev/questions.ts`, `jev/assess.ts` — versioned questions, scenario-bucket probabilities, cost accounting. Transport is done |
+| 6 | Persisted runs | Firestore runs, stage leases, resumability, authed routes. **Must carry its own budget ceiling that binds admin UIDs** — `resolveRunCap()` returns Infinity for admins, which is Liam |
+| 7 | Single-stock slice | `InvestmentReportCard`, horizon picker, chat + stock-page parity |
+| 8 | Discovery | Same engine behind Discover; every highlighted name fully valued (today `discovery.ts:134` slices to top 3) |
+| 10 | Prospective evaluation | Save predictions before target date, resolve outcomes, Brier/calibration. Data capture ships now; calibration claims do not |
+| 11 | Validate + document | Mocked end-to-end cases, flag-off check, docs |
+
+Milestones A (1–5) and B (6–7) complete with no vendor dependency.
