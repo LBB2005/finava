@@ -106,7 +106,7 @@ function Panel({
             type="button"
             className="btn btn-primary std-focus"
             disabled={busy}
-            onClick={() => void start({ ticker, horizonMonths: months })}
+            onClick={() => void start({ ticker, horizonMonths: months, assumed: !chosen })}
           >
             {report ? "Re-run analysis" : "Analyze"}
           </button>
@@ -146,7 +146,7 @@ function Panel({
             <button
               type="button"
               className="btn btn-ghost std-focus"
-              onClick={() => void start({ ticker, horizonMonths: months })}
+              onClick={() => void start({ ticker, horizonMonths: months, assumed: !chosen })}
             >
               Retry
             </button>

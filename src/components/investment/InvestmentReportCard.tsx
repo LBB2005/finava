@@ -82,12 +82,20 @@ export default function InvestmentReportCard({
   horizon?: ResolvedHorizonContract;
   evidence?: EvidenceItem[];
   gaps?: SourceGap[];
-  /** The price the report was measured from. Distinct from any horizon price. */
+  /**
+   * Fallback as-of price, used only when the report did not record one.
+   *
+   * The report's own `priceAtAsOf` wins: it is the price the scenarios were
+   * actually computed against, whereas a caller passing a live quote would be
+   * showing today's price beside returns measured from a different one.
+   */
   asOfPrice?: number | null;
   /** Shown separately and captioned — never folded into the rating. */
   finavaScore?: number | null;
 }) {
   const { returns, weights, valuation } = report;
+  // The recorded price wins over anything the caller passes; see asOfPrice above.
+  const measuredPrice = report.priceAtAsOf ?? valuation.priceAtAsOf ?? asOfPrice ?? null;
 
   return (
     <div className="card">
@@ -132,7 +140,11 @@ export default function InvestmentReportCard({
 
         {/* ── the numbers, each named for exactly what it is ────────────────── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 18 }}>
-          <Stat label="As-of price" value={money(asOfPrice)} caption="what it trades at now" />
+          <Stat
+            label="As-of price"
+            value={money(measuredPrice)}
+            caption="the price these returns were measured from"
+          />
           <Stat
             label="Expected return"
             value={pct(returns?.cumulative)}

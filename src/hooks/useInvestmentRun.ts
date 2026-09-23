@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authFetch } from "@/lib/authFetch";
+import { resolveHorizon } from "@/lib/investment/horizon";
 import type { InvestmentReport, RunStage, RunStatus } from "@/lib/investment/contracts";
 import type { ResolvedHorizonContract } from "@/lib/investment/schemas";
 
@@ -135,16 +136,57 @@ export function useInvestmentRun(existingRunId?: string | null) {
    * explicit user action.
    */
   const start = useCallback(
-    async (mandate: { ticker: string; horizonMonths: number; query?: string }) => {
+    async (input: { ticker: string; horizonMonths: number; assumed?: boolean; query?: string }) => {
       startedAt.current = Date.now();
       setState({ run: null, report: null, busy: true, error: null, elapsedMs: 0 });
       try {
+        // Resolved here so the request is well-formed, but the SERVER re-derives
+        // targetDate and yearFraction and ignores what we send for them — the
+        // hurdle compounds over yearFraction, so it is not the client's to set.
+        const horizon = resolveHorizon(
+          { count: input.horizonMonths, unit: "calendar_months" },
+          new Date().toISOString()
+        );
+        if (horizon.status !== "resolved") {
+          throw new Error(
+            horizon.status === "unsupported_calendar"
+              ? horizon.reason
+              : `That horizon is not supported: ${horizon.reason}`
+          );
+        }
+
         const created = await authFetch("/api/investment/runs", {
           method: "POST",
-          body: JSON.stringify(mandate),
+          body: JSON.stringify({
+            mandate: {
+              mode: "analyze",
+              query: input.query ?? `Analyze ${input.ticker} over ${input.horizonMonths} months`,
+              ticker: input.ticker,
+              horizon: { ...horizon.horizon, assumed: input.assumed ?? false },
+              benchmark: "SPY",
+              universeVersion: "sp500",
+              hardFilter: null,
+              qualitativeCriteria: [],
+            },
+            // Scoped so a retry of THIS analysis is deduplicated, while a genuine
+            // re-run for a different horizon is a separate run with its own budget.
+            idempotencyKey: `${input.ticker}:${input.horizonMonths}:${startedAt.current}`,
+          }),
         });
         if (!created.ok) throw new Error(`Could not start research (${created.status})`);
-        const { run } = (await created.json()) as { run: RunView };
+        const body = (await created.json()) as {
+          runId: string;
+          status: RunView["status"];
+          stage: RunView["stage"];
+        };
+        const run: RunView = {
+          runId: body.runId,
+          stage: body.stage,
+          status: body.status,
+          reportId: null,
+          gaps: [],
+          error: null,
+        };
         activeRunId.current = run.runId;
         if (cancelled.current) return;
         setState((s) => ({ ...s, run }));
