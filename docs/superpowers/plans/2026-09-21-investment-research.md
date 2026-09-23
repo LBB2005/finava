@@ -386,3 +386,48 @@ and lint clean. Liam's facts-layer work in progress untouched throughout.
 | 11 | Validate + document | Mocked end-to-end cases, flag-off check, docs |
 
 Milestones A (1–5) and B (6–7) complete with no vendor dependency.
+
+---
+
+## Final status — 2026-09-22
+
+All eleven tasks complete. **3549 tests green, typecheck clean, production build
+succeeds.** Liam's facts-layer work in progress was untouched throughout, and
+`src/lib/live/` was never modified.
+
+Built by six parallel agents against frozen contracts, then integrated. Roughly
+1,100 new tests across 30 modules.
+
+### What is wired and working
+
+A run creates, advances one bounded stage per request, resumes after a refresh,
+and produces a persisted report rendered identically on the stock page and in
+chat. The deterministic path — valuation → scenario returns → buckets → rating —
+runs end to end on real facts-layer data with no vendor dependency.
+
+### What is deliberately NOT claimed
+
+- **No calibration.** Scenario probabilities are a labelled `fixed_prior` or an
+  untested model distribution. ~200 matured predictions per horizon cohort are
+  needed, which takes as long as the horizons take.
+- **No trading-day horizons.** Still `unsupported_calendar` (§2.1).
+- **No earnings-call transcripts.** Adapter and fixtures exist; the default
+  reports `not_covered`, and no synthetic transcript text ships under `src/`.
+- **Claim extraction is unverified live.** The prompt and validation path are
+  complete and tested against mocks, but no live model run has been paid for, so
+  claim yield and quality are unmeasured.
+- **Discovery is not yet rewired.** `discovery.ts`/`discoveryRanking.ts` are
+  built and tested; `scout-agent.ts` and `agents/discovery.ts` still run the old
+  funnel. An adapter is needed between `assessCandidateFits` and the
+  `QualitativePrioritizer` interface.
+- **Jev has never authenticated.** The key supplied was not a TypeSafe
+  credential. Route it through Vercel AI Gateway (`AI_GATEWAY_API_KEY`).
+
+### Deploy checklist
+
+1. `AI_GATEWAY_API_KEY` in `.env.local` (optional — the prior works without it).
+2. `INVESTMENT_RESEARCH_ENABLED=true` (server) and
+   `NEXT_PUBLIC_INVESTMENT_RESEARCH_ENABLED=true` (UI visibility).
+3. Deploy the two Firestore index exemptions in `firestore.indexes.json`.
+4. Tune `INVESTMENT_RUN_CREDIT_CAP` / `INVESTMENT_DAILY_CREDIT_CAP`; the defaults
+   (1500 / 6000) are placeholders.
