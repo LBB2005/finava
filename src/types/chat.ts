@@ -57,6 +57,15 @@ export interface ChatMessage {
   attachment?: DiscoverMessageContent;
   /** The user pressed Stop; `content` is the partial answer. Not an error. */
   stopped?: boolean;
+  /**
+   * Investment research: the run whose report this message presents.
+   *
+   * A REFERENCE, not the report itself. The report is the persisted document, so
+   * a follow-up question reads that rather than the model re-deriving numbers
+   * from the prose — which is how the figure in chat and the figure on the stock
+   * page would drift apart. Reading it is a free GET.
+   */
+  investmentRunId?: string;
 }
 
 /* ── Skeptic review (W3-2) ──────────────────────────────────────────────── */
@@ -190,5 +199,7 @@ export type AgentEvent =
   | { type: "wave_start"; waveIndex: number; totalWaves: number; tickers: string[] }
   | { type: "wave_result"; wave: WaveEvidence; totalWaves: number }
   | { type: "discover_done" }
+  /** A finished investment report, carried as a reference for the client to read. */
+  | { type: "investment_report"; runId: string; ticker: string }
   | { type: "done" }
   | { type: "error"; message: string };

@@ -33,6 +33,7 @@ import { parseDiscoverContent } from "@/lib/chat/discoverText";
 import type { ChatMessage, AgentStep } from "@/types/chat";
 import { ResponseReceipt } from "./ResponseTiming";
 import DiscoverResult from "./DiscoverResult";
+import ChatInvestmentReport from "./ChatInvestmentReport";
 import type { DiscoverMessageContent } from "@/lib/scoutTypes";
 import { contextPill, type ChatContext } from "@/lib/chatContext";
 import { toUserFacingError } from "@/lib/userFacingError";
@@ -659,6 +660,22 @@ function MessageInner({
 
   if (message.role === "user") {
     return <PromptBubble message={message} />;
+  }
+
+  // An investment report rides as a run REFERENCE on the message, in any mode.
+  // The card reads the persisted document, so the numbers here are the same ones
+  // the stock page shows and the same ones the evaluation later resolves.
+  if (message.investmentRunId) {
+    return (
+      <div style={{ display: "flex", gap: 14 }}>
+        <FinavaAvatar />
+        <div style={{ flex: 1, minWidth: 0, paddingTop: 4, display: "grid", gap: 12 }}>
+          {message.content.trim() && <Markdown>{message.content}</Markdown>}
+          <ChatInvestmentReport runId={message.investmentRunId} />
+          {message.stopped && <StoppedTag />}
+        </div>
+      </div>
+    );
   }
 
   // Discovery mode: the structured result rides in `attachment` (older messages
