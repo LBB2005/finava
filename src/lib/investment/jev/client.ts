@@ -17,7 +17,61 @@
 import { z } from "zod";
 import { JevResponseSchema, type JevQuestion, type JevResponse } from "./schemas";
 
+/** TypeSafe's own API. Requires a TypeSafe console key (waitlisted). */
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+
+/**
+ * Vercel AI Gateway's TypeSafe-COMPATIBLE endpoint.
+ *
+ * Verified by probe on 2026-09-22: it rejects Gateway's own `boolean` question
+ * type with "expected one of 'noul', 'choice', 'score'" — TypeSafe's native
+ * vocabulary. So it speaks the same request and response shapes as the direct
+ * API, and switching routes is a base-URL change with no schema work.
+ *
+ * Note this is NOT Gateway's `/v1/evaluate`, which uses a different dialect
+ * (`boolean` instead of `noul`, camelCase usage) and, more importantly, omits
+ * `confidence` on choice and score answers — which POLICY_V1's
+ * minScenarioConfidence gate depends on. Preferring the compatible endpoint
+ * keeps that gate working.
+ */
+export const JEV_GATEWAY_ENDPOINT = "https://ai-gateway.vercel.sh/typesafe/v1/systemone";
+
+export type JevRoute = "typesafe_direct" | "vercel_gateway";
+
+export interface JevTransport {
+  route: JevRoute;
+  endpoint: string;
+  apiKey: string;
+}
+
+/**
+ * Pick a route from whichever credential is present.
+ *
+ * A direct TypeSafe key wins when both exist, because it is the more specific
+ * configuration — someone holding both has opted into the direct account. Set
+ * TYPESAFE_BASE_URL to override the host without touching code.
+ */
+export function resolveJevTransport(
+  env: NodeJS.ProcessEnv = process.env
+): JevTransport | null {
+  const override = env.TYPESAFE_BASE_URL?.replace(/\/+$/, "");
+
+  if (env.TYPESAFE_API_KEY) {
+    return {
+      route: "typesafe_direct",
+      endpoint: override ? `${override}/v1/systemone` : JEV_ENDPOINT,
+      apiKey: env.TYPESAFE_API_KEY,
+    };
+  }
+  if (env.AI_GATEWAY_API_KEY) {
+    return {
+      route: "vercel_gateway",
+      endpoint: override ? `${override}/v1/systemone` : JEV_GATEWAY_ENDPOINT,
+      apiKey: env.AI_GATEWAY_API_KEY,
+    };
+  }
+  return null;
+}
 
 /** Per-attempt timeout. Two attempts must still fit inside a research stage. */
 export const JEV_TIMEOUT_MS = 20_000;
@@ -67,15 +121,18 @@ export interface JevCallOptions {
 export interface JevDeps {
   fetch?: typeof globalThis.fetch;
   apiKey?: string;
+  /** Overrides route resolution. Tests pass this; production resolves from env. */
+  endpoint?: string;
   model?: string;
+  env?: NodeJS.ProcessEnv;
   now?: () => number;
   /** Injected so tests need no real timers. */
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** Whether Jev is usable, matching plaidConfigured()/stripeConfigured(). */
+/** Whether Jev is usable by EITHER route, matching plaidConfigured()/stripeConfigured(). */
 export function jevConfigured(): boolean {
-  return Boolean(process.env.TYPESAFE_API_KEY);
+  return resolveJevTransport() !== null;
 }
 
 /**
@@ -110,13 +167,20 @@ function retryDelayMs(header: string | null, remainingMs: number): number {
  */
 export async function callJev(opts: JevCallOptions, deps: JevDeps = {}): Promise<JevResult> {
   const doFetch = deps.fetch ?? globalThis.fetch;
-  const apiKey = deps.apiKey ?? process.env.TYPESAFE_API_KEY;
-  const model = opts.model ?? deps.model ?? process.env.TYPESAFE_MODEL ?? "jev-latest";
+  const env = deps.env ?? process.env;
+  const transport = resolveJevTransport(env);
+  const apiKey = deps.apiKey ?? transport?.apiKey;
+  const endpoint = deps.endpoint ?? transport?.endpoint ?? JEV_ENDPOINT;
+  const model = opts.model ?? deps.model ?? env.TYPESAFE_MODEL ?? "jev-latest";
   const now = deps.now ?? (() => Date.now());
   const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 
   if (!apiKey) {
-    return fail("not_configured", "TYPESAFE_API_KEY is not set", 0);
+    return fail(
+      "not_configured",
+      "neither TYPESAFE_API_KEY nor AI_GATEWAY_API_KEY is set",
+      0
+    );
   }
 
   const started = now();
@@ -144,7 +208,7 @@ export async function callJev(opts: JevCallOptions, deps: JevDeps = {}): Promise
     opts.signal?.addEventListener("abort", onAbort, { once: true });
 
     try {
-      const res = await doFetch(JEV_ENDPOINT, {
+      const res = await doFetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,

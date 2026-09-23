@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { callJev, requireAnswers, JEV_ENDPOINT, type JevDeps } from "./client";
+import {
+  callJev,
+  requireAnswers,
+  resolveJevTransport,
+  JEV_ENDPOINT,
+  JEV_GATEWAY_ENDPOINT,
+  type JevDeps,
+} from "./client";
 import { JevResponseSchema } from "./schemas";
 
 const KEY = "test-key-not-a-real-credential";
@@ -39,6 +46,9 @@ function deps(fetchImpl: unknown, over: Partial<JevDeps> = {}): JevDeps {
   return {
     fetch: fetchImpl as typeof globalThis.fetch,
     apiKey: KEY,
+    // An empty env, so a real key in the developer's .env cannot change which
+    // endpoint these assertions see.
+    env: {} as NodeJS.ProcessEnv,
     sleep: async () => {},
     ...over,
   };
@@ -275,5 +285,64 @@ describe("JevResponseSchema — the documented shapes parse", () => {
       usage: { input_tokens: 4, output_tokens: 2 },
     };
     expect(JevResponseSchema.safeParse(body).success).toBe(true);
+  });
+});
+
+describe("resolveJevTransport — either credential works", () => {
+  const env = (o: Record<string, string>) => o as unknown as NodeJS.ProcessEnv;
+
+  it("uses TypeSafe's own API when a TypeSafe key is present", () => {
+    const t = resolveJevTransport(env({ TYPESAFE_API_KEY: "ts" }));
+    expect(t).toEqual({ route: "typesafe_direct", endpoint: JEV_ENDPOINT, apiKey: "ts" });
+  });
+
+  it("uses the Gateway's TypeSafe-compatible endpoint with only a Gateway key", () => {
+    const t = resolveJevTransport(env({ AI_GATEWAY_API_KEY: "gw" }));
+    expect(t).toEqual({ route: "vercel_gateway", endpoint: JEV_GATEWAY_ENDPOINT, apiKey: "gw" });
+  });
+
+  it("prefers the direct key when both are present — it is the more specific config", () => {
+    const t = resolveJevTransport(env({ TYPESAFE_API_KEY: "ts", AI_GATEWAY_API_KEY: "gw" }));
+    expect(t?.route).toBe("typesafe_direct");
+    expect(t?.apiKey).toBe("ts");
+  });
+
+  it("returns null when neither key is set", () => {
+    expect(resolveJevTransport(env({}))).toBeNull();
+  });
+
+  it("honours a base-URL override and strips trailing slashes", () => {
+    const t = resolveJevTransport(env({ AI_GATEWAY_API_KEY: "gw", TYPESAFE_BASE_URL: "https://proxy.test//" }));
+    expect(t?.endpoint).toBe("https://proxy.test/v1/systemone");
+  });
+});
+
+describe("callJev — routing through the Gateway", () => {
+  it("posts to the Gateway endpoint with the Gateway key, unchanged payload shape", async () => {
+    const f = vi.fn().mockResolvedValue(ok(VALID_BODY));
+    // No apiKey/endpoint injected: resolution comes from env alone.
+    const r = await callJev(CALL, {
+      fetch: f as typeof globalThis.fetch,
+      env: { AI_GATEWAY_API_KEY: "gw-key" } as unknown as NodeJS.ProcessEnv,
+      sleep: async () => {},
+    });
+    expect(r.ok).toBe(true);
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe(JEV_GATEWAY_ENDPOINT);
+    expect(init.headers.Authorization).toBe("Bearer gw-key");
+    // The Gateway speaks TypeSafe's native dialect, so the body is identical.
+    expect(JSON.parse(init.body).questions.contradiction.type).toBe("noul");
+  });
+
+  it("reports not_configured when neither credential is available", async () => {
+    const f = vi.fn();
+    const r = await callJev(CALL, {
+      fetch: f as typeof globalThis.fetch,
+      env: {} as NodeJS.ProcessEnv,
+    });
+    if (r.ok) throw new Error("expected failure");
+    expect(r.kind).toBe("not_configured");
+    expect(r.reason).toMatch(/AI_GATEWAY_API_KEY/);
+    expect(f).not.toHaveBeenCalled();
   });
 });

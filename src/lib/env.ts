@@ -135,6 +135,10 @@ const serverSchema = z.object({
   INVESTMENT_RESEARCH_ENABLED: z.string().optional(),
   TYPESAFE_API_KEY: z.string().optional(),
   TYPESAFE_MODEL: z.string().optional(),
+  // Base-URL override for the Jev transport (e.g. a proxy). Route selection
+  // otherwise follows whichever key is present; see investment/jev/client.ts.
+  TYPESAFE_BASE_URL: z.string().optional(),
+  AI_GATEWAY_API_KEY: z.string().optional(),
 
   // Local tooling paths (optional).
   MARKOV_SKILL_PATH: z.string().optional(),
@@ -195,6 +199,8 @@ const serverRaw = {
   INVESTMENT_RESEARCH_ENABLED: process.env.INVESTMENT_RESEARCH_ENABLED,
   TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY,
   TYPESAFE_MODEL: process.env.TYPESAFE_MODEL,
+  TYPESAFE_BASE_URL: process.env.TYPESAFE_BASE_URL,
+  AI_GATEWAY_API_KEY: process.env.AI_GATEWAY_API_KEY,
   MARKOV_SKILL_PATH: process.env.MARKOV_SKILL_PATH,
   UV_PATH: process.env.UV_PATH,
   BOT_STATUS_PATH: process.env.BOT_STATUS_PATH,
