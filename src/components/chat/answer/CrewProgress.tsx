@@ -40,8 +40,21 @@ export default function CrewProgress({
 
   return (
     <div className="frost-card fade-in" style={{ borderRadius: "var(--radius-xl)", padding: "12px 14px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--color-text)" }}>
+      {/* One line, always: a status that wrapped and then unwrapped moved the
+          whole panel on a phone. Long text ellipsizes instead. */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "nowrap", minWidth: 0 }}>
+        <span
+          title={note}
+          style={{
+            fontSize: "var(--text-sm)",
+            fontWeight: 600,
+            color: "var(--color-text)",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {note || (s.running > 0 ? `${s.running} analyst${s.running > 1 ? "s" : ""} working` : "Research crew")}
         </span>
         <span
@@ -49,6 +62,8 @@ export default function CrewProgress({
             fontSize: "var(--text-meta)",
             color: "var(--color-muted)",
             fontVariantNumeric: "tabular-nums",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
           }}
         >
           {s.complete + s.errored} of {s.total} done
@@ -61,6 +76,8 @@ export default function CrewProgress({
               fontWeight: 600,
               color: "var(--color-accent)",
               fontVariantNumeric: "tabular-nums",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
             }}
           >
             {eta}

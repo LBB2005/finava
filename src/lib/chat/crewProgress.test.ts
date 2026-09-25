@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { crewEtaSeconds, crewSummary, formatEta, plannedDepthLabel } from "./crewProgress";
+import { crewEtaSeconds, crewStatusNote, crewSummary, formatEta, plannedDepthLabel, WRITING_REPORT } from "./crewProgress";
 import type { AgentStep } from "@/types/chat";
 
 const step = (agent: string, status: AgentStep["status"]): AgentStep =>
@@ -86,5 +86,33 @@ describe("plannedDepthLabel", () => {
   it("returns null with nothing to say", () => {
     expect(plannedDepthLabel({})).toBeNull();
     expect(plannedDepthLabel(undefined)).toBeNull();
+  });
+});
+
+describe("crewStatusNote", () => {
+  const draft = "## Answer\nNVIDIA is **not too late** in a binary sense.\n\n## Key numbers\n| Metric | Value |\n|---|---|\n" + "| x | y |\n".repeat(300);
+
+  it("keeps a short one-line status as it is", () => {
+    expect(crewStatusNote("Compiling all reports…", { done: true })).toBe("Compiling all reports…");
+  });
+
+  it("never shows the CEO's draft report; says it is writing the report instead", () => {
+    expect(crewStatusNote(draft, { done: true })).toBe(WRITING_REPORT);
+    expect(WRITING_REPORT).toBe("Writing the report…");
+  });
+
+  it("falls back (undefined) for long text while analysts are still working", () => {
+    expect(crewStatusNote("I'll start by gathering the technical picture and the latest earnings, then weigh the analyst view against the valuation.", { done: false })).toBeUndefined();
+    expect(crewStatusNote(draft, { done: false })).toBeUndefined();
+  });
+
+  it("treats any multi-line text as long", () => {
+    expect(crewStatusNote("Line one\nLine two", { done: true })).toBe(WRITING_REPORT);
+  });
+
+  it("says nothing when there is no note", () => {
+    expect(crewStatusNote("", { done: true })).toBeUndefined();
+    expect(crewStatusNote(undefined, { done: false })).toBeUndefined();
+    expect(crewStatusNote("   ", { done: true })).toBeUndefined();
   });
 });

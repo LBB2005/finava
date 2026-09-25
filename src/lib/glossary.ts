@@ -169,6 +169,11 @@ export function findGlossaryHits(text: string, seen?: Set<string>): GlossaryHit[
 export class GlossaryMarks {
   private claimed = new Map<string, string>();
 
+  /** `claimed`: terms an earlier part of the same message already marked. */
+  constructor(claimed: Iterable<string> = []) {
+    for (const term of claimed) this.claimed.set(term, "");
+  }
+
   /** Terms already claimed by some other run of text. */
   private blocked(runText: string): Set<string> {
     const out = new Set<string>();

@@ -94,3 +94,25 @@ export function plannedDepthLabel(plan: { agents?: number; seconds?: number } | 
   const time = seconds < 60 ? `~${seconds}s` : `~${Math.round(seconds / 60)} min`;
   return `${time} · ${people}`;
 }
+
+/** What the panel says once every analyst has reported and the CEO is writing. */
+export const WRITING_REPORT = "Writing the report…";
+/** Longer than this, or more than one line, is not a status: it's a draft. */
+const STATUS_MAX_CHARS = 90;
+
+/**
+ * The one line the progress panel shows for the CEO's `ceo_thinking` text.
+ *
+ * The same event carries short statuses ("Compiling all reports…") and the
+ * CEO's whole 7,000-character draft report, which used to render in the panel's
+ * header and swell it by up to 640 px for six seconds (crew CLS 0.18 on a
+ * phone). A status passes through; anything longer becomes "Writing the
+ * report…" once the analysts are done, or nothing (the caller's default) while
+ * they are still working.
+ */
+export function crewStatusNote(text: string | undefined, a: { done: boolean }): string | undefined {
+  const t = text?.trim();
+  if (!t) return undefined;
+  if (t.length <= STATUS_MAX_CHARS && !t.includes("\n")) return t;
+  return a.done ? WRITING_REPORT : undefined;
+}

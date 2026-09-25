@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef } from "react";
-import StreamingMarkdown, { useSmoothStream } from "./StreamingMarkdown";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSmoothStream } from "@/hooks/useSmoothStream";
+import { useStickToBottom } from "@/hooks/useStickToBottom";
 import Message from "./Message";
 import TypingIndicator from "./TypingIndicator";
 import type { ChatMessage, ChatMode, AgentStep, Template } from "@/types/chat";
@@ -13,7 +14,8 @@ import { authFetcher } from "@/lib/authFetch";
 import CrewProgress from "./answer/CrewProgress";
 import ExperienceQuestion from "./answer/ExperienceQuestion";
 import { useExperienceLevel } from "@/hooks/useExperienceLevel";
-import type { BudgetWarning } from "@/lib/chat/crewProgress";
+import { crewStatusNote, crewSummary, type BudgetWarning } from "@/lib/chat/crewProgress";
+import { buildLiveMessage, committedDuringStream, handoffKeys } from "@/lib/chat/liveMessage";
 
 /* ── Starter prompts with tags ──────────────────────────────────────────── */
 
@@ -49,20 +51,6 @@ const PORTFOLIO_SUGGESTIONS = [
   { tag: "CASH",   text: "How should I deploy my idle cash?" },
   { tag: "REBALANCE", text: "Suggest a rebalance back to my targets" },
 ];
-
-/* ── Tiny helpers ───────────────────────────────────────────────────────── */
-function FinavaAvatar() {
-  // Frost f4: bare accent mark — no solid plate behind the brand letter.
-  return (
-    <div
-      className="w-[30px] h-[30px] rounded-[var(--radius-md)] flex items-center justify-center flex-shrink-0 text-[length:var(--text-title)] font-black"
-      style={{ background: "transparent", color: "var(--color-accent)", fontFamily: "var(--font-serif)", letterSpacing: "0.04em" }}
-    >
-      L
-    </div>
-  );
-}
-
 
 /* ── Market Pulse strip ──────────────────────────────────────────────────── */
 function MarketPulse() {
@@ -291,102 +279,152 @@ export default function MessageList({
   onRunFullAnalysis,
   runFullAnalysisLabel,
 }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const conversationId = useChatStore((s) => s.conversationId);
+  const hasTranscript = messages.length > 0 || isStreaming;
+  const { following, unseen, follow } = useStickToBottom(scrollerRef, contentRef, {
+    resetKey: conversationId,
+    enabled: hasTranscript,
+  });
+
+  // Sending a message means "show me the answer": follow again.
+  const lastUserId = useMemo(() => [...messages].reverse().find((m) => m.role === "user")?.id, [messages]);
+  useEffect(() => {
+    if (lastUserId) follow();
+  }, [lastUserId, follow]);
 
   // In Auto mode the live mode stays "auto" while a routed agent run streams, so
   // surface the crew panel whenever the router has actually deployed agents.
   const showAgentActivity =
     (mode === "agent" || mode === "deep_research" || (mode === "auto" && agentSteps.length > 0)) &&
     isStreaming && !streamingContent;
-  const showStreaming = isStreaming && !!streamingContent;
+  const crewDone = crewSummary(agentSteps).done;
 
   // Smoothly paced reveal of the streaming text (decoupled from SSE bursts).
   const revealed = useSmoothStream(streamingContent, isStreaming);
 
-  useEffect(() => {
-    const node = bottomRef.current;
-    if (!node) return;
-    // Only pin to the bottom if the user is already there — and during the
-    // high-frequency streaming reveal use instant scroll, so smooth-scroll
-    // animations don't stack and stutter on every frame.
-    const scroller = node.closest(".overflow-y-auto");
-    const nearBottom =
-      !scroller ||
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
-    if (nearBottom) {
-      node.scrollIntoView({ behavior: isStreaming ? "auto" : "smooth" });
-    }
-  }, [messages.length, revealed, agentSteps.length, ceoThinking, isStreaming]);
+  // The streaming answer renders through Message, as the message it will become,
+  // and hands its key to that message when it is committed: the end of the
+  // stream updates the element in place instead of swapping it.
+  const [aliases] = useState(() => new Map<string, string>());
+  const liveKey = isStreaming && streamStartedAt != null ? `live:${streamStartedAt}` : null;
+  const keys = handoffKeys(messages, { liveKey, liveContent: streamingContent, streamStartedAt, aliases });
+  const committed = committedDuringStream(messages, streamStartedAt, streamingContent);
+  const showLive = isStreaming && !!streamingContent && !committed;
+  // Text that streams on after a commit in the same run needs a slot of its own.
+  const liveSlot = liveKey && keys.includes(liveKey) ? `${liveKey}:more` : liveKey;
+  const liveMessage = useMemo(
+    () => buildLiveMessage({ content: revealed, uiMode: mode, steps: agentSteps, startedAt: streamStartedAt }),
+    [revealed, mode, agentSteps, streamStartedAt]
+  );
 
   /* Empty state */
   if (!messages.length && !isStreaming) {
     return <EmptyState onSuggestion={onSuggestion} />;
   }
 
+  const items = messages.map((msg, i) => (
+    <Message
+      key={keys[i]}
+      message={msg}
+      onSuggestion={onSuggestion}
+      onDiscoverDeeper={onDiscoverDeeper}
+      onRunFullAnalysis={onRunFullAnalysis}
+      runFullAnalysisLabel={runFullAnalysisLabel}
+    />
+  ));
+  if (showLive && liveSlot) items.push(<Message key={liveSlot} message={liveMessage} streaming />);
+
   return (
-    <div className="flex-1 overflow-y-auto print-transcript" style={{ scrollbarGutter: "stable both-edges" }}>
-      <div className="mx-auto max-w-[720px] px-4 pt-8 pb-[var(--content-pad-bottom)] flex flex-col gap-7">
-        {messages.map((msg) => (
-          <Message
-            key={msg.id}
-            message={msg}
-            onSuggestion={onSuggestion}
-            onDiscoverDeeper={onDiscoverDeeper}
-            onRunFullAnalysis={onRunFullAnalysis}
-            runFullAnalysisLabel={runFullAnalysisLabel}
-          />
-        ))}
+    <div className="relative flex-1 min-h-0 flex flex-col">
+      <div ref={scrollerRef} className="flex-1 overflow-y-auto print-transcript" style={{ scrollbarGutter: "stable both-edges" }}>
+        <div ref={contentRef} className="mx-auto max-w-[720px] px-4 pt-8 pb-[var(--content-pad-bottom)] flex flex-col gap-7">
+          {items}
 
-        {/* Crew progress — chips per analyst plus an ETA that re-estimates from
-            the pace, so nobody waits behind a spinner with no number. */}
-        {showAgentActivity && agentSteps.length > 0 && (
-          <CrewProgress
-            steps={agentSteps}
-            startedAt={streamStartedAt}
-            plannedSeconds={crewPlanSeconds}
-            budgetWarning={budgetWarning}
-            note={ceoThinking}
-          />
-        )}
-        {/* Before any analyst reports there is nothing to count — say what is
-            actually happening, not "Assembling your research crew". */}
-        {showAgentActivity && agentSteps.length === 0 && (
-          <TypingIndicator label={ceoThinking || "Planning which analysts to run"} startedAt={streamStartedAt} />
-        )}
+          {/* Crew progress — chips per analyst plus an ETA that re-estimates from
+              the pace, so nobody waits behind a spinner with no number. Its note
+              is one status line, never the CEO's draft report. */}
+          {showAgentActivity && agentSteps.length > 0 && (
+            <CrewProgress
+              steps={agentSteps}
+              startedAt={streamStartedAt}
+              plannedSeconds={crewPlanSeconds}
+              budgetWarning={budgetWarning}
+              note={crewStatusNote(ceoThinking, { done: crewDone })}
+            />
+          )}
+          {/* Before any analyst reports there is nothing to count — say what is
+              actually happening, not "Assembling your research crew". */}
+          {showAgentActivity && agentSteps.length === 0 && (
+            <TypingIndicator
+              label={crewStatusNote(ceoThinking, { done: false }) || "Planning which analysts to run"}
+              startedAt={streamStartedAt}
+            />
+          )}
 
-        {/* Streaming response — Claude-style word-by-word fade + steady pacing */}
-        {showStreaming && (
-          <div className="flex gap-[14px]">
-            <FinavaAvatar />
-            <div className="flex-1 min-w-0 pt-1">
-              <StreamingMarkdown content={revealed} />
-            </div>
-          </div>
-        )}
+          {/* Fast/Quick lane waiting — Calm Orb thinking indicator */}
+          {(mode === "simple" || mode === "fast") && isStreaming && !streamingContent && (
+            <TypingIndicator label="Thinking it through" startedAt={streamStartedAt} />
+          )}
 
-        {/* Fast/Quick lane waiting — Calm Orb thinking indicator */}
-        {(mode === "simple" || mode === "fast") && isStreaming && !streamingContent && (
-          <TypingIndicator label="Thinking it through" startedAt={streamStartedAt} />
-        )}
+          {/* Auto mode waiting — router deciding, or a routed simple/discover run
+              before its first token (the agent panel handles the agent case above). */}
+          {mode === "auto" && isStreaming && !streamingContent && agentSteps.length === 0 && (
+            <TypingIndicator
+              label={crewStatusNote(ceoThinking, { done: false }) || "Thinking it through"}
+              startedAt={streamStartedAt}
+            />
+          )}
 
-        {/* Auto mode waiting — router deciding, or a routed simple/discover run
-            before its first token (the agent panel handles the agent case above). */}
-        {mode === "auto" && isStreaming && !streamingContent && agentSteps.length === 0 && (
-          <TypingIndicator label={ceoThinking || "Thinking it through"} startedAt={streamStartedAt} />
-        )}
-
-        {/* Discover mode waiting — teal "scanning the market" state */}
-        {mode === "discover" && isStreaming && !streamingContent && (
-          <TypingIndicator
-            label={ceoThinking || "Scanning the S&P 500…"}
-            startedAt={streamStartedAt}
-            accent="var(--color-discover)"
-            scanning
-          />
-        )}
-
-        <div ref={bottomRef} />
+          {/* Discover mode waiting — teal "scanning the market" state */}
+          {mode === "discover" && isStreaming && !streamingContent && (
+            <TypingIndicator
+              label={crewStatusNote(ceoThinking, { done: false }) || "Scanning the S&P 500…"}
+              startedAt={streamStartedAt}
+              accent="var(--color-discover)"
+              scanning
+            />
+          )}
+        </div>
       </div>
+
+      {/* The reader scrolled up while the answer kept coming: say so, don't drag them back. */}
+      {!following && (isStreaming || unseen) && <JumpToLatest onClick={follow} />}
     </div>
+  );
+}
+
+function JumpToLatest({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="std-focus fade-in fade-in-still followup-chip"
+      style={{
+        position: "absolute",
+        left: "50%",
+        transform: "translateX(-50%)",
+        // Just above the floating composer, which the transcript pads for.
+        bottom: "calc(var(--content-pad-bottom) - 12px)",
+        zIndex: 10,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 12px",
+        borderRadius: 999,
+        fontSize: "var(--text-meta)",
+        fontWeight: 600,
+        fontFamily: "inherit",
+        cursor: "pointer",
+        boxShadow: "var(--shadow-pop)",
+      }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <polyline points="19 12 12 19 5 12" />
+      </svg>
+      Jump to latest
+    </button>
   );
 }

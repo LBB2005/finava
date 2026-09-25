@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { memo } from "react";
 import type { KeyNumberRow } from "@/lib/answerFormat";
 import { sourceLink } from "@/lib/facts/citations";
 
@@ -10,11 +10,11 @@ import { sourceLink } from "@/lib/facts/citations";
  * plausible stand-in. When the number came from a fact with a primary source
  * (a filing index, a Form 4 list), its source chip links there.
  */
-export default function KeyNumbers({ rows }: { rows: KeyNumberRow[] }) {
+function KeyNumbers({ rows, className }: { rows: KeyNumberRow[]; className?: string }) {
   if (!rows.length) return null;
 
   return (
-    <section>
+    <section className={className}>
       <div className="eyebrow-label" style={{ color: "var(--color-muted)", marginBottom: 8 }}>
         Key numbers
       </div>
@@ -134,3 +134,14 @@ function Chip({ children, muted, linked }: { children: React.ReactNode; muted?: 
     </span>
   );
 }
+
+const sameRows = (a: KeyNumberRow[], b: KeyNumberRow[]) =>
+  a.length === b.length &&
+  a.every((r, i) => {
+    const o = b[i];
+    return r.metric === o.metric && r.value === o.value && r.source === o.source && r.asOf === o.asOf && r.unavailable === o.unavailable;
+  });
+
+// The answer is re-parsed on every reveal step, so `rows` is a new array each
+// time: compare by value, so a finished table doesn't re-render.
+export default memo(KeyNumbers, (a, b) => a.className === b.className && sameRows(a.rows, b.rows));

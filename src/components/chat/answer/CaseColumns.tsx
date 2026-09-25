@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { memo } from "react";
 import Markdown from "../Markdown";
 
 /**
@@ -7,38 +7,47 @@ import Markdown from "../Markdown";
  * as one balanced pair is the point — a report that lists the bull case, then
  * eight hundred words, then the bear case reads as an argument, not research.
  */
-export default function CaseColumns({
+function CaseColumns({
   bull,
   bear,
   glossary,
+  enterClassName,
 }: {
   bull?: string;
   bear?: string;
   glossary?: boolean;
+  /** Put on each column as it first appears (the answer card's one-time fade). */
+  enterClassName?: string;
 }) {
   if (!bull && !bear) return null;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
-      {bull !== undefined && <CaseColumn tone="bull" title="Bull case" body={bull} glossary={glossary} />}
-      {bear !== undefined && <CaseColumn tone="bear" title="Bear case" body={bear} glossary={glossary} />}
+      {bull !== undefined && <CaseColumn tone="bull" title="Bull case" body={bull} glossary={glossary} className={enterClassName} />}
+      {bear !== undefined && <CaseColumn tone="bear" title="Bear case" body={bear} glossary={glossary} className={enterClassName} />}
     </div>
   );
 }
+
+// Memoised on its strings: while a later section streams, this one doesn't re-render.
+export default memo(CaseColumns);
 
 function CaseColumn({
   tone,
   title,
   body,
   glossary,
+  className,
 }: {
   tone: "bull" | "bear";
   title: string;
   body: string;
   glossary?: boolean;
+  className?: string;
 }) {
   const color = tone === "bull" ? "var(--color-bull)" : "var(--color-bear)";
   return (
     <section
+      className={className}
       style={{
         border: "1px solid var(--color-border)",
         borderTop: `2px solid color-mix(in oklab, ${color} 55%, transparent)`,

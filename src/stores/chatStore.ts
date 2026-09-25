@@ -54,6 +54,18 @@ export const emptySlice = (): StreamSlice => ({
   crewProgress: null,
 });
 
+/**
+ * The streaming conversation ids as one string ("a,b"). A selector for views
+ * that only care WHICH chats are live (the sidebar): it stays equal while text
+ * streams, so they don't re-render on every chunk.
+ */
+export function streamingIdsKey(streams: Record<string, StreamSlice>): string {
+  return Object.keys(streams)
+    .filter((id) => streams[id]?.isStreaming)
+    .sort()
+    .join(",");
+}
+
 /** A queued send the ChatEngine will pick up and run. */
 export interface SendRequest {
   id: string;

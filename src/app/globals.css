@@ -737,6 +737,13 @@ main:has(> .settings-shell),
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-in { animation: fade-in 280ms ease-out both; }
+/* Opacity only, for content that must not move while it appears: answer
+   sections arriving mid-stream (a translate would read as the text jumping). */
+@keyframes fade-in-still {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.fade-in.fade-in-still { animation-name: fade-in-still; }
 
 /* Thinking panel slide-in */
 @keyframes thinking-fadein {
@@ -855,9 +862,11 @@ main:has(> .settings-shell),
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
-/* Streaming text has no per-word animation — the smooth-paced character reveal
-   in StreamingMarkdown is the only motion, so settled and streaming text are
-   visually identical and nothing flickers. */
+/* Streaming text has no per-word animation — the smooth-paced reveal
+   (useSmoothStream) is the only motion on the text itself, and the streaming
+   answer renders through the same Message as the settled one, so nothing
+   flickers or moves when it finishes. Answer sections fade in once, opacity
+   only, when they first appear (.fade-in.fade-in-still). */
 
 /* Route transition — subtle fade on navigation */
 @keyframes route-fade {
@@ -868,7 +877,7 @@ main:has(> .settings-shell),
 
 /* Respect reduced-motion for our decorative animations */
 @media (prefers-reduced-motion: reduce) {
-  .fade-in, .verdict-fadein, .route-fade { animation: none; }
+  .fade-in, .fade-in.fade-in-still, .verdict-fadein, .route-fade { animation: none; }
   .skeleton { animation: none; }
   .calm-orb-dot, .calm-orb-avatar, .shimmer-text, .prompt-lift { animation: none; }
 }

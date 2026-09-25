@@ -88,6 +88,11 @@ describe("GlossaryMarks", () => {
     marks.hits("Beta is 1.2.");
     expect(marks.hits("The RSI is 61.").map((h) => h.term)).toEqual(["RSI"]);
   });
+
+  it("starts with the terms an earlier block of the message already marked", () => {
+    const marks = new GlossaryMarks(["DCF"]);
+    expect(marks.hits("The DCF and the RSI.").map((h) => h.term)).toEqual(["RSI"]);
+  });
 });
 
 describe("shouldShowGlossary", () => {
