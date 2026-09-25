@@ -16,7 +16,7 @@ export const POST = withRoute(
     const { id } = await params;
     // "/" in an id addresses a different path (see docId).
     if (!isSafeDocId(id)) return apiError("not_found", "Not found", 404);
-    const { role, content, mode = "simple", agentTrace, durationMs, context, followups, critique, attachment, stopped } = body;
+    const { role, content, mode = "simple", agentTrace, durationMs, context, followups, critique, attachment, stopped, clarify, clarifyReply } = body;
 
     // Verify the conversation belongs to this user
     const convRef = db.collection("users").doc(userId).collection("conversations").doc(id);
@@ -39,6 +39,8 @@ export const POST = withRoute(
       ...(critique ? { critique } : {}),
       ...(attachment ? { attachment } : {}),
       ...(stopped ? { stopped: true } : {}),
+      ...(clarify?.length ? { clarify } : {}),
+      ...(clarifyReply ? { clarifyReply } : {}),
       createdAt: now,
     });
 

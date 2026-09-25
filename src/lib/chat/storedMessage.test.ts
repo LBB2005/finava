@@ -69,3 +69,27 @@ describe("toStoredMessage", () => {
     });
   });
 });
+
+describe("clarify round-trip", () => {
+  const clarify = [{ header: "Horizon", question: "What's your time horizon?", options: [{ label: "Long term", description: "3+ years" }, { label: "Swing" }] }];
+  const clarifyReply = { skipped: false, answers: [{ header: "Horizon", question: "What's your time horizon?", answer: "Long term" }] };
+
+  it("writes and restores the questions and the reply", () => {
+    const ask: ChatMessage = { id: "a", role: "assistant", content: "What's your time horizon?", mode: "fast", createdAt: base.createdAt, clarify };
+    const reply: ChatMessage = { id: "b", role: "user", content: "Horizon: Long term", mode: "auto", createdAt: base.createdAt, clarifyReply };
+    expect(toStoredMessage(ask).clarify).toEqual(clarify);
+    expect(toStoredMessage(reply).clarifyReply).toEqual(clarifyReply);
+    expect(fromStoredMessage({ ...base, ...toStoredMessage(ask) }).clarify).toEqual(clarify);
+    expect(fromStoredMessage({ ...base, ...toStoredMessage(reply), role: "user" }).clarifyReply).toEqual(clarifyReply);
+  });
+
+  it("re-cleans stored questions and drops malformed ones", () => {
+    expect(fromStoredMessage({ ...base, content: "?", clarify: [{ question: "Only one option", options: ["a"] }] }).clarify).toBeUndefined();
+    expect(fromStoredMessage({ ...base, content: "?", clarify: "garbage" as never }).clarify).toBeUndefined();
+  });
+
+  it("drops a malformed reply", () => {
+    expect(fromStoredMessage({ ...base, role: "user", content: "x", clarifyReply: { answers: "nope" } as never }).clarifyReply).toBeUndefined();
+    expect(fromStoredMessage({ ...base, role: "user", content: "x", clarifyReply: { skipped: true, answers: [] } }).clarifyReply).toEqual({ skipped: true, answers: [] });
+  });
+});

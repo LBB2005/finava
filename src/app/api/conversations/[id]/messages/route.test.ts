@@ -145,6 +145,32 @@ describe("POST /api/conversations/[id]/messages", () => {
     }));
   });
 
+  it("persists clarifying questions and the reply to them", async () => {
+    const clarify = [{ header: "Horizon", question: "What's your time horizon?", options: [{ label: "Long term" }, { label: "Swing" }] }];
+    const clarifyReply = { skipped: false, answers: [{ header: "Horizon", question: "What's your time horizon?", answer: "Long term" }] };
+    await POST(new Request("http://localhost/api/conversations/conv_1/messages", {
+      method: "POST",
+      body: JSON.stringify({ role: "assistant", content: "What's your time horizon?", mode: "fast", clarify }),
+    }), { params: Promise.resolve({ id: "conv_1" }) });
+    expect(deps.messageAdd).toHaveBeenLastCalledWith(expect.objectContaining({ clarify }));
+
+    await POST(new Request("http://localhost/api/conversations/conv_1/messages", {
+      method: "POST",
+      body: JSON.stringify({ role: "user", content: "Horizon: Long term", mode: "auto", clarifyReply }),
+    }), { params: Promise.resolve({ id: "conv_1" }) });
+    expect(deps.messageAdd).toHaveBeenLastCalledWith(expect.objectContaining({ clarifyReply }));
+  });
+
+  it("omits the clarify fields from ordinary messages", async () => {
+    await POST(new Request("http://localhost/api/conversations/conv_1/messages", {
+      method: "POST",
+      body: JSON.stringify({ role: "user", content: "hi", mode: "auto" }),
+    }), { params: Promise.resolve({ id: "conv_1" }) });
+    const written = deps.messageAdd.mock.lastCall![0];
+    expect(written).not.toHaveProperty("clarify");
+    expect(written).not.toHaveProperty("clarifyReply");
+  });
+
   it("returns the shared not_found shape when the conversation does not exist", async () => {
     deps.convGet.mockResolvedValueOnce({ exists: false });
 

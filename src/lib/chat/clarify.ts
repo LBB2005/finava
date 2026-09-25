@@ -104,6 +104,22 @@ export function cleanClarify(raw: unknown): ClarifyQuestion[] | null {
   return out.length ? out : null;
 }
 
+/** Sanitise a stored reply. Returns undefined when it isn't one. */
+export function cleanClarifyReply(raw: unknown): ClarifyReply | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const src = raw as Record<string, unknown>;
+  if (!Array.isArray(src.answers)) return undefined;
+  const answers: ClarifyAnswer[] = [];
+  for (const a of src.answers.slice(0, MAX_CLARIFY_QUESTIONS)) {
+    if (!a || typeof a !== "object") continue;
+    const o = a as Record<string, unknown>;
+    const answer = str(o.answer, 500);
+    if (!answer) continue;
+    answers.push({ header: str(o.header, MAX_HEADER), question: str(o.question, MAX_QUESTION), answer });
+  }
+  return { answers, skipped: src.skipped === true };
+}
+
 export interface PendingClarify {
   /** The assistant message that asked. */
   messageId: string;

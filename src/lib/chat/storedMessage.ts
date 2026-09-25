@@ -1,6 +1,7 @@
 import type { AgentStep, ChatMessage, ChatMode } from "@/types/chat";
 import type { ChatContext } from "@/lib/chatContext";
 import { discoverToMarkdown, parseDiscoverContent } from "./discoverText";
+import { cleanClarify, cleanClarifyReply } from "./clarify";
 
 /** A message as the conversations API returns it (Firestore doc, serialized). */
 export interface StoredMessage {
@@ -16,6 +17,9 @@ export interface StoredMessage {
   critique?: string | null;
   attachment?: string | null;
   stopped?: boolean | null;
+  /** Stored natively (not as a JSON string); re-cleaned on the way in. */
+  clarify?: unknown;
+  clarifyReply?: unknown;
 }
 
 function parseJson<T>(raw: string | null | undefined): T | undefined {
@@ -47,6 +51,8 @@ export function fromStoredMessage(m: StoredMessage): ChatMessage {
     critique: m.critique || undefined,
     attachment,
     stopped: m.stopped === true ? true : undefined,
+    clarify: cleanClarify(m.clarify) ?? undefined,
+    clarifyReply: cleanClarifyReply(m.clarifyReply),
   };
 }
 
@@ -63,5 +69,7 @@ export function toStoredMessage(m: ChatMessage) {
     followups: m.followups,
     attachment: m.attachment ? JSON.stringify(m.attachment) : undefined,
     stopped: m.stopped,
+    clarify: m.clarify,
+    clarifyReply: m.clarifyReply,
   };
 }
