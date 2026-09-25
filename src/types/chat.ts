@@ -1,6 +1,7 @@
 import type { ScoutPick, DiscoverTier, DiscoverLayout, WaveEvidence, DiscoverMessageContent } from "@/lib/scoutTypes";
 import type { Brand } from "@/lib/models";
 import type { ChatContext } from "@/lib/chatContext";
+import type { ClarifyQuestion, ClarifyReply } from "@/lib/chat/clarify";
 
 /**
  * Which lane produced a message. "fast" is W2-1's grounded default lane —
@@ -66,6 +67,12 @@ export interface ChatMessage {
    * page would drift apart. Reading it is a free GET.
    */
   investmentRunId?: string;
+  /** Clarifying questions this assistant message asks. The panel at the composer
+   *  shows them; the message itself renders nothing. */
+  clarify?: ClarifyQuestion[];
+  /** What the user chose in answer to the preceding `clarify`. Renders as a
+   *  receipt line under their prompt. */
+  clarifyReply?: ClarifyReply;
 }
 
 /* ── Skeptic review (W3-2) ──────────────────────────────────────────────── */
@@ -193,7 +200,7 @@ export type AgentEvent =
   | { type: "number_check"; checked: number; mismatched: number }
   | { type: "text_delta"; content: string }
   // ── Discovery funnel ──
-  | { type: "discover_clarify"; question: string; chips: string[] }
+  | { type: "discover_clarify"; questions: ClarifyQuestion[] }
   | { type: "scout_complete"; tier: DiscoverTier; query: string; interpretation: string; picks: ScoutPick[]; layout?: DiscoverLayout }
   | { type: "deep_shortlist"; query: string; interpretation: string; picks: ScoutPick[]; layout?: DiscoverLayout }
   | { type: "wave_start"; waveIndex: number; totalWaves: number; tickers: string[] }
