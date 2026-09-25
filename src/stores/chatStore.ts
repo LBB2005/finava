@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { ChatMessage, ChatMode, AgentStep } from "@/types/chat";
 import type { ChatContext } from "@/lib/chatContext";
 import type { PageContext } from "@/lib/pageContext";
+import type { ClarifyReply } from "@/lib/chat/clarify";
 
 // ── Per-conversation streaming state ────────────────────────────────────────
 // Each conversation owns its own live slice so multiple chats can stream at the
@@ -85,6 +86,8 @@ export interface SendRequest {
   kind: "send" | "deepen" | "full_analysis";
   /** Optional response-template id whose instructions/format shape this answer. */
   templateId?: string;
+  /** Sent from the clarify panel: what the user chose. `text` is its readable form. */
+  clarifyReply?: ClarifyReply;
 }
 
 interface ChatState {

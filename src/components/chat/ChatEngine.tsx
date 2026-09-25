@@ -20,6 +20,7 @@ import { isFundQuestion } from "@/lib/capabilityCheck";
 import { RunRegistry, stoppedMessage } from "@/lib/chat/runControl";
 import { fullAnalysisPrompt } from "@/lib/chat/escalation";
 import { INTENTS, type Intent } from "@/lib/chat/intent";
+import { cleanClarify, foldClarification, pendingClarifyOf, questionsText, type ClarifyQuestion } from "@/lib/chat/clarify";
 import { toStoredMessage } from "@/lib/chat/storedMessage";
 import {
   emptyEvidence,
@@ -73,11 +74,6 @@ export function stopConversationStream(convId: string) {
   st.setDiscoverProgress(convId, null);
   persistMessage(convId, msg).catch((e) => console.warn("[stop] saveMessage failed:", e));
 }
-
-// Auto mode: when the router asks a clarifying question, we stash the original
-// prompt here keyed by conversation. The user's next message (a chip tap or
-// typed reply) is treated as the answer and folded back into that prompt.
-const pendingClarify = new Map<string, { originalPrompt: string }>();
 
 /**
  * Headless chat engine. Mounted once in the app shell (next to GlobalComposer),
@@ -166,6 +162,22 @@ export default function ChatEngine() {
   async function commitMessage(convId: string, msg: ChatMessage) {
     s().addMessage(convId, msg);
     await persistMessage(convId, msg).catch((e) => console.warn(`[${msg.mode}] saveMessage failed:`, e));
+  }
+
+  /**
+   * Ask clarifying questions. They ride on an assistant message the transcript
+   * doesn't render; the composer panel shows them until the user answers, and
+   * the answer comes back through processSend (see pendingClarifyOf).
+   */
+  async function commitClarify(convId: string, questions: ClarifyQuestion[], mode: ChatMode) {
+    await commitMessage(convId, {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: questionsText(questions),
+      mode,
+      createdAt: new Date().toISOString(),
+      clarify: questions,
+    });
   }
 
   /** Elapsed ms since this conversation's stream began, for the response receipt. */
@@ -325,14 +337,16 @@ export default function ChatEngine() {
     convId: string,
     tier: "quick" | "deep",
     seed?: { picks: ScoutPick[]; query: string; evidence: DiscoverEvidence; startWave: number },
-    history: ChatMessage[] = []
+    history: ChatMessage[] = [],
+    /** False when this turn answers a clarifying question: never ask twice. */
+    allowClarify = true
   ) {
     const ctrl = runs.get(convId);
     laneMode.set(convId, "discover");
     const live = () => runs.isCurrent(convId, ctrl);
     s().setAgentSteps(convId, []);
     s().setCeoThinking(convId, "");
-    const retry = () => { void runDiscoverMode(text, portfolioContext, convId, tier, seed, history); };
+    const retry = () => { void runDiscoverMode(text, portfolioContext, convId, tier, seed, history, allowClarify); };
     try {
       let picks: ScoutPick[] = seed?.picks ?? [];
       let query = seed?.query ?? text;
@@ -343,7 +357,7 @@ export default function ChatEngine() {
         s().clearStreamingContent(convId);
         s().setCeoThinking(convId, "Scanning all 500 S&P names…");
         let framing = "";
-        let clarify: { question: string; chips: string[] } | null = null;
+        let clarify: ClarifyQuestion[] | null = null;
         let scoutPicks: ScoutPick[] = [];
         let layout: DiscoverLayout | undefined;
         await postAgentStream(
@@ -355,7 +369,7 @@ export default function ChatEngine() {
               query = event.query;
               layout = event.layout;
             }
-            if (event.type === "discover_clarify") clarify = { question: event.question, chips: event.chips };
+            if (event.type === "discover_clarify") clarify = cleanClarify(event.questions);
             if (event.type === "final_response") framing = applyFinalResponse(framing, event);
           },
           ctrl
@@ -363,8 +377,10 @@ export default function ChatEngine() {
         if (!live()) return;
 
         if (clarify) {
-          const c = clarify as { question: string; chips: string[] };
-          await pushDiscover({ kind: "final", report: framing || c.question }, convId, { followups: c.chips });
+          if (allowClarify) await commitClarify(convId, clarify, "discover");
+          // Still too vague after the user answered: invite a direction in words
+          // rather than asking the same thing again.
+          else await pushDiscover({ kind: "final", report: "Tell me a sector, style or theme and I'll screen the S&P 500 for it." }, convId);
           return;
         }
         picks = scoutPicks;
@@ -591,8 +607,8 @@ export default function ChatEngine() {
   }
 
   // Auto mode — the unified router. Classify the message
-  // (fast/discover/clarify/full_analysis), optionally ask ONE clarifying
-  // question first, then delegate to the matching handler exactly as the manual
+  // (fast/discover/clarify/full_analysis), optionally ask clarifying questions
+  // first, then delegate to the matching handler exactly as the manual
   // modes do. Any router failure falls back to the fast lane so Auto never
   // dead-ends — and never silently spends four minutes on the crew.
   async function runAuto(
@@ -601,27 +617,18 @@ export default function ChatEngine() {
     convId: string,
     prior: ChatMessage[],
     templateId?: string,
-    pageContext?: PageContext | null
+    pageContext?: PageContext | null,
+    /** False when this turn answers a clarifying question: never ask twice. */
+    allowClarify = true
   ) {
     const ctrl = runs.get(convId);
-    const retry = () => { void runAuto(text, portfolioContext, convId, prior, templateId, pageContext); };
+    const retry = () => { void runAuto(text, portfolioContext, convId, prior, templateId, pageContext, allowClarify); };
+    const combined = text;
     try {
-      // Clarify continuation: if we asked a question last turn, this message is
-      // the answer — fold it into the original prompt and don't clarify again.
-      const pending = pendingClarify.get(convId);
-      let combined = text;
-      let allowClarify = true;
-      if (pending) {
-        combined = `${pending.originalPrompt}\n\n[User clarification]: ${text}`;
-        allowClarify = false;
-        pendingClarify.delete(convId);
-      }
-
       s().setCeoThinking(convId, "Working out the best way to answer…");
 
       let intent: Intent = "fast";
-      let clarifyQuestion = "";
-      let clarifyChips: string[] = [];
+      let clarify: ClarifyQuestion[] | null = null;
       try {
         const res = await authFetch("/api/classify", {
           method: "POST",
@@ -633,12 +640,9 @@ export default function ChatEngine() {
         if (res.ok) {
           const data = await res.json();
           if (INTENTS.includes(data?.intent)) intent = data.intent as Intent;
-          if (intent === "clarify" && data?.clarifyQuestion && Array.isArray(data?.clarifyChips)) {
-            clarifyQuestion = String(data.clarifyQuestion);
-            clarifyChips = data.clarifyChips.map(String).filter(Boolean).slice(0, 4);
-          }
+          if (intent === "clarify") clarify = cleanClarify(data);
           // A clarify with nothing to ask is not a clarify — answer instead.
-          if (intent === "clarify" && (!clarifyQuestion || !clarifyChips.length)) intent = "fast";
+          if (intent === "clarify" && !clarify) intent = "fast";
           // The server already suppresses a second clarify, but the client knows
           // for certain whether it just asked one.
           if (intent === "clarify" && !allowClarify) intent = "fast";
@@ -648,21 +652,12 @@ export default function ChatEngine() {
       // Stopped while routing: don't start a lane.
       if (!runs.isCurrent(convId, ctrl)) return;
 
-      // Clarify: post the question as a plain assistant message with tappable
-      // chips (reuses the followup-chip UI) and stop. The reply re-enters here
-      // and hits the pending branch above.
-      if (intent === "clarify") {
-        pendingClarify.set(convId, { originalPrompt: text });
+      // Clarify: ask in the composer panel and stop. The answer comes back
+      // through processSend, folded into this prompt, with clarify disabled.
+      if (intent === "clarify" && clarify) {
         s().setCeoThinking(convId, "");
         endRun(convId, ctrl);
-        await commitMessage(convId, {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: clarifyQuestion,
-          mode: "fast",
-          createdAt: new Date().toISOString(),
-          followups: clarifyChips,
-        });
+        await commitClarify(convId, clarify, "fast");
         return;
       }
 
@@ -672,7 +667,7 @@ export default function ChatEngine() {
 
       s().setCeoThinking(convId, "");
       if (intent === "discover") {
-        await runDiscoverMode(combined, portfolioContext, convId, "quick", undefined, prior);
+        await runDiscoverMode(combined, portfolioContext, convId, "quick", undefined, prior, allowClarify);
       } else if (intent === "full_analysis") {
         // The crew, only because the user asked for it. W2-2 replaces this call
         // with its sized-crew entry point (same signature).
@@ -707,6 +702,16 @@ export default function ChatEngine() {
     // History BEFORE the new user message is added (for context building).
     const prior = s().messagesOf(convId);
 
+    // Answering clarifying questions: the lane gets the prompt they were about
+    // with the answers folded in, and must not ask again. Read off the
+    // transcript, so it holds across a reload.
+    const pending = pendingClarifyOf(prior);
+    const clarifyReply = pending ? req.clarifyReply : undefined;
+    const lanePrompt = pending
+      ? foldClarification(pending.originalPrompt, clarifyReply ?? { skipped: false, answers: [{ header: "", question: "", answer: text }] })
+      : text;
+    const allowClarify = !pending;
+
     // Resolve the page context for this turn: the snapshot captured at send time
     // (user was on the page), else the one this conversation already remembers
     // (a follow-up typed on /chat after navigating away). Either way it's threaded
@@ -733,6 +738,7 @@ export default function ChatEngine() {
         mode,
         createdAt: new Date().toISOString(),
         context,
+        ...(clarifyReply ? { clarifyReply } : {}),
       };
       s().addMessage(convId, userMsg);
       s().setStreaming(convId, true);
@@ -752,15 +758,15 @@ export default function ChatEngine() {
 
       // Every lane gets the same transcript (see buildHistory).
       if (mode === "auto") {
-        await runAuto(text, portfolioContext, convId, prior, templateId, pageContext);
+        await runAuto(lanePrompt, portfolioContext, convId, prior, templateId, pageContext, allowClarify);
       } else if (mode === "simple") {
-        await runSimpleChat(text, portfolioContext, convId, mode, prior, templateId, pageContext);
+        await runSimpleChat(lanePrompt, portfolioContext, convId, mode, prior, templateId, pageContext);
       } else if (mode === "discover") {
-        await runDiscoverMode(text, portfolioContext, convId, "quick", undefined, prior);
+        await runDiscoverMode(lanePrompt, portfolioContext, convId, "quick", undefined, prior, allowClarify);
       } else if (mode === "deep_research") {
-        await runAgentMode(text, portfolioContext, convId, mode, true, prior, templateId, pageContext);
+        await runAgentMode(lanePrompt, portfolioContext, convId, mode, true, prior, templateId, pageContext);
       } else {
-        await runAgentMode(text, portfolioContext, convId, mode, false, prior, templateId, pageContext);
+        await runAgentMode(lanePrompt, portfolioContext, convId, mode, false, prior, templateId, pageContext);
       }
     } catch (err) {
       if (runs.wasStopped(ctrl)) return;
@@ -768,7 +774,7 @@ export default function ChatEngine() {
       const failedId = convId;
       if (failedId) endRun(failedId, ctrl);
       notifyChatError(failedId, "Couldn't send your message. Check your connection and retry.", () =>
-        s().enqueueSend({ convId: failedId, text, mode, context, pageContext, kind: "send" })
+        s().enqueueSend({ convId: failedId, text, mode, context, pageContext, kind: "send", clarifyReply })
       );
     }
   }

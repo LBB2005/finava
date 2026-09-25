@@ -79,8 +79,10 @@ describe("clarify round-trip", () => {
     const reply: ChatMessage = { id: "b", role: "user", content: "Horizon: Long term", mode: "auto", createdAt: base.createdAt, clarifyReply };
     expect(toStoredMessage(ask).clarify).toEqual(clarify);
     expect(toStoredMessage(reply).clarifyReply).toEqual(clarifyReply);
-    expect(fromStoredMessage({ ...base, ...toStoredMessage(ask) }).clarify).toEqual(clarify);
-    expect(fromStoredMessage({ ...base, ...toStoredMessage(reply), role: "user" }).clarifyReply).toEqual(clarifyReply);
+    // Through JSON, as the API returns it.
+    const stored = (m: ChatMessage) => JSON.parse(JSON.stringify(toStoredMessage(m)));
+    expect(fromStoredMessage({ ...base, content: ask.content, clarify: stored(ask).clarify }).clarify).toEqual(clarify);
+    expect(fromStoredMessage({ ...base, role: "user", content: reply.content, clarifyReply: stored(reply).clarifyReply }).clarifyReply).toEqual(clarifyReply);
   });
 
   it("re-cleans stored questions and drops malformed ones", () => {

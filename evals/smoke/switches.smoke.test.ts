@@ -157,6 +157,12 @@ describe("conversation 4: deep research → simple → deep research", () => {
   });
 });
 
+/** What the clarify panel sends for one picked option. */
+const reply = (answer: string) => ({
+  skipped: false,
+  answers: [{ header: "Focus", question: "Long-term or short-term?", answer }],
+});
+
 describe("conversation 5: clarify → chip → full analysis", () => {
   sw("#9 clarify → chip reply answers the original question with the clarification", async () => {
     const srv = server([
@@ -166,13 +172,41 @@ describe("conversation 5: clarify → chip → full analysis", () => {
     const c = new Conversation(srv.fetcher);
     const q = await c.send("auto", "what should I buy?");
     expect(q.lane).toBe("clarify");
-    expect(q.assistant?.followups).toEqual(["Long-term", "Short-term"]);
-    const a = await c.send("auto", "Long-term");
+    expect(q.assistant?.clarify?.[0].options.map((o) => o.label)).toEqual(["Long-term", "Short-term"]);
+    const a = await c.send("auto", "Long-term", { clarifyReply: reply("Long-term") });
     // A second clarify in a row is refused client-side.
     expect(a.lane).toBe("fast");
     const body = srv.lastCall().body as { messages: { role: string; content: string }[] };
-    expect(body.messages.at(-1)!.content).toContain("what should I buy?\n\n[User clarification]: Long-term");
+    expect(body.messages.at(-1)!.content).toContain("what should I buy?\n\n[User clarification]:\n- Long-term or short-term? Long-term");
     expect(srv.lastHistory()).toContain("Long-term or short-term?");
+    expect(c.messages.at(-2)?.clarifyReply).toEqual(reply("Long-term"));
+  });
+
+  it("a reload between the question and the answer still answers the original question", async () => {
+    const srv = server([
+      { intent: "clarify", clarifyQuestion: "Long-term or short-term?", clarifyChips: ["Long-term", "Short-term"] },
+      { intent: "fast" },
+    ]);
+    const c = new Conversation(srv.fetcher);
+    await c.send("auto", "what should I buy?");
+    c.reload();
+    const a = await c.send("auto", "Short-term", { clarifyReply: reply("Short-term") });
+    expect(a.lane).toBe("fast");
+    const body = srv.lastCall().body as { messages: { role: string; content: string }[] };
+    expect(body.messages.at(-1)!.content).toContain("what should I buy?\n\n[User clarification]:\n- Long-term or short-term? Short-term");
+  });
+
+  it("skipping the questions still answers, with stated assumptions", async () => {
+    const srv = server([
+      { intent: "clarify", clarifyQuestion: "Long-term or short-term?", clarifyChips: ["Long-term", "Short-term"] },
+      { intent: "fast" },
+    ]);
+    const c = new Conversation(srv.fetcher);
+    await c.send("auto", "what should I buy?");
+    const a = await c.send("auto", "Skipped the questions.", { clarifyReply: { skipped: true, answers: [] } });
+    expect(a.lane).toBe("fast");
+    const body = srv.lastCall().body as { messages: { role: string; content: string }[] };
+    expect(body.messages.at(-1)!.content).toMatch(/what should I buy\?\n\n\[The user skipped the clarifying questions/);
   });
 
   sw("#10 fast → full analysis after a clarify keeps the clarified answer", async () => {
@@ -183,7 +217,7 @@ describe("conversation 5: clarify → chip → full analysis", () => {
     ]);
     const c = new Conversation(srv.fetcher);
     await c.send("auto", "what should I buy?");
-    await c.send("auto", "Long-term");
+    await c.send("auto", "Long-term", { clarifyReply: reply("Long-term") });
     await c.send("auto", "full analysis of your first idea");
     const h = srv.lastHistory();
     expect(h).toContain("Long-term or short-term?");

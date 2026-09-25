@@ -26,6 +26,7 @@ import { discoverToMarkdown } from "@/lib/chat/discoverText";
 import { isFundQuestion } from "@/lib/capabilityCheck";
 import { fullAnalysisPrompt } from "@/lib/chat/escalation";
 import { INTENTS, type Intent } from "@/lib/chat/intent";
+import { cleanClarify, foldClarification, pendingClarifyOf, questionsText, type ClarifyQuestion, type ClarifyReply } from "@/lib/chat/clarify";
 import { RunRegistry, stoppedMessage } from "@/lib/chat/runControl";
 import { fromStoredMessage, toStoredMessage, type StoredMessage } from "@/lib/chat/storedMessage";
 import { useChatStore } from "@/stores/chatStore";
@@ -48,6 +49,8 @@ export interface TurnOptions {
   onRequest?: (url: string, body: unknown) => void;
   /** Press Stop when this returns true. Checked on every text delta (fast lane) and every event (crew). */
   stopWhen?: (rendered: string) => boolean;
+  /** Answer the open clarifying questions as the composer panel does. */
+  clarifyReply?: ClarifyReply;
 }
 
 export interface Turn {
@@ -81,7 +84,6 @@ export function storedForm(m: ChatMessage): StoredMessage {
 export class Conversation {
   readonly id: string;
   private runs = new RunRegistry();
-  private pendingClarify: { originalPrompt: string } | null = null;
 
   constructor(private fetcher: Fetcher, id = nextId()) {
     this.id = id;
@@ -95,7 +97,6 @@ export class Conversation {
   reload(): void {
     const reloaded = this.messages.map((m) => fromStoredMessage(JSON.parse(JSON.stringify(storedForm(m))) as StoredMessage));
     useChatStore.setState((s) => ({ messagesByConv: { ...s.messagesByConv, [this.id]: reloaded } }));
-    this.pendingClarify = null; // module state in ChatEngine; a reload loses it too
   }
 
   /** Put messages straight into the transcript (e.g. a legacy stored conversation). */
@@ -117,13 +118,28 @@ export class Conversation {
 
     // ChatEngine.processSend: history is taken BEFORE the user message is added.
     const prior = this.messages;
-    store().addMessage(this.id, { id: nextId(), role: "user", content: text, mode, createdAt: new Date().toISOString() });
+    // ChatEngine.processSend: an answer to open clarifying questions is folded
+    // into the prompt they were about, and the lane must not ask again.
+    const pending = pendingClarifyOf(prior);
+    const clarifyReply = pending ? opts.clarifyReply : undefined;
+    const lanePrompt = pending
+      ? foldClarification(pending.originalPrompt, clarifyReply ?? { skipped: false, answers: [{ header: "", question: "", answer: text }] })
+      : text;
+    const allowClarify = !pending;
+    store().addMessage(this.id, {
+      id: nextId(),
+      role: "user",
+      content: text,
+      mode,
+      createdAt: new Date().toISOString(),
+      ...(clarifyReply ? { clarifyReply } : {}),
+    });
 
     return this.run(turn, opts, async (ctrl) => {
-      if (mode === "auto") return this.auto(turn, fetcher, text, prior, ctrl, opts);
-      if (mode === "simple") return this.fastLane(turn, fetcher, text, prior, ctrl, opts, "simple");
-      if (mode === "discover") return this.discoverLane(turn, fetcher, text, prior, ctrl, opts);
-      return this.agentLane(turn, fetcher, text, prior, mode === "deep_research", ctrl, opts);
+      if (mode === "auto") return this.auto(turn, fetcher, lanePrompt, prior, ctrl, opts, allowClarify);
+      if (mode === "simple") return this.fastLane(turn, fetcher, lanePrompt, prior, ctrl, opts, "simple");
+      if (mode === "discover") return this.discoverLane(turn, fetcher, lanePrompt, prior, ctrl, opts, allowClarify);
+      return this.agentLane(turn, fetcher, lanePrompt, prior, mode === "deep_research", ctrl, opts);
     });
   }
 
@@ -177,18 +193,11 @@ export class Conversation {
   // ── lanes ─────────────────────────────────────────────────────────────────
 
   /** ChatEngine.runAuto. */
-  private async auto(turn: Turn, fetcher: Fetcher, text: string, prior: ChatMessage[], ctrl: AbortController, opts: TurnOptions) {
-    let combined = text;
-    let allowClarify = true;
-    if (this.pendingClarify) {
-      combined = `${this.pendingClarify.originalPrompt}\n\n[User clarification]: ${text}`;
-      allowClarify = false;
-      this.pendingClarify = null;
-    }
+  private async auto(turn: Turn, fetcher: Fetcher, text: string, prior: ChatMessage[], ctrl: AbortController, opts: TurnOptions, allowClarify = true) {
+    const combined = text;
 
     let intent: Intent = "fast";
-    let question = "";
-    let chips: string[] = [];
+    let clarify: ClarifyQuestion[] | null = null;
     try {
       const res = await fetcher("/api/classify", {
         method: "POST",
@@ -201,11 +210,8 @@ export class Conversation {
       if (res.ok) {
         const data = await res.json();
         if (INTENTS.includes(data?.intent)) intent = data.intent as Intent;
-        if (intent === "clarify" && data?.clarifyQuestion && Array.isArray(data?.clarifyChips)) {
-          question = String(data.clarifyQuestion);
-          chips = data.clarifyChips.map(String).filter(Boolean).slice(0, 4);
-        }
-        if (intent === "clarify" && (!question || !chips.length)) intent = "fast";
+        if (intent === "clarify") clarify = cleanClarify(data);
+        if (intent === "clarify" && !clarify) intent = "fast";
         if (intent === "clarify" && !allowClarify) intent = "fast";
       }
     } catch (err) {
@@ -214,10 +220,9 @@ export class Conversation {
     }
     if (!this.runs.isCurrent(this.id, ctrl)) return;
 
-    if (intent === "clarify") {
+    if (intent === "clarify" && clarify) {
       turn.lane = "clarify";
-      this.pendingClarify = { originalPrompt: text };
-      this.commit(turn, { content: question, mode: "fast", followups: chips });
+      this.commit(turn, { content: questionsText(clarify), mode: "fast", clarify });
       return;
     }
     // ChatEngine: Discover screens individual stocks, so a fund question goes to
@@ -225,7 +230,7 @@ export class Conversation {
     if (intent === "discover" && isFundQuestion(combined, prior.filter((m) => m.role === "user").map((m) => m.content))) {
       intent = "fast";
     }
-    if (intent === "discover") return this.discoverLane(turn, fetcher, combined, prior, ctrl, opts);
+    if (intent === "discover") return this.discoverLane(turn, fetcher, combined, prior, ctrl, opts, allowClarify);
     if (intent === "full_analysis") return this.agentLane(turn, fetcher, combined, prior, false, ctrl, opts);
     return this.fastLane(turn, fetcher, combined, prior, ctrl, opts, "fast");
   }
@@ -287,11 +292,11 @@ export class Conversation {
   }
 
   /** ChatEngine.runDiscoverMode, quick tier (the tier Auto and the composer use). */
-  private async discoverLane(turn: Turn, fetcher: Fetcher, text: string, prior: ChatMessage[], ctrl: AbortController, opts: TurnOptions) {
+  private async discoverLane(turn: Turn, fetcher: Fetcher, text: string, prior: ChatMessage[], ctrl: AbortController, opts: TurnOptions, allowClarify = true) {
     turn.lane = "discover";
     store().clearStreamingContent(this.id);
     let framing = "";
-    let clarify: { question: string; chips: string[] } | null = null;
+    let clarify: ClarifyQuestion[] | null = null;
     let picks: ScoutPick[] = [];
     let query = text;
     let layout: DiscoverLayout | undefined;
@@ -311,15 +316,16 @@ export class Conversation {
         query = event.query;
         layout = event.layout;
       }
-      if (event.type === "discover_clarify") clarify = { question: event.question, chips: event.chips };
+      if (event.type === "discover_clarify") clarify = cleanClarify(event.questions);
       if (event.type === "final_response") framing = applyFinalResponse(framing, event);
     });
     if (!this.runs.isCurrent(this.id, ctrl)) return;
 
-    const c = clarify as { question: string; chips: string[] } | null;
+    const c = clarify as ClarifyQuestion[] | null;
     if (c) {
-      const dc = { kind: "final" as const, report: framing || c.question };
-      return this.commit(turn, { content: discoverToMarkdown(dc), attachment: dc, mode: "discover", followups: c.chips });
+      if (allowClarify) return this.commit(turn, { content: questionsText(c), mode: "discover", clarify: c });
+      const dc = { kind: "final" as const, report: "Tell me a sector, style or theme and I'll screen the S&P 500 for it." };
+      return this.commit(turn, { content: discoverToMarkdown(dc), attachment: dc, mode: "discover" });
     }
     if (!picks.length) {
       if (framing) {

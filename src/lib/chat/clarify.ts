@@ -153,7 +153,7 @@ export function foldClarification(originalPrompt: string, reply: ClarifyReply): 
   if (isSkip(reply)) {
     return `${originalPrompt}\n\n[The user skipped the clarifying questions. Answer anyway using sensible defaults, and say in one short line what you assumed.]`;
   }
-  const lines = reply.answers.map((a) => `- ${a.question} ${a.answer}`).join("\n");
+  const lines = reply.answers.map((a) => `- ${[a.question, a.answer].filter(Boolean).join(" ")}`).join("\n");
   return `${originalPrompt}\n\n[User clarification]:\n${lines}`;
 }
 
