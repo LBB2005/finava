@@ -140,10 +140,50 @@ Read /Users/liamblackshaw-brown/code/finava/docs/superpowers/plans/2026-09-chat-
 4. Re-run the bench at both widths. Target: no user-scroll yank, CLS ≈ 0 during the stream, no long
    task > 50 ms from the chat renderer, scrolling frame-time p95 under ~20 ms on desktop.
 
+Added by Liam, 24 Sep 2026 (after Session 1's findings):
+
+5. **Sections arrive softly.** Each `AnswerCard` section (Key numbers, the bull/bear `CaseColumns`,
+   What would change the view, the confidence pill) fades in once when it first mounts during streaming,
+   reusing the existing `.fade-in` primitive in `globals.css` (280 ms, opacity only: no transform that
+   moves layout). Off under `prefers-reduced-motion`. It must never replay on a re-render (stable keys,
+   memoised blocks). Bench: CLS stays 0 on the fast fixtures. Subtle and refined, nothing flashy.
+6. **The CEO's draft comes out of the progress panel.** The crew's full draft report arrives as
+   `ceo_thinking` (`src/agents/ceo.ts`, ~line 674) and `CrewProgress` renders it as its header `note`,
+   swelling the panel by 447–640 px for about 6 s (crew CLS 0.182 at 375 px). Stop rendering the draft
+   there; show one compact status line (e.g. "Writing the report…"). Target: crew CLS ≈ 0.
+7. **Avatar.** The streaming avatar shows "L" (pre-rebrand) and flips to "F" at commit. Make it "F"
+   throughout.
+
+Not for this session (open question): whether the fast lane (`src/app/api/chat/route.ts`,
+`FAST_MODEL = HAIKU`) should move to `claude-sonnet-5` at low effort. Leave the model alone.
+
 ### Acceptance
 - Before/after table from the bench for every fixture at 1440 and 375 px.
 - New unit tests for the scroll logic and the memoised block rendering.
 - `eval:smoke` green (the collapse contract is unchanged), plus typecheck/lint/test.
+
+### Results (Session 2, 25 Sep 2026)
+
+Before is untouched `origin/main` (e2ed2be) and after is this branch, on the same machine with the same runner and the same day. Values are before → **after**. Crew rows are from the run after the one-line panel header fix.
+
+| Fixture | Width | CPU | Long tasks >50 ms (max) | TBT | Frame p95 streaming | Frame p95 scrolling | Scroll | CLS |
+|---|---|---|---|---|---|---|---|---|
+| fast lane | 1440 | 1× | 1 (max 90) → **1 (max 57)** | 40 → **7 ms** | 33.3 → **16.8 ms** | 33.3 → **16.7 ms** | n/a (fits on screen) → **n/a (fits on screen)** | 0.000 → **0.000** |
+| fast lane | 375 | 1× | 1 (max 90) → **1 (max 66)** | 40 → **16 ms** | 16.8 → **16.7 ms** | 16.8 → **16.7 ms** | 63 yanks (774 px), reader got 15 px up → **2 yanks (28 px), reader got 486 px up** | 0.001 → **0.000** |
+| fast follow-up | 1440 | 1× | 4 (max 138) → **1 (max 61)** | 101 → **11 ms** | 50 → **16.8 ms** | 50 → **16.8 ms** | 48 yanks (403 px), reader got 35 px up; ran 183 px past → **0 yanks, reader got 438 px up** | 0.000 → **0.000** |
+| fast follow-up | 375 | 1× | 4 (max 128) → **1 (max 71)** | 85 → **21 ms** | 50 → **16.7 ms** | 50 → **16.7 ms** | 50 yanks (519 px), reader got 35 px up; ran 281 px past → **0 yanks, reader got 564 px up** | 0.000 → **0.000** |
+| crew | 1440 | 1× | 1 (max 107) → **0** | 57 → **0 ms** | 33.5 → **16.7 ms** | 50 → **16.7 ms** | 51 yanks (479 px), reader got 37 px up; ran 86 px past → **0 yanks, reader got 422 px up; ran 85 px past** | 0.029 → **0.004** |
+| crew | 375 | 1× | 3 (max 96) → **0** | 52 → **0 ms** | 33.4 → **16.8 ms** | 50 → **16.7 ms** | 49 yanks (655 px), reader got 51 px up; ran 60 px past → **0 yanks, reader got 512 px up; ran 126 px past** | 0.182 → **0.002** |
+| fast lane | 1440 | 4× | 27 (max 424) → **30 (max 264)** | 2093 → **1200 ms** | 166.7 → **116.7 ms** | 166.7 → **116.6 ms** | 0 yanks, reader got 168 px up → **1 yanks (140 px), reader got 140 px up** | 0.000 → **0.000** |
+| fast lane | 375 | 4× | 26 (max 408) → **30 (max 273)** | 2390 → **1072 ms** | 183.3 → **100 ms** | 166.7 → **83.4 ms** | 8 yanks (739 px), reader got 260 px up → **0 yanks, reader got 660 px up** | 0.000 → **0.000** |
+| fast follow-up | 1440 | 4× | 21 (max 693) → **21 (max 277)** | 3162 → **931 ms** | 249.9 → **116.6 ms** | 150 → **100 ms** | 2 yanks (40 px), reader got 384 px up; ran 158 px past → **0 yanks, reader got 413 px up** | 0.000 → **0.000** |
+| fast follow-up | 375 | 4× | 21 (max 582) → **21 (max 273)** | 2920 → **881 ms** | 216.7 → **99.9 ms** | 133.4 → **83.3 ms** | 1 yanks (5 px), reader got 394 px up; ran 281 px past → **0 yanks, reader got 514 px up** | 0.000 → **0.000** |
+| crew | 1440 | 4× | 304 (max 592) → **316 (max 173)** | 26619 → **6092 ms** | 333.3 → **100.1 ms** | 333.3 → **100 ms** | 53 yanks (377 px), reader got 30 px up; ran 620 px past → **0 yanks, reader got 468 px up; ran 124 px past** | 0.029 → **0.004** |
+| crew | 375 | 4× | 340 (max 465) → **310 (max 170)** | 24361 → **4999 ms** | 283.3 → **83.3 ms** | 283.4 → **83.3 ms** | 58 yanks (436 px), reader got 10 px up; ran 2327 px past → **0 yanks, reader got 554 px up; ran 184 px past** | 0.182 → **0.002** |
+
+- **Scroll:** the crew and the follow-up yank a reader 0 times now (it was 45–58 times). The two small leftovers are an artefact of the scripted reader, which sets `scrollTop` directly while the view is still at the bottom. Real wheel, trackpad and touch input releases on the event itself.
+- **CLS:** crew 0.182 → 0.002 on a phone. What's left is analyst chips re-flowing as their model badges update.
+- **Stutter:** at 1× CPU no chat long tasks remain, and frame p95 is 16.7 ms while streaming and while scrolling. At 4× CPU the crew's TBT is 24–27 s → 5–6 s.
 
 ---
 

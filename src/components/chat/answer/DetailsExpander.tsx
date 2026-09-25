@@ -15,15 +15,20 @@ export default function DetailsExpander({
   markdown,
   label = "Show full analysis",
   glossary,
+  pending = false,
+  className,
 }: {
   /** Message id — the memory key for this expander's open state. */
   id: string;
   markdown: string;
   label?: string;
   glossary?: boolean;
+  /** Still streaming: the same button, disabled, saying the analysis is being written. */
+  pending?: boolean;
+  className?: string;
 }) {
   const [open, setOpen] = useState(() => OPENED.has(id));
-  if (!markdown.trim()) return null;
+  if (!pending && !markdown.trim()) return null;
 
   function toggle() {
     setOpen((was) => {
@@ -35,11 +40,12 @@ export default function DetailsExpander({
   }
 
   return (
-    <section>
+    <section className={className}>
       <button
         type="button"
         onClick={toggle}
-        aria-expanded={open}
+        disabled={pending}
+        aria-expanded={pending ? undefined : open}
         className="std-focus followup-chip"
         style={{
           display: "inline-flex",
@@ -50,11 +56,12 @@ export default function DetailsExpander({
           fontSize: "var(--text-sm)",
           fontWeight: 600,
           fontFamily: "inherit",
-          cursor: "pointer",
-          transition: "border-color 140ms, background 140ms, color 140ms",
+          cursor: pending ? "default" : "pointer",
+          opacity: pending ? 0.7 : 1,
+          transition: "border-color 140ms, background 140ms, color 140ms, opacity 140ms",
         }}
       >
-        {open ? "Hide full analysis" : label}
+        {pending ? "Writing the full analysis…" : open ? "Hide full analysis" : label}
         <svg
           width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
@@ -64,7 +71,7 @@ export default function DetailsExpander({
         </svg>
       </button>
 
-      {open && (
+      {open && !pending && (
         <div
           className="fade-in"
           style={{

@@ -3,7 +3,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
-import { useChatStore } from "@/stores/chatStore";
+import { useChatStore, streamingIdsKey } from "@/stores/chatStore";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useQuotes } from "@/hooks/useQuotes";
 import { useWatchlists } from "@/hooks/useWatchlists";
@@ -696,12 +696,12 @@ export default function Sidebar({
   const router = useRouter();
 
   const reset = useChatStore((s) => s.reset);
-  const streamsByConv = useChatStore((s) => s.streamsByConv);
+  // Only WHICH chats are live — not their text — so streaming doesn't re-render the sidebar per chunk.
+  const liveKey = useChatStore((s) => streamingIdsKey(s.streamsByConv));
+  const liveIds = useMemo(() => new Set(liveKey ? liveKey.split(",") : []), [liveKey]);
   const conversationId = useChatStore((s) => s.conversationId);
   // Any conversation other than the one on screen is streaming in the background.
-  const hasBackgroundStream = Object.entries(streamsByConv).some(
-    ([id, slice]) => slice.isStreaming && id !== conversationId
-  );
+  const hasBackgroundStream = [...liveIds].some((id) => id !== conversationId);
 
   // Which page each streaming conversation was fired from — so the originating
   // nav item (Portfolio / Research / Watchlist) pulses while its prompt runs,
@@ -711,10 +711,10 @@ export default function Sidebar({
   const liveContexts = useMemo(() => {
     const set = new Set<string>();
     for (const c of conversations ?? []) {
-      if (c.context && streamsByConv[c.id]?.isStreaming) set.add(c.context);
+      if (c.context && liveIds.has(c.id)) set.add(c.context);
     }
     return set;
-  }, [conversations, streamsByConv]);
+  }, [conversations, liveIds]);
   const { addHolding, uploadCsv, setCashBalance, findHolding, mergeHolding } = usePortfolio();
 
   const isDragging = useRef(false);

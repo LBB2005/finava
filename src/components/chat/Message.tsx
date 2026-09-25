@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, Component } from "react";
+import React, { memo, useState, Component } from "react";
 import Markdown from "./Markdown";
 
 class MessageErrorBoundary extends Component<
@@ -147,8 +147,9 @@ function AgentRibbon({ steps }: { steps: AgentStep[] }) {
           </div>
         </div>
 
-        {/* 2-letter agent pills */}
-        <span style={{ display: "inline-flex", gap: 3, alignItems: "center" }}>
+        {/* 2-letter agent pills — not on a phone, where they squeezed the title
+            into a one-word column (View thinking lists the agents anyway). */}
+        <span className="hidden sm:inline-flex" style={{ gap: 3, alignItems: "center" }}>
           {pillSteps.map((step) => (
             <span
               key={step.agent}
@@ -385,11 +386,13 @@ function AgentRibbon({ steps }: { steps: AgentStep[] }) {
 function VerdictBlock({
   message,
   glossary,
+  streaming,
   onRunFullAnalysis,
   runFullAnalysisLabel,
 }: {
   message: ChatMessage;
   glossary?: boolean;
+  streaming?: boolean;
   onRunFullAnalysis?: () => void;
   runFullAnalysisLabel?: string | null;
 }) {
@@ -403,6 +406,8 @@ function VerdictBlock({
   // stopped run that never reached it): no card, never a fragment.
   const verdict = isAgentMode ? extractVerdict(message.content) : null;
 
+  // Not while streaming: a row under growing text is pushed down on every
+  // step (layout shift). It lands at the end, below everything, moving nothing.
   const footer = (
     <MessageFooter message={message} timestamp={timestamp} isAgentMode={isAgentMode} />
   );
@@ -416,7 +421,8 @@ function VerdictBlock({
           markdown={message.content}
           messageId={message.id}
           glossary={glossary}
-          footer={footer}
+          streaming={streaming}
+          footer={streaming ? undefined : footer}
           onRunFullAnalysis={onRunFullAnalysis}
           runFullAnalysisLabel={runFullAnalysisLabel}
         />
@@ -453,7 +459,7 @@ function VerdictBlock({
       {/* Response body */}
       <Markdown glossary={glossary}>{message.content}</Markdown>
 
-      {footer}
+      {!streaming && footer}
     </div>
   );
 }
@@ -642,12 +648,15 @@ function FinavaAvatar() {
 /* ── Main export ─────────────────────────────────────────────────────── */
 function MessageInner({
   message,
+  streaming = false,
   onSuggestion,
   onDiscoverDeeper,
   onRunFullAnalysis,
   runFullAnalysisLabel,
 }: {
   message: ChatMessage;
+  /** The answer is still arriving: the same layout as the finished message, minus its actions. */
+  streaming?: boolean;
   onSuggestion?: (text: string) => void;
   onDiscoverDeeper?: (query: string) => void;
   /** Re-ask this question with the full crew. Shown under fast answers that name a ticker. */
@@ -730,14 +739,15 @@ function MessageInner({
               markdown={message.content}
               messageId={message.id}
               glossary={glossary}
-              footer={receipt}
+              streaming={streaming}
+              footer={streaming ? undefined : receipt}
               onRunFullAnalysis={wantsFullAnalysis ? () => onRunFullAnalysis!(message) : undefined}
               runFullAnalysisLabel={runFullAnalysisLabel}
             />
           ) : (
             <>
               <Markdown glossary={glossary}>{message.content}</Markdown>
-              {receipt}
+              {!streaming && receipt}
             </>
           )}
           {message.followups && message.followups.length > 0 && onSuggestion && (
@@ -768,7 +778,7 @@ function MessageInner({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {hasTrace && <AgentRibbon steps={message.agentTrace!} />}
-      <VerdictBlock message={message} glossary={glossary} />
+      <VerdictBlock message={message} glossary={glossary} streaming={streaming} />
       {message.critique && <SecondOpinion critique={message.critique} />}
       {message.followups && message.followups.length > 0 && onSuggestion && (
         <div style={{ paddingTop: 2 }}>
@@ -812,8 +822,9 @@ function mentionsTicker(content: string): boolean {
   return /(?:^|[\s($])[A-Z]{2,5}(?=[\s.,:;)?!]|$)/m.test(content.replace(/```[\s\S]*?```/g, ""));
 }
 
-export default function Message(props: {
+function Message(props: {
   message: ChatMessage;
+  streaming?: boolean;
   onSuggestion?: (text: string) => void;
   onDiscoverDeeper?: (query: string) => void;
   onRunFullAnalysis?: (message: ChatMessage) => void;
@@ -825,3 +836,9 @@ export default function Message(props: {
     </MessageErrorBoundary>
   );
 }
+
+// A settled message only re-renders when it changes. Without this every message
+// in the transcript re-rendered on every reveal step of the one streaming below
+// it (a 681-char follow-up cost 3.2 s of markdown work under a long chat).
+// Callers pass stable callbacks (ChatContainer) for this to hold.
+export default memo(Message);

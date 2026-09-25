@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { useChatStore } from "@/stores/chatStore";
+import { useChatStore, streamingIdsKey } from "@/stores/chatStore";
 import { useToast } from "@/hooks/useToast";
 import type { PageContext } from "@/lib/pageContext";
 
@@ -58,7 +58,9 @@ export default function ConversationList() {
   const [pinned, setPinned] = useState<Set<string>>(getPinned);
 
   const conversationId = useChatStore((s) => s.conversationId);
-  const streamsByConv = useChatStore((s) => s.streamsByConv);
+  // Only WHICH chats are live — not their text — so streaming doesn't re-render the list per chunk.
+  const liveKey = useChatStore((s) => streamingIdsKey(s.streamsByConv));
+  const liveIds = useMemo(() => new Set(liveKey ? liveKey.split(",") : []), [liveKey]);
 
   function loadConversation(conv: Conversation) {
     openConversation(conv);
@@ -127,7 +129,7 @@ export default function ConversationList() {
   function ConvRow({ conv }: { conv: Conversation }) {
     const isPinned = pinned.has(conv.id);
     const isActive = conversationId === conv.id;
-    const isLive = streamsByConv[conv.id]?.isStreaming ?? false;
+    const isLive = liveIds.has(conv.id);
     return (
       <div
         role="button"

@@ -1,11 +1,12 @@
 "use client";
-import React, { useState } from "react";
+import React, { memo, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import ChartBlock from "./ChartBlock";
 import { decorateGlossary } from "./answer/GlossaryTerm";
 import { GlossaryMarks } from "@/lib/glossary";
+import { glossarySeeds, splitMarkdownBlocks } from "@/lib/markdownBlocks";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -176,13 +177,39 @@ interface Props {
   glossary?: boolean;
 }
 
+/**
+ * One top-level block of an answer. Memoised on its text, so while an answer
+ * streams only the block still being written re-renders; the finished ones
+ * above it cost nothing. Renders no wrapper, so the blocks stay siblings and
+ * `last:` spacing works as before.
+ */
+export const MarkdownBlock = memo(function MarkdownBlock({
+  text,
+  glossary,
+  seed,
+}: {
+  text: string;
+  glossary: boolean;
+  /** Terms earlier blocks already marked, "|"-joined (a string so memo can compare it). */
+  seed: string;
+}) {
+  const map = glossary ? glossaryComponents(new GlossaryMarks(seed ? seed.split("|") : [])) : components;
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={map}>
+      {text}
+    </ReactMarkdown>
+  );
+});
+
 export default function Markdown({ children, className = "", style, glossary = false }: Props) {
-  const map = glossary ? glossaryComponents(new GlossaryMarks()) : components;
+  const blocks = useMemo(() => splitMarkdownBlocks(children), [children]);
+  const seeds = useMemo(() => (glossary ? glossarySeeds(blocks) : null), [blocks, glossary]);
   return (
     <div className={`markdown-body ${className}`} style={style}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={map}>
-        {children}
-      </ReactMarkdown>
+      {blocks.map((text, i) => (
+        // Index keys on purpose: a block keeps its slot as the answer grows.
+        <MarkdownBlock key={i} text={text} glossary={glossary} seed={seeds?.[i].join("|") ?? ""} />
+      ))}
     </div>
   );
 }

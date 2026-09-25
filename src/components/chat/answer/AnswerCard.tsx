@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { memo, useMemo, useState } from "react";
 import Markdown from "../Markdown";
 import KeyNumbers from "./KeyNumbers";
 import CaseColumns from "./CaseColumns";
@@ -16,7 +16,9 @@ import { parseAnswer, type ParsedAnswer } from "@/lib/answerFormat";
  * their sources attached; the long report folds away behind one click.
  *
  * It renders the same while streaming — sections appear as they arrive rather
- * than the card popping in at the end.
+ * than the card popping in at the end. Each section is memoised on its own
+ * text, so only the section being written re-renders; a section that arrives
+ * mid-stream fades in once (opacity only, nothing moves).
  */
 export default function AnswerCard({
   markdown,
@@ -38,65 +40,36 @@ export default function AnswerCard({
   /** e.g. "~2 min · 4 analysts" — shown on the button when the depth is known. */
   runFullAnalysisLabel?: string | null;
 }) {
-  const p: ParsedAnswer = parseAnswer(markdown);
+  const p: ParsedAnswer = useMemo(() => parseAnswer(markdown), [markdown]);
+  // Decided once, at mount: a card that mounted streaming fades its sections in
+  // as they arrive; a settled card (a reload) fades in whole. The streaming card
+  // becomes the settled one in place, so nothing replays when the stream ends.
+  const [mountedStreaming] = useState(streaming);
+  const enter = mountedStreaming ? "fade-in fade-in-still" : undefined;
 
   return (
-    <div className="verdict-fadein" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      {p.preamble && <Markdown glossary={glossary}>{p.preamble}</Markdown>}
+    <div className={mountedStreaming ? undefined : "verdict-fadein"} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {p.preamble && <Markdown glossary={glossary} className={enter}>{p.preamble}</Markdown>}
 
-      {p.answer !== undefined && (
-        <section
-          className="answer-lede"
-          style={{
-            fontFamily: "var(--font-serif)",
-            // Full display size on a laptop; a touch smaller on a phone so the
-            // verdict and the first numbers share the opening screen.
-            fontSize: "clamp(var(--text-lg), 4.2vw, var(--text-display))",
-            lineHeight: 1.45,
-            letterSpacing: "-0.012em",
-            fontWeight: 500,
-            color: "var(--color-text)",
-          }}
-        >
-          {p.answer.trim() ? (
-            <AnswerProse text={p.answer} glossary={glossary} />
-          ) : (
-            <span style={{ color: "var(--color-muted)" }}>…</span>
-          )}
-        </section>
-      )}
+      {p.answer !== undefined && <Lede text={p.answer} glossary={glossary} className={enter} />}
 
-      {p.keyNumbers && <KeyNumbers rows={p.keyNumbers} />}
+      {p.keyNumbers && <KeyNumbers rows={p.keyNumbers} className={enter} />}
 
-      <CaseColumns bull={p.bull} bear={p.bear} glossary={glossary} />
+      <CaseColumns bull={p.bull} bear={p.bear} glossary={glossary} enterClassName={enter} />
 
       {p.changeView !== undefined && p.changeView.trim() && (
-        <section>
-          <div className="eyebrow-label" style={{ color: "var(--color-muted)", marginBottom: 6 }}>
-            What would change the view
-          </div>
-          <Markdown glossary={glossary}>{p.changeView}</Markdown>
-        </section>
+        <LabelledSection heading="What would change the view" body={p.changeView} glossary={glossary} className={enter} />
       )}
 
-      {p.confidence !== undefined && p.confidence.trim() && <ConfidenceLine text={p.confidence} />}
+      {p.confidence !== undefined && p.confidence.trim() && <ConfidenceLine text={p.confidence} className={enter} />}
 
       {p.other?.map((s) => (
-        <section key={s.heading}>
-          <div className="eyebrow-label" style={{ color: "var(--color-muted)", marginBottom: 6 }}>
-            {s.heading}
-          </div>
-          <Markdown glossary={glossary}>{s.body}</Markdown>
-        </section>
+        <LabelledSection key={s.heading} heading={s.heading} body={s.body} glossary={glossary} className={enter} />
       ))}
 
-      {p.details !== undefined && !streaming && (
-        <DetailsExpander id={messageId} markdown={p.details} glossary={glossary} />
-      )}
-      {p.details !== undefined && streaming && (
-        <p style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)", margin: 0 }}>
-          Writing the full analysis…
-        </p>
+      {/* The same control before and after the stream ends, so the swap moves nothing. */}
+      {p.details !== undefined && (
+        <DetailsExpander id={messageId} markdown={p.details} glossary={glossary} pending={streaming} className={enter} />
       )}
 
       {onRunFullAnalysis && !streaming && (
@@ -107,6 +80,47 @@ export default function AnswerCard({
     </div>
   );
 }
+
+const Lede = memo(function Lede({ text, glossary, className }: { text: string; glossary: boolean; className?: string }) {
+  return (
+    <section
+      className={className ? `answer-lede ${className}` : "answer-lede"}
+      style={{
+        fontFamily: "var(--font-serif)",
+        // Full display size on a laptop; a touch smaller on a phone so the
+        // verdict and the first numbers share the opening screen.
+        fontSize: "clamp(var(--text-lg), 4.2vw, var(--text-display))",
+        lineHeight: 1.45,
+        letterSpacing: "-0.012em",
+        fontWeight: 500,
+        color: "var(--color-text)",
+      }}
+    >
+      {text.trim() ? <AnswerProse text={text} glossary={glossary} /> : <span style={{ color: "var(--color-muted)" }}>…</span>}
+    </section>
+  );
+});
+
+const LabelledSection = memo(function LabelledSection({
+  heading,
+  body,
+  glossary,
+  className,
+}: {
+  heading: string;
+  body: string;
+  glossary: boolean;
+  className?: string;
+}) {
+  return (
+    <section className={className}>
+      <div className="eyebrow-label" style={{ color: "var(--color-muted)", marginBottom: 6 }}>
+        {heading}
+      </div>
+      <Markdown glossary={glossary}>{body}</Markdown>
+    </section>
+  );
+});
 
 /**
  * The lede reads as one paragraph of serif prose. It goes through markdown only
@@ -128,7 +142,7 @@ function AnswerProse({ text, glossary }: { text: string; glossary?: boolean }) {
 
 const LEVEL = /^\s*(high|medium|low)\b/i;
 
-function ConfidenceLine({ text }: { text: string }) {
+const ConfidenceLine = memo(function ConfidenceLine({ text, className }: { text: string; className?: string }) {
   const level = LEVEL.exec(text)?.[1]?.toLowerCase();
   const rest = level ? text.replace(LEVEL, "").replace(/^\s*[—–-]\s*/, "") : text;
   const tone =
@@ -136,6 +150,7 @@ function ConfidenceLine({ text }: { text: string }) {
 
   return (
     <section
+      className={className}
       style={{
         display: "flex",
         alignItems: "baseline",
@@ -165,7 +180,7 @@ function ConfidenceLine({ text }: { text: string }) {
       </span>
     </section>
   );
-}
+});
 
 /**
  * The escape hatch from the fast lane: the same question, run by the full crew.
