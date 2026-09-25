@@ -14,6 +14,7 @@ import { getFactorUniverse } from "@/lib/factorUniverse";
 import { ranked, type RankedStock } from "@/lib/research";
 import { coerceFilter, applyScreen, type ScreenFilter } from "@/lib/screen";
 import type { AgentEvent } from "@/types/chat";
+import type { ClarifyQuestion } from "@/lib/chat/clarify";
 import type { ConvictionTier, DiscoverLayout, DiscoverTier, ScoutPick } from "@/lib/scoutTypes";
 import {
   SCOUT_NO_MATCHES_LABEL,
@@ -72,11 +73,17 @@ function needsClarify(query: string): boolean {
   return q.split(/\s+/).length <= 6;
 }
 
-const CLARIFY_CHIPS = [
-  "Growth & momentum",
-  "Value & income",
-  "Quality compounders",
-  "A specific sector",
+/** Asked in the composer panel; its "Other…" row covers a sector or theme. */
+const CLARIFY_QUESTIONS: ClarifyQuestion[] = [
+  {
+    header: "Style",
+    question: "What kind of names are you after?",
+    options: [
+      { label: "Growth & momentum", description: "Fast growers with price strength" },
+      { label: "Value & income", description: "Cheap on earnings, paying dividends" },
+      { label: "Quality compounders", description: "Durable moats, steady returns" },
+    ],
+  },
 ];
 
 // ── JSON extraction (mirrors the research routes) ────────────────────────────
@@ -127,10 +134,9 @@ export async function runScoutAgent(input: unknown, emit: EventEmitter): Promise
   if (needsClarify(query)) {
     emit({
       type: "discover_clarify",
-      question: "Happy to dig in — what kind of names are you after?",
-      chips: CLARIFY_CHIPS,
+      questions: CLARIFY_QUESTIONS,
     });
-    return "You asked the user a clarifying question (quick-reply chips are shown). Reply with ONE short, friendly sentence inviting them to pick a direction, then STOP — do not call any tools.";
+    return "You asked the user a clarifying question; the app shows it with its options. Don't repeat the question or list options — reply with at most one short sentence, then STOP. Do not call any tools.";
   }
 
   // 2) Score the whole universe (shared 15-min memo).

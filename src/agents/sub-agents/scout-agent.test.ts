@@ -99,7 +99,11 @@ describe("runScoutAgent — clarify gate", () => {
     const out = await runScoutAgent({ query: "" }, emit);
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("discover_clarify");
-    expect((events[0] as { chips: string[] }).chips.length).toBeGreaterThan(0);
+    const { questions } = events[0] as { questions: { header: string; options: { label: string; description?: string }[] }[] };
+    expect(questions).toHaveLength(1);
+    expect(questions[0].options.length).toBeGreaterThanOrEqual(2);
+    // Every option says what picking it means.
+    expect(questions[0].options.every((o) => !!o.description)).toBe(true);
     expect(out).toContain("clarifying question");
     // No universe scan / LLM ranking happened.
     expect(getFactorUniverse).not.toHaveBeenCalled();

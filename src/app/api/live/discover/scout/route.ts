@@ -73,7 +73,7 @@ export const POST = withHarness(async (req) => {
     if (clarify) {
       throw new Error(
         `Scout asked for clarification on the standing query — the query needs fixing, ` +
-          `not answering: ${clarify.question}`
+          `not answering: ${clarify.questions.map((q) => q.question).join(" / ")}`
       );
     }
 

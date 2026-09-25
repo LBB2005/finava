@@ -109,9 +109,9 @@ describe("POST /api/live/discover/scout", () => {
 
   it("fails loudly when the scout asks to clarify a FIXED query", async () => {
     deps.first.mockImplementation((type: string) =>
-      type === "discover_clarify" ? { question: "Which sector?" } : null,
+      type === "discover_clarify" ? { questions: [{ header: "Style", question: "Which sector?", options: [] }] } : null,
     );
-    await expect(POST(req())).rejects.toThrow(/the query needs fixing, not answering/);
+    await expect(POST(req())).rejects.toThrow(/the query needs fixing, not answering: Which sector\?/);
   });
 
   it("fails when the scout produced no shortlist at all", async () => {
