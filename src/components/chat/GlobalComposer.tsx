@@ -1,11 +1,14 @@
 "use client";
+import { useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useChatStore } from "@/stores/chatStore";
 import { useWatchlists } from "@/hooks/useWatchlists";
 import { useWatchlistStore } from "@/stores/watchlistStore";
 import { contextFromPath } from "@/lib/chatContext";
 import ChatInput from "./ChatInput";
+import ClarifyPanel from "./ClarifyPanel";
 import { stopConversationStream } from "./ChatEngine";
+import { pendingClarifyOf, replyContent, type ClarifyReply } from "@/lib/chat/clarify";
 
 // One persistent composer for the whole app. Lives in the app shell, outside the
 // route-keyed <main>, so it never unmounts as you move between pages. On /chat it
@@ -30,6 +33,27 @@ export default function GlobalComposer() {
   // chat"), so the user can start typing immediately.
   const focusOnFreshChat = isChat && conversationId === null && !viewedStreaming;
 
+  // Finava asked before answering: the questions take the composer's place
+  // until they're answered or skipped.
+  const viewedMessages = useChatStore((s) => (s.conversationId ? s.messagesByConv[s.conversationId] : undefined));
+  const pendingClarify = useMemo(
+    () => (isChat && !viewedStreaming && viewedMessages ? pendingClarifyOf(viewedMessages) : null),
+    [isChat, viewedStreaming, viewedMessages]
+  );
+
+  function handleClarify(reply: ClarifyReply) {
+    if (!pendingClarify || !conversationId) return;
+    useChatStore.getState().enqueueSend({
+      convId: conversationId,
+      text: replyContent(reply),
+      // Answer through the lane that asked (Auto or Discover), whatever the pill says.
+      mode: pendingClarify.mode,
+      context: null,
+      kind: "send",
+      clarifyReply: reply,
+    });
+  }
+
   function handleSend(text: string) {
     const val = text.trim();
     if (!val) return;
@@ -51,16 +75,20 @@ export default function GlobalComposer() {
 
   return (
     <div className="absolute left-0 right-0 z-30 pointer-events-none" style={{ bottom: 6 }}>
-      <ChatInput
-        floating
-        onSend={handleSend}
-        disabled={isChat && viewedStreaming}
-        streaming={isChat && viewedStreaming}
-        onStop={() => { if (conversationId) stopConversationStream(conversationId); }}
-        mode={mode}
-        onModeChange={setMode}
-        autoFocus={focusOnFreshChat}
-      />
+      {pendingClarify ? (
+        <ClarifyPanel key={pendingClarify.messageId} questions={pendingClarify.questions} onSubmit={handleClarify} />
+      ) : (
+        <ChatInput
+          floating
+          onSend={handleSend}
+          disabled={isChat && viewedStreaming}
+          streaming={isChat && viewedStreaming}
+          onStop={() => { if (conversationId) stopConversationStream(conversationId); }}
+          mode={mode}
+          onModeChange={setMode}
+          autoFocus={focusOnFreshChat}
+        />
+      )}
     </div>
   );
 }

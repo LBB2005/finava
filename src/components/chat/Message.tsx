@@ -30,6 +30,7 @@ import { rosterFromBrands } from "@/lib/models";
 import { AGENT_LABELS } from "@/types/chat";
 import { extractVerdict } from "@/lib/chat/verdict";
 import { parseDiscoverContent } from "@/lib/chat/discoverText";
+import { receiptText } from "@/lib/chat/clarify";
 import type { ChatMessage, AgentStep } from "@/types/chat";
 import { ResponseReceipt } from "./ResponseTiming";
 import DiscoverResult from "./DiscoverResult";
@@ -666,6 +667,13 @@ function MessageInner({
 }) {
   const { level } = useExperienceLevel();
   const glossary = shouldShowGlossary(level);
+
+  // Clarifying questions are asked in the composer panel, not the transcript;
+  // the answer shows as a receipt line under the prompt it was about.
+  if (message.role === "assistant" && message.clarify?.length) return null;
+  if (message.role === "user" && message.clarifyReply) {
+    return <div className="clarify-receipt">↳ {receiptText(message.clarifyReply)}</div>;
+  }
 
   if (message.role === "user") {
     return <PromptBubble message={message} />;

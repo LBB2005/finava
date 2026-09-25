@@ -302,6 +302,162 @@ body {
   color: var(--color-accent);
 }
 
+/* Clarify panel — asks before answering, docked where the composer sits
+   (ClarifyPanel.tsx). Same frosted surface as .chat-input-box. */
+@keyframes clarify-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.clarify-panel {
+  background: color-mix(in oklab, var(--color-surface) 90%, transparent);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xl);
+  padding: 14px 14px 12px;
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  box-shadow: 0 14px 36px -14px color-mix(in srgb, var(--color-text) 34%, transparent);
+  animation: clarify-rise 200ms ease-out both;
+  outline: none;
+}
+.clarify-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 4px;
+}
+.clarify-tabs { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.clarify-tab {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background 140ms, color 140ms, border-color 140ms;
+}
+.clarify-tab.done { color: var(--color-text-secondary); }
+.clarify-tab.on {
+  border-color: var(--color-accent-medium);
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+}
+.clarify-question {
+  margin: 10px 4px 10px;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.45;
+}
+.clarify-options { display: flex; flex-direction: column; gap: 4px; }
+.clarify-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms;
+}
+.clarify-option:hover { background: color-mix(in oklab, var(--color-accent) 5%, transparent); }
+.clarify-option.on {
+  border-color: var(--color-accent-medium);
+  background: var(--color-accent-light);
+}
+.clarify-key {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--color-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  color: var(--color-muted);
+  background: var(--color-bg);
+}
+.clarify-option.on .clarify-key {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.clarify-option-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.clarify-label { font-size: var(--text-sm); font-weight: 600; line-height: 1.4; }
+.clarify-desc { font-size: var(--text-meta); color: var(--color-muted); line-height: 1.4; }
+.clarify-other-input {
+  width: 100%;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  line-height: 1.4;
+}
+.clarify-other-input::placeholder { color: var(--color-muted); }
+.clarify-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 0 4px;
+}
+.clarify-hint { font-size: var(--text-meta); color: var(--color-muted); margin-right: auto; }
+.clarify-skip {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.clarify-skip:hover { background: color-mix(in oklab, var(--color-text) 5%, transparent); }
+.clarify-go {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 140ms;
+}
+.clarify-go:hover:not(:disabled) { background: var(--color-accent-hover); }
+.clarify-go:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 640px) {
+  .clarify-hint { display: none; }
+  .clarify-tabs { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clarify-panel { animation: none; }
+}
+
+/* The answer to a clarify panel, under the prompt it answered (Message.tsx). */
+.clarify-receipt {
+  margin: -18px 4px 0 auto;
+  max-width: 78%;
+  text-align: right;
+  font-size: var(--text-meta);
+  color: var(--color-muted);
+  line-height: 1.45;
+}
+
 /* Agent ribbon expand toggle (was imperative hover). */
 .agent-ribbon-toggle {
   background: transparent;
