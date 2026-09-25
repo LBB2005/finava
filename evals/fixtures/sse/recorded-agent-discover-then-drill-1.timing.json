@@ -1,0 +1,1 @@
+{"version":1,"route":"/api/agent","mode":"auto","prompt":"find cheap energy stocks","prior":[],"router":{"ms":892,"response":{"intent":"discover"}},"chunks":[[69069,1955],[108769,12983],[110273,107]]}

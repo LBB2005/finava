@@ -19,6 +19,8 @@ export interface Tapped {
   payloads: unknown[];
   /** The raw body, for `--record`. */
   bytes: Uint8Array[];
+  /** Epoch ms each chunk in `bytes` arrived, so a replay can keep the pace. */
+  chunkAt: number[];
   error?: string;
 }
 
@@ -53,6 +55,7 @@ export function httpFetcher(opts: HttpOptions): { fetcher: Fetcher; log: Tapped[
       endedAt: null,
       payloads: [],
       bytes: [],
+      chunkAt: [],
     };
     log.push(entry);
     const signals = [AbortSignal.timeout(opts.timeoutMs ?? 480_000), init?.signal].filter(Boolean) as AbortSignal[];
@@ -84,6 +87,7 @@ export function httpFetcher(opts: HttpOptions): { fetcher: Fetcher; log: Tapped[
         const now = Date.now();
         entry.firstByteAt ??= now;
         entry.bytes.push(chunk);
+        entry.chunkAt.push(now);
         buf += decoder.decode(chunk, { stream: true });
         const lines = buf.split("\n");
         buf = lines.pop() ?? "";

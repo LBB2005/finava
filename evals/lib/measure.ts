@@ -4,9 +4,10 @@
  */
 import { writeFileSync } from "node:fs";
 import path from "node:path";
+import { fixtureTiming, type ReplaySendMode } from "@/lib/chatBench/timing";
 import { fromStoredMessage, toStoredMessage, type StoredMessage } from "@/lib/chat/storedMessage";
 import type { ChatMessage } from "@/types/chat";
-import type { Conversation, Lane, Turn } from "./conversation";
+import { storedForm, type Conversation, type Lane, type Turn } from "./conversation";
 import { appJson, type HttpOptions, type Tapped } from "./http";
 import { answerFromWire, collapseCheck, contractShape, numberCheckFrom, type CollapseCheck, type ContractShape, type NumberCheck } from "./metrics";
 import { FIXTURE_DIR } from "./replay";
@@ -88,12 +89,23 @@ export async function deleteConversation(http: HttpOptions, id: string) {
   await appJson(http, `/api/conversations/${id}`, { method: "DELETE" }).catch(() => {});
 }
 
-/** `--record`: keep a real stream as a smoke fixture. The expected answer is rebuilt from the wire. */
-export function recordFixture(name: string, req: Tapped) {
+/**
+ * `--record`: keep a real stream as a smoke fixture. The expected answer is rebuilt from the wire.
+ * The `.timing.json` sidecar lets /dev/chat-replay play it back at the recorded pace, from the
+ * same screen (the conversation so far, and Auto's router call).
+ */
+export function recordFixture(
+  name: string,
+  req: Tapped,
+  turn: { router: Tapped | undefined; mode: ReplaySendMode; prompt: string; prior: ChatMessage[] },
+  dir = FIXTURE_DIR
+) {
   const route = req.url === "/api/chat" ? "chat" : "agent";
   const file = `recorded-${route}-${name}`;
   const bytes = Buffer.concat(req.bytes.map((b) => Buffer.from(b)));
-  writeFileSync(path.join(FIXTURE_DIR, `${file}.sse`), bytes);
-  writeFileSync(path.join(FIXTURE_DIR, `${file}.expected.md`), answerFromWire(req.payloads));
+  const timing = fixtureTiming({ lane: req, router: turn.router ?? null, mode: turn.mode, prompt: turn.prompt, prior: turn.prior.map(storedForm) });
+  writeFileSync(path.join(dir, `${file}.sse`), bytes);
+  writeFileSync(path.join(dir, `${file}.expected.md`), answerFromWire(req.payloads));
+  writeFileSync(path.join(dir, `${file}.timing.json`), JSON.stringify(timing));
   return file;
 }
