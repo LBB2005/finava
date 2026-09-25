@@ -95,7 +95,7 @@ describe("POST /api/classify — routing", () => {
   it("calls the cheap router model with a token cap", async () => {
     await classify({ userPrompt: "hi" });
     expect(deps.generate).toHaveBeenCalledWith(
-      expect.objectContaining({ agent: "chatRouter", maxTokens: 200 }),
+      expect.objectContaining({ agent: "chatRouter", maxTokens: 600 }),
     );
   });
 });
@@ -205,18 +205,39 @@ describe("POST /api/classify — clarify handling", () => {
       ...over,
     });
 
-  it("passes through a well-formed clarify", async () => {
+  it("returns a legacy single-question clarify as structured questions", async () => {
     deps.generate.mockResolvedValueOnce(clarify());
     expect((await classify({ userPrompt: "what should I buy?" })).json).toEqual({
       intent: "clarify",
-      clarifyQuestion: "What are you after?",
-      clarifyChips: ["Growth", "Value", "Quality"],
+      clarify: [
+        {
+          header: "Focus",
+          question: "What are you after?",
+          options: [{ label: "Growth" }, { label: "Value" }, { label: "Quality" }],
+        },
+      ],
     });
   });
 
-  it("caps the chips at four", async () => {
+  it("passes through structured questions with described options", async () => {
+    const questions = [
+      {
+        header: "Horizon",
+        question: "What's your time horizon?",
+        options: [
+          { label: "Long term", description: "3+ years, compounders" },
+          { label: "Swing", description: "Weeks to months" },
+        ],
+      },
+    ];
+    deps.generate.mockResolvedValueOnce(JSON.stringify({ intent: "clarify", clarify: questions }));
+    expect((await classify({ userPrompt: "what should I buy?" })).json).toEqual({ intent: "clarify", clarify: questions });
+  });
+
+  it("caps the options at four", async () => {
     deps.generate.mockResolvedValueOnce(clarify({ clarifyChips: ["a", "b", "c", "d", "e", "f"] }));
-    expect((await classify({ userPrompt: "ideas?" })).json.clarifyChips).toEqual(["a", "b", "c", "d"]);
+    const { json } = await classify({ userPrompt: "ideas?" });
+    expect(json.clarify[0].options.map((o: { label: string }) => o.label)).toEqual(["a", "b", "c", "d"]);
   });
 
   it("drops a clarify that has no question", async () => {

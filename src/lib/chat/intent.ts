@@ -1,5 +1,6 @@
 import { extractTickers } from "@/lib/tickers";
 import type { PageContext } from "@/lib/pageContext";
+import { cleanClarify, type ClarifyQuestion } from "./clarify";
 
 /**
  * Auto-mode intents.
@@ -17,8 +18,6 @@ export type Intent = "fast" | "discover" | "clarify" | "full_analysis";
 
 export const INTENTS: readonly Intent[] = ["fast", "discover", "clarify", "full_analysis"] as const;
 
-const MAX_CLARIFY_CHIPS = 4;
-
 // ── The router model's prompt ────────────────────────────────────────────────
 
 /**
@@ -32,12 +31,16 @@ Intents:
 - "fast": THE DEFAULT. Any question that can be answered from live market data and reasoning — verdicts on a named stock ("is TSLA a buy?", "is it too late to buy NVDA?", "should I worry about AMD's margins?"), questions about the user's portfolio, definitions and concepts ("what's a P/E ratio?"), greetings, and every conversational follow-up ("simpler", "yes or no", "what about the risks?").
 - "discover": the user wants to FIND/SCREEN stocks WITHOUT naming specific tickers (e.g. "find cheap energy stocks", "best AI plays right now", "ideas for dividend income").
 - "full_analysis": ONLY when the user EXPLICITLY asks for the full multi-agent research crew — "full analysis of X", "deep dive on X", "run the crew", "research report on X", "comprehensive analysis". A question that merely names a ticker is "fast", NOT "full_analysis". A full analysis takes minutes; choosing it when the user did not ask for it is the single worst thing you can do.
-- "clarify": ask ONE short question first. ONLY when ALL hold: the request is open-ended discovery or advice ("what should I buy?", "what's good right now?"), AND no ticker is named, AND no page context pins a subject, AND the message states no amount, horizon, sector or experience level. Bias HARD against this.
+- "clarify": ask before answering. ONLY when ALL hold: the request is open-ended discovery or advice ("what should I buy?", "what's good right now?"), AND no ticker is named, AND no page context pins a subject, AND the message states no amount, horizon, sector or experience level. Bias HARD against this.
 
-When intent is "clarify", write ONE short friendly clarifyQuestion and 3-4 short tappable clarifyChips (e.g. "Growth & momentum", "Value & income", "Quality compounders", "A specific sector").
+When intent is "clarify", ask 1-3 questions — only the ones whose answer would really change what you recommend; usually just 1. Each question has:
+- "header": 1-2 words, shown on a tab (e.g. "Horizon", "Amount", "Style")
+- "question": one short, friendly sentence
+- "options": 2-4 tappable choices, each a short "label" (1-4 words) and a one-line "description" (under 8 words) saying what picking it means
+The app adds its own "Other" free-text choice, so never include one.
 
-Respond with ONLY a JSON object, no prose:
-{"intent":"fast|discover|full_analysis|clarify","clarifyQuestion":"...","clarifyChips":["...","..."]}`;
+Respond with ONLY a JSON object, no prose. "clarify" is present only when intent is "clarify":
+{"intent":"fast|discover|full_analysis|clarify","clarify":[{"header":"Horizon","question":"What's your time horizon?","options":[{"label":"Long term","description":"3+ years, quality compounders"},{"label":"Swing","description":"Weeks to months, momentum"}]}]}`;
 
 // ── Explicit crew requests ───────────────────────────────────────────────────
 
@@ -134,8 +137,8 @@ function isAlreadySpecific(text: string): boolean {
 
 export interface ResolvedIntent {
   intent: Intent;
-  clarifyQuestion?: string;
-  clarifyChips?: string[];
+  /** The questions to ask, only when `intent` is "clarify". */
+  clarify?: ClarifyQuestion[];
 }
 
 export interface IntentContext {
@@ -151,13 +154,6 @@ export interface IntentContext {
 function rawIntent(parsed: Record<string, unknown> | null): Intent | null {
   const raw = String(parsed?.intent ?? "");
   return (INTENTS as readonly string[]).includes(raw) ? (raw as Intent) : null;
-}
-
-function cleanChips(parsed: Record<string, unknown> | null): string[] | null {
-  const chips = parsed?.clarifyChips;
-  if (!Array.isArray(chips)) return null;
-  const clean = chips.map(String).map((c) => c.trim()).filter(Boolean).slice(0, MAX_CLARIFY_CHIPS);
-  return clean.length ? clean : null;
 }
 
 /**
@@ -182,13 +178,12 @@ export function resolveIntent(
   if (raw === "full_analysis") return { intent: "fast" };
 
   if (raw === "clarify") {
-    const question = typeof parsed?.clarifyQuestion === "string" ? parsed.clarifyQuestion.trim() : "";
-    const chips = cleanChips(parsed);
+    const clarify = cleanClarify(parsed);
     const known = hasSubject(ctx);
     // A clarify only earns its round-trip when we have no subject, nothing
     // specific to go on, a real question to ask, and haven't just asked one.
-    if (allowClarify && !known && !isAlreadySpecific(userPrompt) && question && chips) {
-      return { intent: "clarify", clarifyQuestion: question, clarifyChips: chips };
+    if (allowClarify && !known && !isAlreadySpecific(userPrompt) && clarify) {
+      return { intent: "clarify", clarify };
     }
     // Suppressed: a clarify is only ever raised on open-ended discovery, so a
     // known subject means answer it, and an unknown one means go screen.

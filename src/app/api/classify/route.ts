@@ -80,7 +80,8 @@ export async function POST(req: Request) {
         agent: "chatRouter",
         system: ROUTER_SYSTEM_PROMPT,
         prompt,
-        maxTokens: 200,
+        // Room for up to three clarifying questions with described options.
+        maxTokens: 600,
       });
       return resolveIntent(parseJson(raw), intentCtx) as ClassifyResult;
     } catch (err) {

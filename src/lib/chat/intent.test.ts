@@ -152,7 +152,31 @@ describe("resolveIntent", () => {
     expect(r.intent).toBe("discover");
   });
 
-  it("asks one clarifying question when the target is genuinely unknown", () => {
+  it("asks structured clarifying questions when the target is genuinely unknown", () => {
+    const r = resolveIntent(
+      {
+        intent: "clarify",
+        clarify: [
+          {
+            header: "Horizon",
+            question: "What's your time horizon?",
+            options: [
+              { label: "Long term", description: "3+ years, compounders" },
+              { label: "Swing", description: "Weeks to months" },
+            ],
+          },
+          { header: "Amount", question: "Roughly how much?", options: ["Under $1k", "$1k–$10k", "$10k+"] },
+        ],
+      },
+      ctx({ userPrompt: "what should I buy?" })
+    );
+    expect(r.intent).toBe("clarify");
+    expect(r.clarify).toHaveLength(2);
+    expect(r.clarify?.[0].options[0]).toEqual({ label: "Long term", description: "3+ years, compounders" });
+    expect(r.clarify?.[1].options.map((o) => o.label)).toEqual(["Under $1k", "$1k–$10k", "$10k+"]);
+  });
+
+  it("still reads the legacy single-question shape", () => {
     const r = resolveIntent(
       {
         intent: "clarify",
@@ -162,8 +186,8 @@ describe("resolveIntent", () => {
       ctx({ userPrompt: "what should I buy?" })
     );
     expect(r.intent).toBe("clarify");
-    expect(r.clarifyQuestion).toBe("What are you optimising for?");
-    expect(r.clarifyChips).toEqual(["Growth", "Income", "Quality"]);
+    expect(r.clarify?.[0].question).toBe("What are you optimising for?");
+    expect(r.clarify?.[0].options.map((o) => o.label)).toEqual(["Growth", "Income", "Quality"]);
   });
 
   it("never clarifies when the page context already names the stock", () => {
@@ -175,7 +199,7 @@ describe("resolveIntent", () => {
       })
     );
     expect(r.intent).toBe("fast");
-    expect(r.clarifyQuestion).toBeUndefined();
+    expect(r.clarify).toBeUndefined();
   });
 
   it("never clarifies twice in a row", () => {
@@ -218,12 +242,11 @@ describe("resolveIntent", () => {
     expect(r.intent).toBe("discover");
   });
 
-  it("caps clarify chips at four", () => {
-    const r = resolveIntent(
-      { intent: "clarify", clarifyQuestion: "Which?", clarifyChips: ["a", "b", "c", "d", "e", "f"] },
-      ctx({ userPrompt: "what's good right now?" })
-    );
-    expect(r.clarifyChips).toHaveLength(4);
+  it("caps clarify at three questions of four options", () => {
+    const q = { question: "Which?", options: ["a", "b", "c", "d", "e", "f"] };
+    const r = resolveIntent({ intent: "clarify", clarify: [q, q, q, q, q] }, ctx({ userPrompt: "what's good right now?" }));
+    expect(r.clarify).toHaveLength(3);
+    expect(r.clarify?.[0].options).toHaveLength(4);
   });
 
   it("routes short reformat follow-ups to fast, never to the crew", () => {
