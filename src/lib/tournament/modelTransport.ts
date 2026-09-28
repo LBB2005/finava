@@ -34,8 +34,8 @@ export function requestBound(
   host: string,
 ): number {
   if (host === "api.typesafe.ai") {
-    // Direct-account pricing must be supplied from the account rate card; the
-    // existing Jev price table was verified only for Vercel's gateway route.
+    // Configure the current direct input rate. https://docs.typesafe.ai/models
+    // lists $0.042/M with free output (verified 2026-09-28); allow contract overrides.
     const rate = Number(process.env.TOURNAMENT_JEV_INPUT_USD_PER_MILLION);
     if (!Number.isFinite(rate) || rate <= 0)
       throw new Error("Direct Jev rate card is not configured");

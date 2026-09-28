@@ -45,17 +45,34 @@ fixture outcomes and are excluded from calibration. Offline measured API spend
 was **$0 across zero paid HTTP requests**. This is not a measured live crew or
 Jev run; paid-run cost remains unmeasured.
 
+## Jev connection check — 2026-09-28 follow-up
+
+The user supplied a direct TypeSafe key in ignored local configuration. The
+existing Finava crew, calendar and Firebase settings were reused locally.
+TypeSafe's [model reference](https://docs.typesafe.ai/models) confirms $0.042
+per million input tokens and free output; that rate is now configured.
+
+One bounded synthetic connection check succeeded against the direct API through
+the existing Jev adapter and tournament request guard. Resolved model:
+`jev-1.13.0`; usage: 294 input tokens, 24 output tokens; estimated cost:
+`$0.000012348`. The provider did not return dollar usage, so measured invoice
+cost remains unknown. The request's conservative reservation was `$0.000355152`.
+No personal or market data was submitted, and this check is excluded from
+the ledger and calibration. This verifies Jev connectivity, not the full paid
+crew/tournament pipeline.
+
 ## Live acceptance still blocked
 
 1. Connect a verified dated membership/facts archive plus official entry-open
    and complete corporate-action evidence. Strict ingestion contracts exist,
    but an upstream archive producer is not implemented/connected.
-2. Supply the direct Jev API key and confirm its direct-account rate card,
-   including the adapter's zero-priced-output assumption. Configure existing
-   crew, calendar and Firebase credentials in this worktree or CI.
+2. Configure CI credentials separately when ready to enable automation. Local
+   Jev authentication and public pricing are now verified; other copied
+   credentials have not been exercised as a complete live tournament run.
 3. Run a prospective paid dry run, inspect real provider usage and Firestore
-   persistence, then enable `TOURNAMENT_ENABLED`. No paid run, production write,
-   deployment, schedule activation, dashboard or brokerage order was performed.
+   persistence, then enable `TOURNAMENT_ENABLED`. No full paid tournament run,
+   production ledger write, schedule activation, dashboard or brokerage order
+   was performed. Existing GitHub hooks triggered preview deployments.
 
 The backend and offline checks are ready for review. Live readiness and all
 requirements of the original request are **not yet complete**; adding the Jev

@@ -46,10 +46,10 @@ environment. The worktree deliberately contains no copied keys.
 
 - `TYPESAFE_API_KEY`: your new Jev direct key. The tournament intentionally does
   not fall back to a different billed gateway account.
-- `TOURNAMENT_JEV_INPUT_USD_PER_MILLION`: confirmed **direct-account** rate.
-  The existing Jev cost module's $0.042/M rate was verified for the gateway;
-  it is not evidence of your direct contract. This adapter assumes zero-priced
-  output; confirm that in the direct rate card before enabling Jev.
+- `TOURNAMENT_JEV_INPUT_USD_PER_MILLION`: `0.042`, the direct API's published
+  input-token rate per million; output is free. Verified against
+  [TypeSafe's model reference](https://docs.typesafe.ai/models) on 2026-09-28.
+  Use your contract rate instead if it differs from public pricing.
 - `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`: existing full crew credentials.
 - `ALPACA_API_KEY`, `ALPACA_API_SECRET`: exchange calendar.
 - Existing Firebase Admin/public configuration required by `src/lib/env.ts`.
