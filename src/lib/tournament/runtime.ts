@@ -150,6 +150,22 @@ export async function runDaily(o: DailyOptions) {
     throw new Error(
       "Snapshot differs from original attempt; resume with archived inputs",
     );
+  const metadata = {
+    codeSha: o.codeSha,
+    registrationHash: o.registrationHash,
+    windows,
+    namespace: o.namespace,
+    snapshotHash: snapshotHash(snapshot),
+  };
+  const originalMetadata = await o.journal.get(`${date}_metadata`);
+  if (
+    originalMetadata &&
+    canonicalJson(originalMetadata) !== canonicalJson(metadata)
+  )
+    throw new Error(
+      "Resume metadata differs: restore the original code, registration and calendar before continuing",
+    );
+  if (!originalMetadata) await o.journal.create(`${date}_metadata`, metadata);
   const ranks = rankStrategies(snapshot),
     shortlist = modelShortlist(ranks);
   const selected =
@@ -211,6 +227,10 @@ export async function runDaily(o: DailyOptions) {
       outputs.set(`${arm}_${ticker}`, result);
     }
   const rows: TournamentRow[] = [];
+  const fingerprints = {
+    snapshot: snapshotHash(snapshot),
+    membership: hashEntry(snapshot.membership, CHAIN_GENESIS),
+  };
   const createdAt =
     (await o.journal.get<string>(`${date}_createdAt`)) ?? now().toISOString();
   await o.journal.create(`${date}_createdAt`, createdAt);
@@ -220,6 +240,7 @@ export async function runDaily(o: DailyOptions) {
         rows.push(
           makePrediction({
             snapshot,
+            fingerprints,
             arm,
             ...r,
             horizon: w.horizon,
@@ -262,6 +283,7 @@ export async function runDaily(o: DailyOptions) {
         rows.push(
           makePrediction({
             snapshot,
+            fingerprints,
             arm,
             ticker: n.ticker,
             rank: index < 0 ? null : index + 1,

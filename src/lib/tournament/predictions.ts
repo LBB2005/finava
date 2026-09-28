@@ -28,6 +28,8 @@ export interface ModelForecast {
 }
 export function makePrediction(p: {
   snapshot: TournamentSnapshot;
+  /** Reused within one immutable daily snapshot; avoids rehashing 500 names for every row. */
+  fingerprints?: { snapshot: string; membership: string };
   arm: Arm;
   ticker: string;
   rank: number | null;
@@ -44,7 +46,7 @@ export function makePrediction(p: {
   latencyMs?: number | null;
   reasons?: string[];
 }): TournamentRow {
-  const sh = snapshotHash(p.snapshot),
+  const sh = p.fingerprints?.snapshot ?? snapshotHash(p.snapshot),
     version = `${STRATEGY_VERSION}:${p.arm}`;
   const available = ["long", "avoid", "neutral"].includes(p.disposition);
   const modeled = p.arm === "jev" || p.arm === "ensemble";
@@ -144,7 +146,9 @@ export function makePrediction(p: {
     codeSha: p.codeSha,
     registrationHash: p.registrationHash,
     snapshotHash: sh,
-    membershipHash: hashEntry(p.snapshot.membership, CHAIN_GENESIS),
+    membershipHash:
+      p.fingerprints?.membership ??
+      hashEntry(p.snapshot.membership, CHAIN_GENESIS),
     prediction: built.record,
     disposition: p.disposition,
     rank: p.rank,

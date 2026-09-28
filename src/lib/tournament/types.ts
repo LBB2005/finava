@@ -92,6 +92,7 @@ export interface PaperPosition {
   shares: number;
 }
 export interface PaperSnapshot {
+  holdingsKnown?: boolean;
   id: string;
   date: string;
   arm: Arm | "spy";

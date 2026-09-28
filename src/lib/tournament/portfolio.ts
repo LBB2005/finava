@@ -77,11 +77,63 @@ export interface DayMark {
   cashPerPreviousShare: number | null;
   actionsComplete: boolean;
   reason: string | null;
+  /** Explicit cash/stock consideration per share held before today's split.
+   * Null cash means unknown consideration, including an unknown stock ratio. */
+  termination?: {
+    at: "before_open" | "after_open";
+    cashPerPreviousShare: number | null;
+    successor: { ticker: string; sharesPerPreviousShare: number } | null;
+  } | null;
 }
 export type MarkProvider = (
   ticker: string,
   session: MarketSession,
 ) => Promise<DayMark>;
+export function applyPortfolioActions(
+  book: Book,
+  marks: Record<string, DayMark>,
+  phase: "before_open" | "after_open",
+): Book | null {
+  if (
+    book.positions.some((p) => {
+      const m = marks[p.ticker];
+      return (
+        !m?.actionsComplete ||
+        m.splitFactor == null ||
+        m.cashPerPreviousShare == null ||
+        (m.termination?.at === phase &&
+          m.termination.cashPerPreviousShare === null)
+      );
+    })
+  )
+    return null;
+  let cash = book.cash;
+  const positions = new Map<string, number>();
+  const add = (ticker: string, shares: number) =>
+    positions.set(ticker, (positions.get(ticker) ?? 0) + shares);
+  for (const p of book.positions) {
+    const m = marks[p.ticker],
+      terminal = m.termination;
+    if (phase === "before_open") cash += p.shares * m.cashPerPreviousShare!;
+    if (terminal?.at === phase) {
+      const originalShares =
+        phase === "before_open" ? p.shares : p.shares / m.splitFactor!;
+      cash += originalShares * terminal.cashPerPreviousShare!;
+      if (terminal.successor)
+        add(
+          terminal.successor.ticker,
+          originalShares * terminal.successor.sharesPerPreviousShare,
+        );
+    } else
+      add(p.ticker, p.shares * (phase === "before_open" ? m.splitFactor! : 1));
+  }
+  return {
+    cash,
+    positions: [...positions]
+      .filter(([, shares]) => shares > 0)
+      .map(([ticker, shares]) => ({ ticker, shares })),
+  };
+}
 export async function markPortfolios(
   ledger: TournamentLedger,
   rows: TournamentRow[],
@@ -91,9 +143,13 @@ export async function markPortfolios(
 ) {
   const existing = await ledger.portfolios();
   let count = 0;
-  for (const session of sessions.filter(
-    (s) => Date.parse(s.close) <= now.getTime(),
-  ))
+  for (const session of [...sessions]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .filter((s) => Date.parse(s.close) <= now.getTime())) {
+    const marks: Record<string, DayMark> = {};
+    const load = async (ticker: string) => {
+      if (!marks[ticker]) marks[ticker] = await provider(ticker, session);
+    };
     for (const arm of [
       ...DETERMINISTIC_ARMS,
       "ensemble",
@@ -118,7 +174,8 @@ export async function markPortfolios(
         positions: previous?.positions ?? [],
       };
       let costUsd: number | null = 0,
-        nav: number | null = null;
+        nav: number | null = null,
+        holdingsKnown = previous?.holdingsKnown ?? previous?.nav !== null;
       const reasons: string[] = [];
       const targets =
         arm === "spy"
@@ -129,59 +186,67 @@ export async function markPortfolios(
                 .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity))
                 .slice(0, 10)
                 .map((r) => r.prediction.ticker)
-            : book.positions.map((p) => p.ticker);
+            : [];
       const names = [
         ...new Set([...book.positions.map((p) => p.ticker), ...targets]),
       ];
-      const marks: Record<string, DayMark> = {};
-      for (const ticker of names)
-        marks[ticker] = await provider(ticker, session);
-      if (previous?.nav === null)
+      for (const ticker of names) await load(ticker);
+      // Successor consideration is an exchange of shares, not a fictitious sale.
+      for (const ticker of names) {
+        const successor = marks[ticker].termination?.successor;
+        if (successor) await load(successor.ticker);
+      }
+      if (!holdingsKnown)
         reasons.push(
-          "Prior portfolio unresolved; cannot advance holdings without a corrected evidence series",
+          "Prior holdings unresolved; no silent recovery across unknown corporate actions",
         );
-      if (
-        names.some(
+      if (holdingsKnown) {
+        const adjusted = applyPortfolioActions(book, marks, "before_open");
+        if (!adjusted) {
+          holdingsKnown = false;
+          reasons.push("Corporate action consideration or coverage unknown");
+        } else book = adjusted;
+      }
+      if (holdingsKnown) {
+        const targetActionsKnown = targets.every(
           (t) =>
-            !marks[t].actionsComplete ||
-            marks[t].splitFactor == null ||
-            marks[t].cashPerPreviousShare == null,
-        )
-      )
-        reasons.push(
-          "Corporate action coverage incomplete; no fabricated mark or rebalance",
+            marks[t].actionsComplete &&
+            !(marks[t].termination?.at === "before_open"),
         );
-      if (!reasons.length) {
-        book = {
-          cash:
-            book.cash +
-            book.positions.reduce(
-              (sum, p) =>
-                sum + p.shares * marks[p.ticker].cashPerPreviousShare!,
-              0,
-            ),
-          positions: book.positions.map((p) => ({
-            ticker: p.ticker,
-            shares: p.shares * marks[p.ticker].splitFactor!,
-          })),
-        };
-        if ((arm !== "spy" && dayRows.length) || !previous) {
+        if (
+          ((arm !== "spy" && dayRows.length) || !previous) &&
+          targetActionsKnown
+        ) {
           const traded = rebalance(
             book,
             targets,
-            Object.fromEntries(names.map((t) => [t, marks[t].open])),
+            Object.fromEntries(
+              Object.keys(marks).map((t) => [t, marks[t].open]),
+            ),
           );
-          book = traded;
-          costUsd = traded.costUsd;
+          book = { cash: traded.cash, positions: traded.positions };
+          costUsd = traded.costUsd ?? 0;
           reasons.push(...traded.reasons);
-        }
-        if (book.positions.some((p) => marks[p.ticker].close == null))
-          reasons.push("Missing close or terminated listing; NAV unavailable");
-        if (!reasons.length)
+        } else if (!targetActionsKnown)
+          reasons.push(
+            "Rebalance withheld: target actions or entry listing unavailable",
+          );
+        const adjusted = applyPortfolioActions(book, marks, "after_open");
+        if (!adjusted) {
+          holdingsKnown = false;
+          reasons.push("Intraday termination consideration unknown");
+        } else book = adjusted;
+      }
+      if (holdingsKnown) {
+        if (book.positions.some((p) => marks[p.ticker]?.close == null))
+          reasons.push(
+            "Missing close: NAV unavailable; known holdings retained",
+          );
+        else
           nav =
             book.cash +
             book.positions.reduce(
-              (s, p) => s + p.shares * marks[p.ticker].close!,
+              (n, p) => n + p.shares * marks[p.ticker].close!,
               0,
             );
       } else costUsd = null;
@@ -192,6 +257,7 @@ export async function markPortfolios(
         ...book,
         nav,
         costUsd,
+        holdingsKnown,
         reasons,
         createdAt: now.toISOString(),
       };
@@ -199,5 +265,6 @@ export async function markPortfolios(
       existing.push(result);
       count++;
     }
+  }
   return count;
 }

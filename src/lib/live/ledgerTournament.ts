@@ -243,17 +243,7 @@ export async function firestoreTournamentJournal(
 ): Promise<Journal> {
   const { db } = await import("../firebase-admin");
   const root = db.collection(namespace).doc("ledger").collection("journal");
-  async function create(id: string, value: object) {
-    const ref = root.doc(id);
-    try {
-      await ref.create(value);
-    } catch (error) {
-      if ((error as { code?: number }).code !== 6) throw error;
-      if (canonicalJson((await ref.get()).data()) !== canonicalJson(value))
-        throw new Error("Checkpoint conflict");
-    }
-  }
-  return {
+  const journal: Journal = {
     async get<T>(key: string) {
       const id = hashEntry(key, CHAIN_GENESIS),
         meta = await root.doc(id).get();
@@ -274,14 +264,31 @@ export async function firestoreTournamentJournal(
       const id = hashEntry(key, CHAIN_GENESIS),
         json = canonicalJson(value),
         chunks = Math.ceil(json.length / 150000);
+      if (Buffer.byteLength(json) > 8 * 1024 * 1024 || chunks > 400)
+        throw new Error("Checkpoint exceeds the atomic 8 MiB limit");
+      // A single atomic commit prevents orphan chunks from poisoning a later
+      // retry with a different startedAt timestamp after a process crash.
+      const batch = db.batch();
       for (let i = 0; i < chunks; i++)
-        await create(`${id}_${i}`, {
+        batch.create(root.doc(`${id}_${i}`), {
           text: json.slice(i * 150000, (i + 1) * 150000),
         });
-      await create(id, { chunks, hash: hashEntry(value, CHAIN_GENESIS) });
+      batch.create(root.doc(id), {
+        chunks,
+        hash: hashEntry(value, CHAIN_GENESIS),
+      });
+      try {
+        await batch.commit();
+      } catch (error) {
+        if ((error as { code?: number }).code !== 6) throw error;
+        if (canonicalJson(await journal.get(key)) !== json)
+          throw new Error("Checkpoint conflict");
+      }
     },
   };
+  return journal;
 }
+
 /** One writer across dates AND grading. Expiry exceeds the workflow timeout.
  * Crashed jobs can resume after expiry, reusing all completed checkpoints. */
 export async function withTournamentLock<T>(

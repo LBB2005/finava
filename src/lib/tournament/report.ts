@@ -65,9 +65,14 @@ export function buildReport(
               r?.status === "resolved",
           )
           .map((r) => r.outcome);
-        const excess = resolved.flatMap((r) =>
-          r.excessReturn == null ? [] : [r.excessReturn],
+        const forecastedIds = new Set(
+          cohort
+            .filter((r) => ["long", "avoid", "neutral"].includes(r.disposition))
+            .map((r) => r.id),
         );
+        const excess = resolved
+          .filter((r) => forecastedIds.has(r.predictionId))
+          .flatMap((r) => (r.excessReturn == null ? [] : [r.excessReturn]));
         const decile = (d: number) =>
           cohort
             .filter((r) => r.decile === d)
@@ -179,7 +184,16 @@ export function buildReport(
         : "Prospective observations; no automatic calibration promotion. Missingness is part of the result.",
     leaderboard,
     cohorts,
-    portfolios: portfolios.map(({date,arm,nav,costUsd,reasons})=>({date,arm,nav,costUsd,reasons})),
+    portfolios: portfolios.map(
+      ({ date, arm, nav, costUsd, holdingsKnown, reasons }) => ({
+        date,
+        arm,
+        nav,
+        costUsd,
+        holdingsKnown,
+        reasons,
+      }),
+    ),
     nonResolution: grades
       .filter((g) => g.result.status === "unresolved")
       .map((g) => ({ predictionId: g.predictionId, result: g.result })),

@@ -100,7 +100,12 @@ cashPerPreviousShare,actionsComplete,reason}}}`. Opens and closes are raw
 per-current-share prices; `splitFactor` converts yesterday's held shares;
 cash entitlements are per yesterday's share, credited before trades. A verified
 no-action day uses factor 1 and cash 0; unverified actions use null/false.
-Unknown actions/held prices block NAV and freeze the book, never imply a loss.
+Optional `termination: {at: "before_open"|"after_open",
+cashPerPreviousShare: number|null, successor: {ticker,sharesPerPreviousShare}|null}`
+settles known terminal cash and stock consideration. A known zero is a real
+writeoff; null is unknown. Successor ratios are current shares per original
+predecessor share. Unknown action state freezes holdings; a missing close alone
+withholds NAV while preserving known positions for the next mark.
 
 ## Storage and recovery
 
@@ -129,3 +134,10 @@ commits only `reports/tournament/`. It does not deploy a site or place orders.
 Registration and statistical conventions are in [SCORING.md](./SCORING.md).
 Do not interpret fixture reports as a track record or promote raw model output
 to calibrated probability without the existing chronological validation gate.
+
+## Primary references checked
+
+- [TypeSafe API contract](https://docs.typesafe.ai/api) — event questions and response usage.
+- [Alpaca calendar](https://docs.alpaca.markets/reference/getcalendar-1) — exchange sessions.
+- [Alpaca market-data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq) — ordinary bar opens are not a substitute for an identified official opening trade.
+- [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing) and [OpenRouter model registry](https://openrouter.ai/api/v1/models) — admission-rate checks on 2026-09-28. Provider-dollar usage, reservation ceilings and usage-based estimates are distinct.

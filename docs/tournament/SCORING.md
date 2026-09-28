@@ -107,8 +107,12 @@ absolute traded notional on each buy/sell; unchanged holdings incur no cost.
 Solve investable capital after costs rather than borrow to pay costs. SPY buys
 once at inception and is held, with the same entry cost. Splits alter shares;
 cash distributions accrue without automatic reinvestment. Mark NAV at the close.
-Missing held prices or action coverage withholds NAV/trades. An unresolved book
-is frozen rather than silently skipping a split, delisting or dividend.
+Missing held prices or action coverage withholds NAV/trades. Unknown corporate-action state freezes the book. Known cash termination
+consideration (including a zero-value bankruptcy) removes the holding; known
+stock consideration converts it into successor shares without a fictitious sale.
+The source must explicitly distinguish before-open from after-open settlement.
+A missing close with known holdings withholds NAV but can recover on a later
+mark; missing action state cannot silently recover.
 
 ## Spend and operational assumptions
 

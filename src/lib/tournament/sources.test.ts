@@ -70,3 +70,12 @@ it("retains missing marks with explicit unknown action coverage", async () => {
     actionsComplete: false,
   });
 });
+
+it("withholds same-day date-only and timezone-less availability timestamps", () => {
+  const s = fixtureSnapshot();
+  s.names[0].inputs.price.asOf = s.asOf.slice(0, 10);
+  s.names[1].inputs.price.asOf = s.asOf.slice(0, -1);
+  const clean = parseSnapshot(s);
+  expect(clean.names[0].inputs.price.value).toBeNull();
+  expect(clean.names[1].inputs.price.value).toBeNull();
+});

@@ -146,6 +146,19 @@ export class DatedSources {
               splitFactor: z.number().positive().nullable(),
               cashPerPreviousShare: z.number().nonnegative().nullable(),
               actionsComplete: z.boolean(),
+              termination: z
+                .object({
+                  at: z.enum(["before_open", "after_open"]),
+                  cashPerPreviousShare: z.number().nonnegative().nullable(),
+                  successor: z
+                    .object({
+                      ticker: z.string().regex(/^[A-Z0-9.-]+$/),
+                      sharesPerPreviousShare: z.number().nonnegative(),
+                    })
+                    .nullable(),
+                })
+                .nullable()
+                .optional(),
               reason: z.string().nullable(),
             }),
           ),

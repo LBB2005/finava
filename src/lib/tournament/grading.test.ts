@@ -36,3 +36,80 @@ it("withholds HAC below the daily observation floor and never implies significan
   expect(report.leaderboard).toHaveLength(8);
   expect(report.leaderboard.every((r) => r.primaryMean === null)).toBe(true);
 });
+
+it("realizes known cash/zero proceeds and successor shares instead of freezing delisted holdings", async () => {
+  const { applyPortfolioActions } = await import("./portfolio");
+  const base = {
+    open: null,
+    close: null,
+    splitFactor: 1,
+    cashPerPreviousShare: 0,
+    actionsComplete: true,
+    reason: null,
+  };
+  const book = { cash: 10, positions: [{ ticker: "A", shares: 5 }] };
+  expect(
+    applyPortfolioActions(
+      book,
+      {
+        A: {
+          ...base,
+          termination: {
+            at: "before_open",
+            cashPerPreviousShare: 120,
+            successor: null,
+          },
+        },
+      },
+      "before_open",
+    ),
+  ).toEqual({ cash: 610, positions: [] });
+  expect(
+    applyPortfolioActions(
+      book,
+      {
+        A: {
+          ...base,
+          termination: {
+            at: "before_open",
+            cashPerPreviousShare: 0,
+            successor: null,
+          },
+        },
+      },
+      "before_open",
+    ),
+  ).toEqual({ cash: 10, positions: [] });
+  expect(
+    applyPortfolioActions(
+      book,
+      {
+        A: {
+          ...base,
+          termination: {
+            at: "before_open",
+            cashPerPreviousShare: 0,
+            successor: { ticker: "B", sharesPerPreviousShare: 2 },
+          },
+        },
+      },
+      "before_open",
+    ),
+  ).toEqual({ cash: 10, positions: [{ ticker: "B", shares: 10 }] });
+  expect(
+    applyPortfolioActions(
+      book,
+      {
+        A: {
+          ...base,
+          termination: {
+            at: "before_open",
+            cashPerPreviousShare: null,
+            successor: null,
+          },
+        },
+      },
+      "before_open",
+    ),
+  ).toBeNull();
+});

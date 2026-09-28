@@ -1,5 +1,6 @@
 // Strict tournament facts: unlike UI reads, undated inputs are withheld too.
 import { standingOf } from "../live/asOf";
+import { validDate } from "../marketCalendar";
 import { missing } from "./types";
 import type { ScoreInputs } from "../finavaScore";
 import type { InputFacts } from "../tournament/types";
@@ -51,7 +52,18 @@ export function cleanInputs(
   const clean = emptyInputs();
   for (const key of INPUT_KEYS) {
     const f = inputs[key];
-    const standing = standingOf(f?.asOf, asOf);
+    const dated = f?.asOf ?? "";
+    // A publication date without an intraday clock is only safe on an earlier
+    // day. A same-day 10-K might have been released after the scoring close.
+    const dayOnly = validDate(dated);
+    const timestamp =
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+        dated,
+      );
+    const standing =
+      (!dayOnly && !timestamp) || (dayOnly && dated === asOf.slice(0, 10))
+        ? "undated"
+        : standingOf(dated, asOf);
     if (
       !f ||
       f.value === null ||
@@ -94,9 +106,10 @@ export function filterCompanyFacts(raw: unknown, asOf: string): unknown {
         concept.units![unit] = rows.filter(
           (r) =>
             typeof r.filed === "string" &&
-            /^\d{4}-\d{2}-\d{2}$/.test(r.filed) &&
+            validDate(r.filed) &&
             r.filed < cutoff &&
             typeof r.end === "string" &&
+            validDate(r.end) &&
             r.end <= cutoff,
         );
       }

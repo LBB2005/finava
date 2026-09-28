@@ -185,7 +185,8 @@ async function main() {
       JSON.stringify(
         {
           ...data,
-          generatedAt: now.toISOString(),
+          generatedAt: new Date().toISOString(),
+          simulationAsOf: offline ? now.toISOString() : null,
           codeSha,
           registrationHash,
           offline,
