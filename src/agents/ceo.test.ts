@@ -1039,3 +1039,24 @@ describe("W4-1: Discover is honest about ETFs", () => {
     expect(runScoutAgent).not.toHaveBeenCalled();
   });
 });
+
+
+describe("frozen tournament evidence",()=>{
+  it("uses routed specialists without fresh facts, live handlers, memory or followups",async()=>{
+    extractTickersMock.mockReturnValue(["AAPL"]);
+    finalMessages.push(
+      {stop_reason:"tool_use",content:[toolUse("f1","run_risk_agent")],usage:{}},
+      {stop_reason:"end_turn",content:[text("Forecast from frozen inputs")],usage:{}},
+    );
+    const {runCeoAgent}=await import("./ceo");
+    const memory=await import("@/lib/agentMemory");
+    vi.mocked(memory.getTickerMemory).mockClear();vi.mocked(memory.saveTickerMemory).mockClear();
+    await runCeoAgent("Give a full investment analysis of AAPL","",()=>{},{frozenEvidence:'{"asOf":"2026-07-02","price":100}'});
+    expect(loadChatFactsMock).not.toHaveBeenCalled();expect(runRiskAgent).not.toHaveBeenCalled();
+    expect(memory.getTickerMemory).not.toHaveBeenCalled();expect(memory.saveTickerMemory).not.toHaveBeenCalled();
+    expect(generate.mock.calls.some(([o])=>o.agent==="risk")).toBe(true);
+    expect(generate.mock.calls.some(([o])=>o.agent==="chatFollowups")).toBe(false);
+    const request=streamSpy.mock.calls[0] as unknown as [{tools?:{name:string}[]}];
+    expect(request[0].tools?.some(t=>t.name==="scout_universe")).toBe(false);
+  });
+});

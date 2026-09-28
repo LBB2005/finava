@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { tournamentFetch } from "./tournament/modelTransport";
 import { observeAnthropic } from "@/lib/observability";
 
 export const MODEL = "claude-sonnet-4-6";
@@ -22,7 +23,7 @@ function getClient(): Anthropic {
     // Wrapped for tracing at construction so every call-site — the CEO loop, the
     // chat SSE stream, discovery — is observed without touching any of them.
     // The wrapper is a pass-through until Langfuse is configured AND registered.
-    g.__anthropicClient = observeAnthropic(new Anthropic({ apiKey }));
+    g.__anthropicClient = observeAnthropic(new Anthropic({ apiKey, fetch: tournamentFetch }));
   }
   return g.__anthropicClient;
 }
