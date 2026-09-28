@@ -333,6 +333,11 @@ export function resolvePrediction(
   // The action date wins only when it precedes the target date. An action after
   // the horizon closed is irrelevant to this forecast and must not shorten it.
   const action = data.corporateAction;
+  if (prediction.evaluationWindow && action &&
+      action.effectiveDate > prediction.asOf.slice(0,10) &&
+      action.effectiveDate < prediction.evaluationWindow.entryAt.slice(0,10)) {
+    return {status:"unresolved",reason:NON_RESOLUTION.missingStartPrice,detail:"The position terminated before the next-session entry date; no investable entry open exists"};
+  }
   const actionEndsEarly =
     action !== null && dayMs(action.effectiveDate) < targetMs && dayMs(action.effectiveDate) > dayMs(prediction.asOf.slice(0, 10));
   const effectiveEnd = actionEndsEarly && action ? action.effectiveDate : prediction.targetDate;
@@ -384,6 +389,8 @@ export function resolvePrediction(
       NON_RESOLUTION.benchmarkMissing,
       `no ${prediction.benchmark} series supplied; relative performance is unanswerable without one`
     );
+  } else if (data.benchmark.symbol.toUpperCase() !== prediction.benchmark) {
+    outperformBenchmark = unresolved(NON_RESOLUTION.benchmarkWindowMismatch, `Expected ${prediction.benchmark}; provider supplied ${data.benchmark.symbol}`);
   } else if (
     data.benchmark.windowStart !== data.subject.windowStart ||
     data.benchmark.windowEnd !== effectiveEnd

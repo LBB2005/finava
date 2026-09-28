@@ -219,6 +219,17 @@ export const PredictionRecordSchema = z
     message:
       "a thesis-invalidation probability with no named conditions can never be resolved against anything",
     path: ["invalidationConditions"],
+  })
+  .refine((r) => !r.evaluationWindow || (
+    r.horizonUnit === "trading_days" &&
+    Date.parse(r.evaluationWindow.entryAt) > Date.parse(r.asOf) &&
+    Date.parse(r.evaluationWindow.targetAt) > Date.parse(r.evaluationWindow.entryAt) &&
+    r.evaluationWindow.targetAt.slice(0,10) === r.targetDate &&
+    Date.parse(r.createdAt) >= Date.parse(r.asOf) &&
+    Date.parse(r.createdAt) < Date.parse(r.evaluationWindow.entryAt)
+  ), {
+    message: "Session evaluation windows require asOf <= creation < entry < target, and a matching target date",
+    path: ["evaluationWindow"],
   });
 export type PredictionRecord = z.infer<typeof PredictionRecordSchema>;
 
@@ -239,7 +250,6 @@ export function predictionDocId(parts: {
   ticker: string;
   targetDate: string;
   evaluationWindow?: PredictionRecord["evaluationWindow"];
-  targetDefinitionsVersion?: string;
   targetDefinitionsVersion?: string;
 }): string {
   return createHash("sha256")

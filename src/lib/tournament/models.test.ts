@@ -107,3 +107,25 @@ describe("tournament models", () => {
     expect(r.status).toBe("unavailable");
   });
 });
+
+it("does not label a swallowed transport failure as a free call", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockRejectedValue(new Error("connection reset")),
+  );
+  const store = new MemoryReservations();
+  const result = await withTournamentBudget(store, 8, async () => {
+    try {
+      await tournamentFetch("https://openrouter.ai/api/v1/chat/completions", {
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-lite",
+          max_tokens: 100,
+        }),
+      });
+    } catch {
+      return "unavailable";
+    }
+  });
+  expect(result.costUsd).toBeNull();
+  expect((await store.entries())[0].measuredUsd).toBeNull();
+});

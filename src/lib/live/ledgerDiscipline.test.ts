@@ -18,6 +18,7 @@ const SRC = join(process.cwd(), "src");
 const ALLOWED = new Set([
   join("src", "lib", "live", "ledger.ts"),
   join("src", "lib", "live", "ledgerRead.ts"),
+  join("src", "lib", "live", "ledgerTournament.ts"),
   join("src", "lib", "live", "ledger.test.ts"),
   join("src", "lib", "live", "ledgerRead.test.ts"),
   join("src", "lib", "live", "ledgerDiscipline.test.ts"),
@@ -45,13 +46,16 @@ describe("ledger discipline", () => {
       if (ALLOWED.has(rel)) continue;
       const source = readFileSync(file, "utf8");
 
-      for (const collection of LEDGER_COLLECTIONS) {
+      for (const collection of [...LEDGER_COLLECTIONS, "tournament", "tournament_dryrun"]) {
         // Matches collection("liveDecisions") / collection('liveDecisions'),
         // which is the only way to reach one of these from the Admin SDK.
         const pattern = new RegExp(`collection\\(\\s*["'\`]${collection}["'\`]`);
         if (pattern.test(source)) {
           offenders.push(`${rel.split(sep).join("/")} → ${collection}`);
         }
+      }
+      if (/collection\(\s*namespace\s*\)/.test(source)) {
+        offenders.push(`${rel.split(sep).join("/")} → dynamic tournament namespace`);
       }
     }
 

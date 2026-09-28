@@ -8,22 +8,10 @@
 // actually said it, because a default the user never chose must be visible and
 // changeable rather than presented as their intent.
 //
-// WHY CALENDAR MONTHS ARE THE SUPPORTED UNIT
-//
-// Resolving a *trading-day* horizon to an exact future session requires an
-// exchange calendar. Callers can now supply sessions from marketCalendar.ts. Both session helpers
-// say so explicitly: marketHours.ts ("does not account for exchange holidays")
-// and marketSession.ts ("exchange holidays ignored"). Counting forward 63
-// weekdays would land on Thanksgiving or Christmas and call it a session, which
-// is precision we have not earned — the kind of quiet fabrication that makes an
-// outcome unresolvable later, because the date the report promised was never a
-// trading day.
-//
-// Calendar months need no such table: add months, clip to month-end, done. That
-// covers the entire product spec (1–60 months; Short/Medium/Long = 3/12/36), so
-// the supported unit is the one we can compute honestly, and `trading_days`
-// returns `unsupported_calendar` until a calendar adapter exists. Finava Live's
-// 5/21/63/126-day horizons are why the unit is in the contract at all.
+// Calendar months resolve without external data. Trading-day horizons require
+// explicit exchange sessions from marketCalendar.ts; callers without a calendar
+// still receive unsupported_calendar. The weekday-only UI session helpers are
+// intentionally not used for prediction targets.
 
 import { sessionWindow, easternDate, type MarketSession } from "@/lib/marketCalendar";
 
