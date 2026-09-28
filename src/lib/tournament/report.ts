@@ -179,7 +179,7 @@ export function buildReport(
         : "Prospective observations; no automatic calibration promotion. Missingness is part of the result.",
     leaderboard,
     cohorts,
-    portfolios,
+    portfolios: portfolios.map(({date,arm,nav,costUsd,reasons})=>({date,arm,nav,costUsd,reasons})),
     nonResolution: grades
       .filter((g) => g.result.status === "unresolved")
       .map((g) => ({ predictionId: g.predictionId, result: g.result })),

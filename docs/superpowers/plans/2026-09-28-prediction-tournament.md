@@ -14,12 +14,12 @@
 - Dry run uses tournament_dryrun and at most two subjects per model arm. Fixtures are explicitly non-live and never calibrate.
 
 ## Tasks
-- [ ] Calendar and evaluation contracts: red tests for holiday/DST/early close and next-open maturation, then implement optional exchange-calendar resolution without changing calendar-month behavior.
-- [ ] Strict evidence and strategies: red tests for future/restated/undated inputs, null scores, ties, shortlists and withheld forecasts; reuse scoreFactors, facts and calibration promotion.
-- [ ] Ledger: red tests for mutation, delete/update, incomplete publication recovery, concurrent date ordering and verified reruns; reuse canonical hashes and create-only Firestore boundaries.
-- [ ] Model adapters: red tests for missing keys, Jev question/answer mapping and cap; use the existing Jev client and full crew with frozen evidence.
-- [ ] Grading and portfolios: red tests for entry opens, distributions, splits, delistings, missing prices, turnover costs and cash; reuse resolvePrediction and metrics.
-- [ ] CLI/report/workflow: test orchestration, idempotence and offline dry run; preflight live providers, write registration and setup guide; lint/typecheck/full suite/coverage.
+- [x] Calendar and evaluation contracts: red tests for holiday/DST/early close and next-open maturation, then implement optional exchange-calendar resolution without changing calendar-month behavior.
+- [x] Strict evidence and strategies: red tests for future/restated/undated inputs, null scores, ties, shortlists and withheld forecasts; reuse scoreFactors, facts and calibration promotion.
+- [x] Ledger: red tests for mutation, delete/update, incomplete publication recovery, concurrent date ordering and verified reruns; reuse canonical hashes and create-only Firestore boundaries.
+- [x] Model adapters: red tests for missing keys, Jev question/answer mapping and cap; use the existing Jev client and full crew with frozen evidence.
+- [x] Grading and portfolios: red tests for entry opens, distributions, splits, delistings, missing prices, turnover costs and cash; reuse resolvePrediction and metrics.
+- [x] CLI/report/workflow: test orchestration, idempotence and offline dry run; preflight live providers, write registration and setup guide; lint/typecheck/full suite/coverage.
 
 ## Review focus
 - Crash after a paid call must not cause unlimited repeat spend or rewrite forecasts.
@@ -27,3 +27,10 @@
 - A 1-day target ends at next session close, never that date's midnight.
 - An absent price/action feed must not create a cash loss, zero return or omitted issuer.
 - A dry-run report and fixtures must be visibly separated from prospective evidence.
+
+## Remaining live acceptance gates
+- [ ] Connect a verified dated membership/facts archive and complete official-open/corporate-action evidence. Current cached UI facts do not certify these properties; the strict archive ingestion contract is ready.
+- [ ] Add the user's direct Jev key and confirm its rate card, then run a prospective paid dry run. Offline integration cost is $0 with no paid models; this is not a measured live crew run.
+- [ ] Enable the scheduled workflow only after those gates pass. Dashboard remains a later task.
+
+These are explicit blocked live integrations, not completed deliverables. No fabricated fallback was substituted.
