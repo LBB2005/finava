@@ -25,7 +25,8 @@
 // one of these docs is serialised into the public GitHub log, and a Timestamp
 // would need converting at each boundary.
 
-import { createHash } from "node:crypto";
+import { hashEntry } from "./ledgerHash";
+export { canonicalJson, hashEntry } from "./ledgerHash";
 import { CHAIN_GENESIS, type LedgerCollection } from "./ledgerCollections";
 import { db } from "@/lib/firebase-admin";
 import type { DecisionRecord } from "@/lib/schemas/live/decision";
@@ -62,20 +63,6 @@ export class LedgerConflictError extends Error {
  * `undefined` is dropped (Firestore rejects it anyway); arrays keep their order,
  * which is meaningful for votes and conditions.
  */
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
-}
-
-/** The chain step. Exported so an external verifier can recompute it. */
-export function hashEntry(payload: unknown, prevHash: string): string {
-  return createHash("sha256").update(canonicalJson(payload)).update(prevHash).digest("hex");
-}
-
 export interface LedgerEntry<T> {
   collection: LedgerCollection;
   docId: string;

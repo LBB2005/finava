@@ -150,7 +150,7 @@ export type TargetOutcome<T> =
 export interface ResolvedPrediction {
   predictionId: string;
   ticker: string;
-  disposition: "selected" | "rejected";
+  disposition: "selected" | "rejected" | "neutral";
   asOf: string;
   targetDate: string;
   /** Where the subject window actually ended — the action date when one intervened. */
@@ -318,7 +318,10 @@ export function resolvePrediction(
     };
   }
 
-  const targetMs = dayMs(prediction.targetDate);
+  const targetMs = prediction.evaluationWindow ? Date.parse(prediction.evaluationWindow.targetAt) : dayMs(prediction.targetDate);
+  if (prediction.evaluationWindow && data.subject.windowStart !== prediction.evaluationWindow.entryAt.slice(0, 10)) {
+    return {status:"unresolved",reason:NON_RESOLUTION.windowMismatch,detail:"Subject must start at the recorded next-session open"};
+  }
   if (Number.isNaN(targetMs) || now.getTime() < targetMs) {
     return {
       status: "unresolved",

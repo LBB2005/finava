@@ -11,7 +11,7 @@
 // WHY CALENDAR MONTHS ARE THE SUPPORTED UNIT
 //
 // Resolving a *trading-day* horizon to an exact future session requires an
-// exchange calendar, and this repository does not have one. Both session helpers
+// exchange calendar. Callers can now supply sessions from marketCalendar.ts. Both session helpers
 // say so explicitly: marketHours.ts ("does not account for exchange holidays")
 // and marketSession.ts ("exchange holidays ignored"). Counting forward 63
 // weekdays would land on Thanksgiving or Christmas and call it a session, which
@@ -25,12 +25,14 @@
 // returns `unsupported_calendar` until a calendar adapter exists. Finava Live's
 // 5/21/63/126-day horizons are why the unit is in the contract at all.
 
+import { sessionWindow, easternDate, type MarketSession } from "@/lib/marketCalendar";
+
 /** The two units a horizon can be expressed in. */
 export type HorizonUnit = "calendar_months" | "trading_days";
 
 export const MIN_MONTHS = 1;
 export const MAX_MONTHS = 60;
-export const MIN_TRADING_DAYS = 5;
+export const MIN_TRADING_DAYS = 1;
 export const MAX_TRADING_DAYS = 1260;
 
 /** Preset labels. An explicit user duration always wins over a preset. */
@@ -129,7 +131,8 @@ function invalid(reason: string): HorizonResolution {
  */
 export function resolveHorizon(
   input: HorizonInput | null | undefined,
-  asOf: string
+  asOf: string,
+  sessions?: readonly MarketSession[]
 ): HorizonResolution {
   const at = new Date(asOf);
   if (Number.isNaN(at.getTime())) {
@@ -151,6 +154,14 @@ export function resolveHorizon(
       return invalid(
         `trading-day horizon must be ${MIN_TRADING_DAYS}–${MAX_TRADING_DAYS}, got ${count}`
       );
+    }
+    if (sessions) {
+      try {
+        const window = sessionWindow(sessions, easternDate(at), count);
+        return { status: "resolved", horizon: { count, unit, assumed, targetDate: window.targetDate, yearFraction: (Date.parse(window.targetAt) - at.getTime()) / MS_PER_DAY / DAYS_PER_YEAR, note: "Entry at next session official open; exit at horizon session close." } };
+      } catch (error) {
+        return { status: "unsupported_calendar", reason: error instanceof Error ? error.message : "Calendar unavailable" };
+      }
     }
     return {
       status: "unsupported_calendar",

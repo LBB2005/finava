@@ -160,7 +160,7 @@ export const PredictionRecordSchema = z
     ticker: z.string().min(1),
 
     /** Selected or rejected — a field, never a filter on what gets stored. */
-    disposition: z.enum(["selected", "rejected"]),
+    disposition: z.enum(["selected", "rejected", "neutral"]),
     rating: RatingSchema,
     /** Why it was rejected. Required when rejected, so the reject arm is analysable. */
     reasonCodes: z.array(z.string()),
@@ -169,6 +169,11 @@ export const PredictionRecordSchema = z
     asOf: z.string().min(1),
     /** The date the forecast is about. Must be strictly after asOf. */
     targetDate: IsoDate,
+    evaluationWindow: z.object({
+      entryAt: z.iso.datetime(), targetAt: z.iso.datetime(),
+      entryConvention: z.literal("next_session_official_open"),
+      targetDefinitions: z.object({positiveTotalReturn:z.string(),outperformBenchmark:z.string()}),
+    }).optional(),
     horizonCount: z.number().int().positive(),
     horizonUnit: HorizonUnitSchema,
     yearFraction: z.number().positive(),
@@ -233,6 +238,8 @@ export function predictionDocId(parts: {
   snapshotId: string;
   ticker: string;
   targetDate: string;
+  evaluationWindow?: PredictionRecord["evaluationWindow"];
+  targetDefinitionsVersion?: string;
   targetDefinitionsVersion?: string;
 }): string {
   return createHash("sha256")
@@ -283,11 +290,13 @@ export interface PredictionInput {
   reportId: string | null;
   snapshotId: string;
   ticker: string;
-  disposition: "selected" | "rejected";
+  disposition: "selected" | "rejected" | "neutral";
   rating: z.infer<typeof RatingSchema>;
   reasonCodes: readonly string[];
   asOf: string;
   targetDate: string;
+  evaluationWindow?: PredictionRecord["evaluationWindow"];
+  targetDefinitionsVersion?: string;
   horizonCount: number;
   horizonUnit: z.infer<typeof HorizonUnitSchema>;
   yearFraction: number;
@@ -328,6 +337,7 @@ export function buildPredictionRecord(input: PredictionInput): BuildResult {
     reasonCodes: [...input.reasonCodes],
     asOf: input.asOf,
     targetDate: input.targetDate,
+    ...(input.evaluationWindow ? {evaluationWindow: input.evaluationWindow} : {}),
     horizonCount: input.horizonCount,
     horizonUnit: input.horizonUnit,
     yearFraction: input.yearFraction,
@@ -339,7 +349,7 @@ export function buildPredictionRecord(input: PredictionInput): BuildResult {
     invalidationConditions: input.invalidationConditions.map((c) => ({ ...c })),
     provenance: input.provenance,
     versions: {
-      targetDefinitions: TARGET_DEFINITIONS_VERSION,
+      targetDefinitions: input.targetDefinitionsVersion ?? TARGET_DEFINITIONS_VERSION,
       bucketPolicy: BUCKET_POLICY_VERSION,
       policyVersion: input.policyVersion,
       valuationVersion: input.valuationVersion,
@@ -401,7 +411,11 @@ export async function savePredictions(
   const outcomes: SaveOutcome[] = [];
 
   for (const record of records) {
-    const target = dayStartMs(record.targetDate);
+    const target = record.evaluationWindow ? Date.parse(record.evaluationWindow.targetAt) : dayStartMs(record.targetDate);
+    if (record.evaluationWindow && nowMs >= Date.parse(record.evaluationWindow.entryAt)) {
+      outcomes.push({ticker:record.ticker,docId:null,status:"refused",reason:"Forecast must be stored before entry open"});
+      continue;
+    }
     const asOfMs = Date.parse(record.asOf);
 
     if (target === null || Number.isNaN(asOfMs)) {
@@ -461,7 +475,7 @@ export async function savePredictions(
  * direction: a name down 30% at month six of a twelve-month call is not a miss.
  */
 export function isMatured(record: PredictionRecord, now: Date): boolean {
-  const target = dayStartMs(record.targetDate);
+  const target = record.evaluationWindow ? Date.parse(record.evaluationWindow.targetAt) : dayStartMs(record.targetDate);
   if (target === null) return false;
   return now.getTime() >= target;
 }
