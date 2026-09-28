@@ -12,4 +12,3 @@ export function canonicalJson(value: unknown): string {
 export function hashEntry(payload: unknown, prevHash: string): string {
   return createHash("sha256").update(canonicalJson(payload)).update(prevHash).digest("hex");
 }
-
