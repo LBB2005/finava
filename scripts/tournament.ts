@@ -36,7 +36,8 @@ import {
   markPortfolios,
   type MarkProvider,
 } from "../src/lib/tournament/portfolio";
-import { buildReport, reportMarkdown } from "../src/lib/tournament/report";
+import { buildReport, reportMarkdown, leaderboardMarkdown } from "../src/lib/tournament/report";
+import { auditTournament, operatorAuditMarkdown, selectRunDate } from "../src/lib/tournament/operator";
 import type { TournamentLedger, Namespace } from "../src/lib/tournament/types";
 
 async function main() {
@@ -73,13 +74,16 @@ async function main() {
     : await firestoreCalendar();
   const supplied = value("--date");
   if (supplied && !validDate(supplied)) throw new Error("Invalid date");
-  const date =
+  const selectedDate =
     supplied ??
     (offline
       ? fixtureSessions()[0].date
-      : command === "daily"
-        ? (await calendar!.mostRecentCompleted(now)).date
-        : easternDate(now));
+      : await selectRunDate(calendar!, now));
+  if (selectedDate === null) {
+    console.log("market closed");
+    return;
+  }
+  const date = selectedDate;
   if (command === "daily") {
     sessions = offline
       ? fixtureSessions()
@@ -161,7 +165,7 @@ async function main() {
         : (ticker, session) => source.mark(ticker, session.date),
       gradeNow,
     );
-    return { ...grades, portfolios };
+    return { date, ...grades, portfolios, hashChainVerified: true };
   }
   async function report() {
     const rows = await allRows(state.ledger),
@@ -169,12 +173,17 @@ async function main() {
       portfolios = await state.ledger.portfolios();
     const data = buildReport(rows, grades, portfolios, namespace),
       entries = await reservations.entries();
+    const pastSessions = offline ? fixtureSessions() : await calendar!.range(shiftDate(date, -14), date);
+    const previousSessionDate = pastSessions.filter(s => s.date < date).at(-1)?.date ?? null;
+    const operatorVerification = await auditTournament({
+      ledger: state.ledger, date, previousSessionDate, reservations, cap: tournamentCap(),
+    });
     const cost = {
       httpAttempts: entries.length,
       measuredUsd: entries.every((e) => e.measuredUsd !== null)
         ? entries.reduce((n, e) => n + e.measuredUsd!, 0)
         : null,
-      reservedUpperUsd: entries.reduce((n, e) => n + e.upperUsd, 0),
+      reservedUpperUsd: operatorVerification.spend.upperUsd,
       capUsd: tournamentCap(),
       modelsExecuted: entries.length > 0,
     };
@@ -191,6 +200,7 @@ async function main() {
           registrationHash,
           offline,
           cost,
+          operatorVerification,
         },
         null,
         2,
@@ -198,17 +208,22 @@ async function main() {
     );
     await writeFile(
       `${directory}/${date}.md`,
-      reportMarkdown(data) +
+      reportMarkdown(data) + "\n\n" + operatorAuditMarkdown(operatorVerification) + "\n" +
         `\nMode: ${offline ? "offline synthetic fixture; no paid models" : "prospective data"}. HTTP model attempts: ${cost.httpAttempts}. Measured USD: ${cost.measuredUsd ?? "unknown"}. Reserved upper USD: ${cost.reservedUpperUsd.toFixed(6)}.\n`,
     );
-    return { report: `${directory}/${date}.md`, cost };
+    console.log(operatorAuditMarkdown(operatorVerification));
+    console.log(leaderboardMarkdown(data));
+    if (operatorVerification.status === "FAILED" && !dry) {
+      throw new Error(`FAILED: ${operatorVerification.errors.join(", ")}`);
+    }
+    return { report: `${directory}/${date}.md`, cost, operatorVerification };
   }
   async function work() {
     if (command === "daily") {
       // A repeat only verifies the chain; it does not require fresh upstream inputs.
       if ((await verifyLedger(state.ledger)).some((b) => b.date === date)) {
         console.log(
-          JSON.stringify({ status: "duplicate", date, verified: true }),
+          JSON.stringify({ status: "duplicate", date, rowsWritten: 0, verified: true, hashChainVerified: true }),
         );
         return;
       }
@@ -236,9 +251,7 @@ async function main() {
       >(`${date}_snapshot`);
       const snapshot =
         archived ?? (offline ? fixtureSnapshot() : await source.snapshot(date));
-      console.log(
-        JSON.stringify(
-          await runDaily({
+      const result = await runDaily({
             ...state,
             reservations,
             cap: tournamentCap(),
@@ -249,9 +262,9 @@ async function main() {
             namespace,
             now: () => (offline ? now : new Date()),
             modelsDisabled: offline,
-          }),
-        ),
-      );
+          });
+      await verifyLedger(state.ledger);
+      console.log(JSON.stringify({ ...result, hashChainVerified: true, rowsWritten: result.status === "created" ? result.rows : 0 }));
       if (dry) {
         console.log(JSON.stringify(await grade()));
         console.log(JSON.stringify(await report()));

@@ -199,7 +199,7 @@ export function buildReport(
       .map((g) => ({ predictionId: g.predictionId, result: g.result })),
   };
 }
-export function reportMarkdown(report: ReturnType<typeof buildReport>) {
+export function leaderboardMarkdown(report: ReturnType<typeof buildReport>): string {
   const fmt = (x: number | null, percent = false) =>
     x === null
       ? "insufficient data"
@@ -207,18 +207,23 @@ export function reportMarkdown(report: ReturnType<typeof buildReport>) {
         ? `${(100 * x).toFixed(2)}%`
         : x.toFixed(4);
   return [
-    `# Finava prediction tournament`,
-    "",
-    report.warning,
-    "",
-    "Calibration is shown beside the pre-registered 20-session return ordering. A low sample count does not constitute a track record.",
-    "",
     "| Arm | 20-session mean excess | HAC t | Daily cohorts | Beat-SPY Brier |",
     "| --- | ---: | ---: | ---: | ---: |",
     ...report.leaderboard.map(
       (r) =>
         `| ${r.arm} | ${fmt(r.primaryMean, true)} | ${fmt(r.tStatistic)} | ${r.dailyObservations} | ${fmt(r.brier)} |`,
     ),
+  ].join("\n");
+}
+export function reportMarkdown(report: ReturnType<typeof buildReport>) {
+  return [
+    `# Finava prediction tournament`,
+    "",
+    report.warning,
+    "",
+    "Calibration is shown beside the pre-registered 20-session return ordering. A low sample count does not constitute a track record.",
+    "",
+    leaderboardMarkdown(report),
     "",
     `Predictions: ${report.cohorts.reduce((n, c) => n + c.count, 0)}. Grades: ${report.cohorts.reduce((n, c) => n + c.graded, 0)}. Top-level unresolved: ${report.nonResolution.length}.`,
     "",
