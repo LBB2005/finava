@@ -26,7 +26,7 @@ With credentials and verified dated evidence configured:
 
 ```sh
 npm run tournament:daily -- --dry-run
-npm run tournament:daily -- --date=2026-09-28
+npm run tournament:daily
 npm run tournament:grade
 npm run tournament:report
 ```
@@ -36,13 +36,15 @@ model arm, and also invokes grading and reporting. Genuine forecasts do not
 magically mature in a dry run: future horizons remain ungraded. Live production
 uses `tournament`; code must be committed. Default daily date is the most recent
 completed Alpaca session. It refuses a new prediction after the next entry open.
-Explicit holidays exit successfully with `market closed`.
+On a current exchange holiday, the default commands exit successfully with
+`market closed`; they do not silently fall back to a previous trading day.
 
 ## Configuration and remaining activation gates
 
 Put secrets in ignored `.env.local` or GitHub Actions secrets; never in reports.
 The script loads `.env.local` then `.env`, preserving values already in the
-environment. The worktree deliberately contains no copied keys.
+environment. The local rehearsal reuses the existing project credentials; credentials are
+not committed or copied into reports.
 
 - `TYPESAFE_API_KEY`: your new Jev direct key. The tournament intentionally does
   not fall back to a different billed gateway account.
@@ -62,13 +64,13 @@ environment. The worktree deliberately contains no copied keys.
 verified daily index-membership archive or a provider asserting complete
 delisting/spin-off/distribution coverage and official entry opens. The existing
 cached UI facts and ordinary daily-bar opens cannot establish these guarantees.
-The ingestion contracts are implemented; a certified upstream archive producer
+The ingestion contracts are implemented; a verified upstream archive producer
 still needs to be connected. Supplying Jev's key alone does not resolve this.
 Do not set `verified`/`coverageConfirmed` merely to bypass the gate.
 
 This intentionally leaves live trading-performance validation blocked instead
 of substituting stale constituents, fabricated dividends or ordinary bar opens.
-Data collection from a certified provider is a remaining integration task, not
+Production collection of verified provider evidence is a remaining integration task, not
 an already completed feature of this branch.
 
 ## Evidence archive contract
@@ -125,11 +127,14 @@ Check current rate cards before changing model routes.
 
 ## Automation
 
-`.github/workflows/tournament.yml` is scheduled for weekdays at 21:30 UTC.
-Set repository variable `TOURNAMENT_ENABLED=true` only after the live source
-gate, Jev rate and credential checks pass. Configure `TOURNAMENT_DATA_URL` and
-the above secrets/variables. The job serializes daily → grade → report and
-commits only `reports/tournament/`. It does not deploy a site or place orders.
+`.github/workflows/tournament.yml` is a manual fallback gated by the repository
+variable `TOURNAMENT_ENABLED=true`; its cron was removed to avoid a competing
+scheduler. The user-selected [Codex operator](./OPERATOR.md) is saved for weekdays
+at 14:30 Pacific and remains **paused** until its activation gates are met. Its
+exact run-only prompt, bootstrap behavior and checkout setup are recorded there.
+The manual GitHub fallback needs `TOURNAMENT_DATA_URL` and the above secrets;
+it serializes daily → grade → report and commits only `reports/tournament/`.
+Neither path deploys a site or places orders.
 
 Registration and statistical conventions are in [SCORING.md](./SCORING.md).
 Do not interpret fixture reports as a track record or promote raw model output
@@ -141,3 +146,7 @@ to calibrated probability without the existing chronological validation gate.
 - [Alpaca calendar](https://docs.alpaca.markets/reference/getcalendar-1) — exchange sessions.
 - [Alpaca market-data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq) — ordinary bar opens are not a substitute for an identified official opening trade.
 - [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing) and [OpenRouter model registry](https://openrouter.ai/api/v1/models) — admission-rate checks on 2026-09-28. Provider-dollar usage, reservation ceilings and usage-based estimates are distinct.
+
+Read-only provider probes and the precise remaining collector work are documented
+in [SOURCE-READINESS.md](./SOURCE-READINESS.md). Existing credentials suffice for
+those probes; the blocker is verified ingestion, not another Jev key.

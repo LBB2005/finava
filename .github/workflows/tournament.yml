@@ -1,7 +1,7 @@
 name: Daily prediction tournament
 on:
-  schedule:
-    - cron: '30 21 * * 1-5'
+  # Recurrence belongs to the user's Codex daily operator. Keep this as an
+  # explicitly gated manual fallback so two schedulers never compete.
   workflow_dispatch:
 permissions:
   contents: write
