@@ -17706,9 +17706,9 @@
     }
   ],
   "nonResolution": [],
-  "generatedAt": "2026-09-28T19:01:14.004Z",
+  "generatedAt": "2026-09-29T19:09:42.977Z",
   "simulationAsOf": "2026-07-02T21:00:00.000Z",
-  "codeSha": "8aea16f58ca6c1b937faeadf15ddf61aeeed25bb",
+  "codeSha": "df1090a593e9626d8422aaf42762dca8ef7fd006",
   "registrationHash": "0462e0c8c1bfd4d1d2a64c4036b4d3dec1d6bf6888d1040ac37c8a545607865e",
   "offline": true,
   "cost": {
@@ -17717,5 +17717,25 @@
     "reservedUpperUsd": 0,
     "capUsd": 8,
     "modelsExecuted": false
+  },
+  "operatorVerification": {
+    "status": "FAILED",
+    "date": "2026-07-02",
+    "hashChainVerified": true,
+    "rows": 1200,
+    "previousDate": null,
+    "previousRows": null,
+    "universe": 30,
+    "unscoredNames": [],
+    "spend": {
+      "measuredUsd": 0,
+      "upperUsd": 0,
+      "capUsd": 8,
+      "httpAttempts": 0
+    },
+    "predictionsGradedToday": 0,
+    "errors": [
+      "previous_session_batch_missing"
+    ]
   }
 }

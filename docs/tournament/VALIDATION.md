@@ -77,3 +77,56 @@ crew/tournament pipeline.
 The backend and offline checks are ready for review. Live readiness and all
 requirements of the original request are **not yet complete**; adding the Jev
 key alone will not satisfy the data-source gate.
+
+## Operator follow-up — 2026-09-29
+
+Operator implementation commits: `5d5fb89` (audits), `438e9e4` (preparatory
+source helpers), `df1090a` (run-only scheduling and documentation).
+
+- Lint passed with zero errors and the same 22 existing warnings; TypeScript passed.
+- Final full coverage run: **292 files / 3,756 tests passed** with one worker.
+  Statements 93.02%, branches 84.16%, functions 93.12%, lines 94.36%; ratchet unchanged.
+- Evaluation smoke: **7 files / 130 tests passed**.
+- New coverage checks exercise 10% row-count boundary, strict 5% missingness,
+  missing baseline/current batch, tampered chain, unknown invoice cost, strict
+  dollar cap, holiday date selection, exact shared leaderboard formatting,
+  failed saved artifacts and dated-source derivation.
+- Independent final review found no critical issues. Its saved-Markdown audit
+  omission was treated as important because the artifact could hide a failed
+  check. The regression failed before the shared summary was implemented;
+  all 17 focused tests and the final full suite then passed.
+- An earlier two-worker suite suffered test/worker timeouts while other local
+  work was running. The final one-worker run passed without raised timeouts.
+
+The saved Codex operator is **PAUSED**, weekdays at 14:30 Pacific. Its main
+checkout is clean and holds ignored mode-0600 local credentials; generated
+production reports are locally excluded from git. Dependencies must be installed
+from the final merged main commit before activation. The old GitHub cron was
+removed; its workflow remains a disabled-by-default manual fallback.
+
+[Source-readiness probes](./SOURCE-READINESS.md) found usable dated SEC and
+public membership evidence and clarified Alpaca's process-date filtering. These
+are not an integrated live archive. No prospective full paid rehearsal,
+production batch, fabricated prior-day baseline or schedule activation occurred.
+The actual recorded Jev connection cost remains the small, separate check above.
+
+The production build also passed for the operator follow-up, using the existing
+ignored local project configuration. This verifies compilation/prerendering;
+it does not establish a completed live tournament or deploy anything.
+
+The operator offline sequence was rerun from isolated state
+`.tournament/operator-df1090a` against committed code. It created 1,200 synthetic
+predictions, 1,200 matured grades and 1,080 marks with zero HTTP model attempts.
+A repeated daily wrote zero rows; repeated grading wrote zero records; the holiday
+printed `market closed`. Chain hash:
+`a5c3ce09e26ca916d3f6a9ba71cd7503a9f15c4126a8a142f868eede3561a723`.
+The regenerated sample report deliberately shows
+`FAILED (previous_session_batch_missing)` for this single-batch fixture; that is
+expected audit behavior, not a passing live operator verification.
+
+The live readiness command `npm run tournament:daily -- --dry-run` exited 1
+before model execution with the following captured error (no retry):
+
+```text
+Verified dated data source is not configured. Set TOURNAMENT_DATA_DIR or TOURNAMENT_DATA_URL; current UI facts are not a point-in-time archive.
+```
