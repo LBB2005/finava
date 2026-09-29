@@ -135,7 +135,7 @@ Check current rate cards before changing model routes.
 `.github/workflows/tournament.yml` is a manual fallback gated by the repository
 variable `TOURNAMENT_ENABLED=true`; its cron was removed to avoid a competing
 scheduler. The user-selected [Codex operator](./OPERATOR.md) is saved for weekdays
-at 14:30 Pacific and remains **paused** until its activation gates are met. Its
+at 14:30 Pacific; its live activation status is controlled in Codex. Its
 exact run-only prompt, bootstrap behavior and checkout setup are recorded there.
 The manual GitHub fallback needs the above secrets (including `POLYGON_API_KEY`),
 or an explicitly configured evidence archive;

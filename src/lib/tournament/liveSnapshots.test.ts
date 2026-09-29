@@ -48,3 +48,10 @@ it('withholds SEC cover-page valuation if dated issuer reference fails',async()=
  expect(s.names[0].inputs.psTTM.value).toBeNull();
  expect(s.names[0].reasons.join(' ')).toContain('Reference unavailable');
 });
+
+it('requests prior-calendar-date issuer references for the scoring-session cutoff',async()=>{
+ const c=config(),get=c.get;const urls:string[]=[];
+ c.get=async url=>{if(url.includes('massive.com'))urls.push(url);return get(url);};
+ await new LiveSnapshots(c).collect('2026-02-02');
+ expect(urls).toHaveLength(500);expect(urls.every(url=>url.endsWith('date=2026-02-01'))).toBe(true);
+});

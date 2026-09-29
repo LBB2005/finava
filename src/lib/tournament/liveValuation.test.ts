@@ -9,7 +9,7 @@ it('values the issuer using dated class-equivalent shares, never class-only SEC 
  const inputs=emptyInputs();inputs.price={value:20,asOf,source:'SIP'};
  const result=attachReferenceValuation(inputs,fundamentals,raw,member,asOf);
  expect(result.peTTM.value).toBe(30);expect(result.psTTM.value).toBe(3);
- expect(result.peTTM.url).toContain('date=2026-09-28');
+ expect(result.peTTM.url).toContain('date=2026-09-27');
  expect(result.peTTM.note).toContain('class-equivalent');
  expect(result.peTTM.period).toBe('2025-07-01/2026-06-30');
  expect(result.peTTM.note).toContain('90 days');
@@ -26,4 +26,18 @@ it('requires a matching dated SIP close and positive matched denominators',()=>{
  inputs.price.asOf=asOf;
  const result=attachReferenceValuation(inputs,{...fundamentals,netIncome:-1,revenue:null},raw,member,asOf);
  expect(result.peTTM.value).toBeNull();expect(result.psTTM.value).toBeNull();
+});
+
+it.each([2,0.1,1.05])('converts prior-date reference shares by only the scoring-day factor %s',factor=>{
+ const inputs=emptyInputs();inputs.price={value:20,asOf,source:'SIP'};
+ const splits=[{date:'2026-09-27',factor:10},{date:'2026-09-28',factor},{date:'2026-09-29',factor:99}];
+ const result=attachReferenceValuation(inputs,fundamentals,raw,member,asOf,splits);
+ expect(result.peTTM.value).toBeCloseTo(30*factor);
+ expect(result.peTTM.note).toContain('reference date 2026-09-27');
+ expect(result.peTTM.note).toContain('share-basis factor '+factor);
+});
+it('withholds valuation when current-day share-basis continuity is unknown or invalid',()=>{
+ const inputs=emptyInputs();inputs.price={value:20,asOf,source:'SIP'};
+ expect(attachReferenceValuation(inputs,fundamentals,raw,member,asOf,null).peTTM.value).toBeNull();
+ expect(attachReferenceValuation(inputs,fundamentals,raw,member,asOf,[{date:'2026-09-28',factor:0}]).peTTM.value).toBeNull();
 });

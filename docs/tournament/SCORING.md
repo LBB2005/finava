@@ -45,10 +45,15 @@ may use directly reported comparative quarters from the same accession/filing,
 and a positive prior denominator. This quarterly basis is explicitly labelled;
 no quarter EPS is inferred by subtracting cumulative EPS.
 
-Valuation uses dated Massive weighted shares (the issuer expressed in the
-requested share class's units) times the session's Alpaca SIP close, divided by
+Valuation uses Massive weighted shares dated the previous calendar day (the
+issuer expressed in the requested share class's units), adjusted only for validated
+splits/stock dividends effective on the scoring date, times the session's Alpaca
+SIP close, divided by
 filed trailing income/revenue. This is the provider's class-equivalent valuation,
-not an exact sum of prices across every class. Different listed classes remain
+not an exact sum of prices across every class. The one-day reference lag avoids
+using same-day updates with unknown intraday availability; same-day issuance or
+repurchases can therefore leave the deliberately older share count stale. This
+does not eliminate later vendor revisions. Different listed classes remain
 separate index members; market caps are never summed. Missing or mismatched
 issuer identifiers/currency/reference evidence withholds valuation. Ordinary
 SEC cover-page shares are not a substitute for class-equivalent shares.

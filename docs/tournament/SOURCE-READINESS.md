@@ -9,7 +9,7 @@ The frozen source snapshot is also journaled in Firestore before model calls.
 | --- | --- | --- |
 | Dated constituents | Latest Wikipedia revision at/before official close; revision 1376729338 initially matched all 503 dated SPY equity holdings | Public membership proxy, not an official S&P constituent license |
 | Financial inputs | SEC company-facts, filing-date cutoff, explicit TTM periods/age and matching balance periods | Same-day date-only filings withheld; TTM ends at most 365 days earlier; incomplete debt remains unknown |
-| Valuation | Massive date-qualified ticker reference, validated ticker/CIK/USD, issuer shares expressed in the requested class's units | Provider class-equivalent valuation; different classes never summed; missing reference means null |
+| Valuation | Massive prior-calendar-date ticker reference plus verified scoring-day share adjustments, validated ticker/CIK/USD, issuer shares expressed in the requested class's units | Provider class-equivalent valuation; different classes never summed; missing reference means null |
 | Calendar | Alpaca exchange sessions | Completed close and next-entry deadline enforced |
 | Official entry open | Listing-exchange condition-Q SIP trade in first minute, paginated and ambiguity checked | Missing/ambiguous auctions stay unresolved, never replaced by bar opens |
 | Corporate actions | All types/qualities, complete bounded paging, 366-day process-date padding, actual ex/effective-date filtering | Provider publication delays and unsupported events remain explicit; no guarantee of exhaustive instantaneous coverage |

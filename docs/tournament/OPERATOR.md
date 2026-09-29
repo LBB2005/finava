@@ -4,11 +4,13 @@ The saved Codex heartbeat is `finava-daily-tournament-operator`, weekdays at
 14:30 America/Los_Angeles, in a dedicated clean `main` checkout:
 `/Users/liamblackshaw-brown/code/finava-tournament-operator`.
 
-**Status: PAUSED.** Activation requires code on main, an integrated verified
-live evidence producer, a successful prospective two-name paid rehearsal, and
-an actual preceding-session batch. No historical prediction backfill is allowed.
-The first genuine session is a bootstrap batch: its report must fail the missing
-baseline check; that failure cannot be waived or replaced with a fabricated row.
+The live activation status is controlled by the saved Codex automation. Setup
+requires code on main, verified live evidence, a successful prospective two-name
+paid rehearsal, and a genuine first production batch. No historical prediction
+backfill is allowed. The first session is a bootstrap batch: its report must fail
+the missing baseline check. That failure cannot be waived or replaced with a
+fabricated row. The next exchange session can compare against this real baseline;
+activation does not certify that the bootstrap report passed every check.
 
 The GitHub workflow is a disabled-by-default manual fallback, without a second
 cron trigger. Do not enable two schedulers. The operator never installs or repairs

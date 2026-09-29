@@ -195,3 +195,17 @@ branches 84.59%, functions 93.69%, lines 94.78%. Lint: zero errors, 22 existing
 warnings. TypeScript and all 130 smoke tests passed. Independent review found no
 important remaining budget issues. No paid tournament run had started at this
 point, so no published cohort or reservation was rewritten.
+
+Before the first paid run, the dated Massive reference policy was tightened to
+the previous calendar date, with only validated scoring-day splits and stock
+dividends applied to the share basis. This prevents same-day references with
+unknown intraday availability from entering the close snapshot. Same-day issuance
+and repurchases remain deliberately lagged; vendor retrospective revisions are
+not eliminated by this policy. Tests cover forward/reverse splits, stock
+dividends, exclusion of prior/future events, unknown/invalid adjustments and
+Sunday reference dates for Monday cutoffs. Six regressions failed before the fix.
+
+Final local checks: **299 files / 3,842 tests passed**; coverage 93.35% statements,
+84.61% branches, 93.70% functions, 94.78% lines. Lint passed (zero errors and 22
+existing warnings), TypeScript passed, all 130 smoke tests passed, and the
+production build passed. No paid run or published cohort had started.

@@ -47,7 +47,8 @@ export class LiveSnapshots {
         else if(market.value.reasons.length)reasons.push(...market.value.reasons);
         else inputs=attachMarketInputs(fundamentals,market.value.bars,market.value.splits,session.close);
         if(reference.status==="rejected")reasons.push(`Valuation reference unavailable: ${errorText(reference.reason)}`);
-        inputs=attachReferenceValuation(inputs,fundamentals,reference.status==="fulfilled"?reference.value:null,member,session.close);
+        inputs=attachReferenceValuation(inputs,fundamentals,reference.status==="fulfilled"?reference.value:null,member,session.close,
+          market.status==="fulfilled" && !market.value.reasons.length ? market.value.splits : null);
         names[index]={ticker:member.ticker,sector:member.sector,inputs,reasons};
         done++;
         if(done%25===0 || done===revision.members.length)this.config.onProgress?.(done,revision.members.length);
