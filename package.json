@@ -15,7 +15,10 @@
     "eval:smoke": "vitest run --config evals/vitest.config.ts",
     "eval:live": "env -u ANTHROPIC_API_KEY npx tsx --env-file=.env --env-file=.env.local evals/live/run.ts",
     "bench:replay": "npx tsx evals/bench/run.ts",
-    "eval:panel": "env -u ANTHROPIC_API_KEY npx tsx --env-file=.env --env-file=.env.local evals/panel/run.ts"
+    "eval:panel": "env -u ANTHROPIC_API_KEY npx tsx --env-file=.env --env-file=.env.local evals/panel/run.ts",
+    "tournament:daily": "tsx scripts/tournament.ts daily",
+    "tournament:grade": "tsx scripts/tournament.ts grade",
+    "tournament:report": "tsx scripts/tournament.ts report"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
@@ -60,6 +63,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.8"
   }

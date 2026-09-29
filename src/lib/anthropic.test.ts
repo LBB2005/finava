@@ -55,7 +55,7 @@ describe("the lazy client proxy", () => {
   it("constructs with the env key on first property access", async () => {
     const { anthropic } = await loadAnthropic();
     void anthropic.messages;
-    expect(deps.ctor).toHaveBeenCalledWith({ apiKey: "sk-ant-test" });
+    expect(deps.ctor).toHaveBeenCalledWith({ apiKey: "sk-ant-test", fetch: expect.any(Function) });
   });
 
   it("wraps the client for tracing at construction", async () => {

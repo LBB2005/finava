@@ -15,6 +15,71 @@
 
 import { db } from "@/lib/firebase-admin";
 import { currentRunCredits } from "@/lib/runContext";
+import {
+  validateReservation,
+  validateMeasurement,
+  type ReservationStore,
+  type SpendReservation,
+} from "./budgetReservation";
+
+/** Shared, persisted, pre-request reservations. No admin exemption. Keeping the
+ * full upper bound after settlement makes failures and retries conservative. */
+export function tournamentReservations(
+  day: string,
+  namespace: "tournament" | "tournament_dryrun",
+): ReservationStore {
+  const namespaces = ["tournament", "tournament_dryrun"] as const;
+  const refs = namespaces.map(name => db.collection("tournamentBudget").doc(`${name}_${day}`));
+  const ownIndex = namespaces.indexOf(namespace);
+  const ref = refs[ownIndex];
+  return {
+    async reserve(id, upperUsd, cap) {
+      validateReservation(upperUsd, cap);
+      return db.runTransaction(async (tx) => {
+        // Both namespaces participate in one admission transaction: a paid
+        // rehearsal must not create a second daily allowance. Keep attribution
+        // and settlement in the originating namespace's existing document.
+        const snapshots = await Promise.all(refs.map(item => tx.get(item)));
+        const records = snapshots.map(s => s.data() ?? { reservedUsd: 0, entries: {} });
+        for (const record of records) {
+          if (typeof record.reservedUsd !== "number" || !Number.isFinite(record.reservedUsd) || record.reservedUsd < 0)
+            throw new Error("Invalid persisted tournament reservation total");
+        }
+        const data = records[ownIndex], entries = data.entries ?? {};
+        const combined = records.reduce((sum, item) => sum + item.reservedUsd, 0);
+        if (records.some(item => item.blocked || item.entries?.[id]) || combined + upperUsd > cap)
+          return false;
+        tx.set(ref, {
+          reservedUsd: data.reservedUsd + upperUsd,
+          entries: { ...entries, [id]: { id, upperUsd, measuredUsd: null } },
+        });
+        return true;
+      });
+    },
+    async measure(id, usd) {
+      validateMeasurement(usd);
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref),
+          data = snap.data();
+        const item = data?.entries?.[id];
+        if (!item) throw new Error("Unknown reservation");
+        tx.update(ref, {
+          [`entries.${id}.measuredUsd`]: usd,
+          blocked:
+            Boolean(data?.blocked) || (usd !== null && usd > item.upperUsd),
+        });
+      });
+    },
+    async dailyEntries() {
+      const snapshots = await Promise.all(refs.map(item => item.get()));
+      return snapshots.flatMap(s => Object.values(s.data()?.entries ?? {})) as SpendReservation[];
+    },
+    async entries() {
+      const s = await ref.get();
+      return Object.values(s.data()?.entries ?? {}) as SpendReservation[];
+    },
+  };
+}
 
 /** Fallback when LIVE_DAILY_CREDIT_CAP is unset. 3000 credits ≈ $3.00/day. */
 export const DEFAULT_DAILY_CREDIT_CAP = 3000;
@@ -24,17 +89,19 @@ export class BudgetExceededError extends Error {
     readonly runId: string,
     readonly step: string,
     readonly spent: number,
-    readonly cap: number
+    readonly cap: number,
   ) {
     super(
-      `Finava Live daily budget exceeded at step "${step}": ${spent.toFixed(1)} of ${cap} credits`
+      `Finava Live daily budget exceeded at step "${step}": ${spent.toFixed(1)} of ${cap} credits`,
     );
     this.name = "BudgetExceededError";
   }
 }
 
 /** Parse the configured cap. An unparseable or non-positive value falls back. */
-export function resolveDailyCap(raw: string | undefined = process.env.LIVE_DAILY_CREDIT_CAP): number {
+export function resolveDailyCap(
+  raw: string | undefined = process.env.LIVE_DAILY_CREDIT_CAP,
+): number {
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_DAILY_CREDIT_CAP;
 }
@@ -81,7 +148,7 @@ export async function chargeStep(
   runId: string,
   step: string,
   credits: number = currentRunCredits(),
-  cap: number = resolveDailyCap()
+  cap: number = resolveDailyCap(),
 ): Promise<BudgetStatus> {
   const status = await db.runTransaction(async (tx) => {
     const snap = await tx.get(runRef(runId));
@@ -98,19 +165,20 @@ export async function chargeStep(
         creditsSpent: spent,
         stepCredits: { [step]: { credits, at: new Date().toISOString() } },
       },
-      { merge: true }
+      { merge: true },
     );
     return budgetStatus(cap, spent);
   });
 
-  if (status.exhausted) throw new BudgetExceededError(runId, step, status.spent, status.cap);
+  if (status.exhausted)
+    throw new BudgetExceededError(runId, step, status.spent, status.cap);
   return status;
 }
 
 /** Read the day's spend without charging — used by /session/open to fail fast. */
 export async function readBudget(
   runId: string,
-  cap: number = resolveDailyCap()
+  cap: number = resolveDailyCap(),
 ): Promise<BudgetStatus> {
   const snap = await runRef(runId).get();
   return budgetStatus(cap, Number(snap.data()?.creditsSpent ?? 0));

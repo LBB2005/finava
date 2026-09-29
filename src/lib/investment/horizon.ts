@@ -8,29 +8,19 @@
 // actually said it, because a default the user never chose must be visible and
 // changeable rather than presented as their intent.
 //
-// WHY CALENDAR MONTHS ARE THE SUPPORTED UNIT
-//
-// Resolving a *trading-day* horizon to an exact future session requires an
-// exchange calendar, and this repository does not have one. Both session helpers
-// say so explicitly: marketHours.ts ("does not account for exchange holidays")
-// and marketSession.ts ("exchange holidays ignored"). Counting forward 63
-// weekdays would land on Thanksgiving or Christmas and call it a session, which
-// is precision we have not earned — the kind of quiet fabrication that makes an
-// outcome unresolvable later, because the date the report promised was never a
-// trading day.
-//
-// Calendar months need no such table: add months, clip to month-end, done. That
-// covers the entire product spec (1–60 months; Short/Medium/Long = 3/12/36), so
-// the supported unit is the one we can compute honestly, and `trading_days`
-// returns `unsupported_calendar` until a calendar adapter exists. Finava Live's
-// 5/21/63/126-day horizons are why the unit is in the contract at all.
+// Calendar months resolve without external data. Trading-day horizons require
+// explicit exchange sessions from marketCalendar.ts; callers without a calendar
+// still receive unsupported_calendar. The weekday-only UI session helpers are
+// intentionally not used for prediction targets.
+
+import { sessionWindow, easternDate, type MarketSession } from "@/lib/marketCalendar";
 
 /** The two units a horizon can be expressed in. */
 export type HorizonUnit = "calendar_months" | "trading_days";
 
 export const MIN_MONTHS = 1;
 export const MAX_MONTHS = 60;
-export const MIN_TRADING_DAYS = 5;
+export const MIN_TRADING_DAYS = 1;
 export const MAX_TRADING_DAYS = 1260;
 
 /** Preset labels. An explicit user duration always wins over a preset. */
@@ -129,7 +119,8 @@ function invalid(reason: string): HorizonResolution {
  */
 export function resolveHorizon(
   input: HorizonInput | null | undefined,
-  asOf: string
+  asOf: string,
+  sessions?: readonly MarketSession[]
 ): HorizonResolution {
   const at = new Date(asOf);
   if (Number.isNaN(at.getTime())) {
@@ -151,6 +142,14 @@ export function resolveHorizon(
       return invalid(
         `trading-day horizon must be ${MIN_TRADING_DAYS}–${MAX_TRADING_DAYS}, got ${count}`
       );
+    }
+    if (sessions) {
+      try {
+        const window = sessionWindow(sessions, easternDate(at), count);
+        return { status: "resolved", horizon: { count, unit, assumed, targetDate: window.targetDate, yearFraction: (Date.parse(window.targetAt) - at.getTime()) / MS_PER_DAY / DAYS_PER_YEAR, note: "Entry at next session official open; exit at horizon session close." } };
+      } catch (error) {
+        return { status: "unsupported_calendar", reason: error instanceof Error ? error.message : "Calendar unavailable" };
+      }
     }
     return {
       status: "unsupported_calendar",

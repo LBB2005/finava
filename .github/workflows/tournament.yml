@@ -1,0 +1,55 @@
+name: Daily prediction tournament
+on:
+  # Recurrence belongs to the user's Codex daily operator. Keep this as an
+  # explicitly gated manual fallback so two schedulers never compete.
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: prediction-tournament
+  cancel-in-progress: false
+jobs:
+  tournament:
+    if: vars.TOURNAMENT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      TOURNAMENT_DATA_URL: ${{ vars.TOURNAMENT_DATA_URL }}
+      TOURNAMENT_DAILY_USD_CAP: ${{ vars.TOURNAMENT_DAILY_USD_CAP || '8' }}
+      TOURNAMENT_JEV_INPUT_USD_PER_MILLION: ${{ vars.TOURNAMENT_JEV_INPUT_USD_PER_MILLION }}
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_API_SECRET: ${{ secrets.ALPACA_API_SECRET }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run tournament:daily
+      - run: npm run tournament:grade
+      - run: npm run tournament:report
+      - name: Publish generated reports
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/tournament/
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'chore(tournament): publish daily report'
+          git pull --rebase
+          git push

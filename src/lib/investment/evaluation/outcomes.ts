@@ -150,7 +150,7 @@ export type TargetOutcome<T> =
 export interface ResolvedPrediction {
   predictionId: string;
   ticker: string;
-  disposition: "selected" | "rejected";
+  disposition: "selected" | "rejected" | "neutral";
   asOf: string;
   targetDate: string;
   /** Where the subject window actually ended — the action date when one intervened. */
@@ -318,7 +318,10 @@ export function resolvePrediction(
     };
   }
 
-  const targetMs = dayMs(prediction.targetDate);
+  const targetMs = prediction.evaluationWindow ? Date.parse(prediction.evaluationWindow.targetAt) : dayMs(prediction.targetDate);
+  if (prediction.evaluationWindow && data.subject.windowStart !== prediction.evaluationWindow.entryAt.slice(0, 10)) {
+    return {status:"unresolved",reason:NON_RESOLUTION.windowMismatch,detail:"Subject must start at the recorded next-session open"};
+  }
   if (Number.isNaN(targetMs) || now.getTime() < targetMs) {
     return {
       status: "unresolved",
@@ -330,6 +333,11 @@ export function resolvePrediction(
   // The action date wins only when it precedes the target date. An action after
   // the horizon closed is irrelevant to this forecast and must not shorten it.
   const action = data.corporateAction;
+  if (prediction.evaluationWindow && action &&
+      action.effectiveDate > prediction.asOf.slice(0,10) &&
+      action.effectiveDate < prediction.evaluationWindow.entryAt.slice(0,10)) {
+    return {status:"unresolved",reason:NON_RESOLUTION.missingStartPrice,detail:"The position terminated before the next-session entry date; no investable entry open exists"};
+  }
   const actionEndsEarly =
     action !== null && dayMs(action.effectiveDate) < targetMs && dayMs(action.effectiveDate) > dayMs(prediction.asOf.slice(0, 10));
   const effectiveEnd = actionEndsEarly && action ? action.effectiveDate : prediction.targetDate;
@@ -381,6 +389,8 @@ export function resolvePrediction(
       NON_RESOLUTION.benchmarkMissing,
       `no ${prediction.benchmark} series supplied; relative performance is unanswerable without one`
     );
+  } else if (data.benchmark.symbol.toUpperCase() !== prediction.benchmark) {
+    outperformBenchmark = unresolved(NON_RESOLUTION.benchmarkWindowMismatch, `Expected ${prediction.benchmark}; provider supplied ${data.benchmark.symbol}`);
   } else if (
     data.benchmark.windowStart !== data.subject.windowStart ||
     data.benchmark.windowEnd !== effectiveEnd

@@ -19,6 +19,7 @@
  * `generate()` below intentionally does not), and Perplexity calls are untouched.
  */
 import OpenAI from "openai";
+import { tournamentFetch } from "./tournament/modelTransport";
 import Anthropic from "@anthropic-ai/sdk";
 import { recordUsage } from "@/lib/usage";
 import { observeAnthropic, observeLlmClient, traceIdentity } from "@/lib/observability";
@@ -210,6 +211,7 @@ function getClient(): OpenAI {
       );
     }
     g.__openrouterClient = new OpenAI({
+      fetch: tournamentFetch,
       apiKey,
       baseURL: "https://openrouter.ai/api/v1",
       // The SDK default request timeout is 10 minutes — far past every route's
@@ -369,7 +371,7 @@ function directOpenAiClient(vendor: OpenAiCompatibleVendor, apiKey: string): Ope
   if (!clients.__directOpenAiClients) clients.__directOpenAiClients = new Map();
   let c = clients.__directOpenAiClients.get(vendor.provider);
   if (!c) {
-    c = new OpenAI({ apiKey, baseURL: vendor.baseURL, timeout: 60_000, maxRetries: 0 });
+    c = new OpenAI({ fetch: tournamentFetch, apiKey, baseURL: vendor.baseURL, timeout: 60_000, maxRetries: 0 });
     clients.__directOpenAiClients.set(vendor.provider, c);
   }
   return c;
@@ -378,7 +380,7 @@ function directOpenAiClient(vendor: OpenAiCompatibleVendor, apiKey: string): Ope
 function directAnthropicClient(apiKey: string): Anthropic {
   if (!clients.__directAnthropicClient) {
     clients.__directAnthropicClient = observeAnthropic(
-      new Anthropic({ apiKey, timeout: 60_000, maxRetries: 0 })
+      new Anthropic({ fetch: tournamentFetch, apiKey, timeout: 60_000, maxRetries: 0 })
     );
   }
   return clients.__directAnthropicClient;
