@@ -237,3 +237,26 @@ with zero errors and 22 existing warnings, TypeScript passed, 130 smoke tests
 passed, and production build passed. Independent review found no important
 remaining issues in this fix. The first production run remains separately
 identified by its own code SHA and must verify usable numerical forecasts.
+
+## First production batch and startup grading failure
+
+Main commit e886175d9b0538b0040d0a5cbc77cb578e12fd0c sealed 20,120 Sep29
+production rows with hash 8a22fff114f4ea7226ac004d0a960c7e18ffa5c872efb5a833cf76162a9f239e.
+The daily command exited successfully and its chain check passed; independent
+read-only verification confirmed the stored batch. All 25 selected Jev subjects
+returned numerical probabilities at all five horizons. All 25 crew entries were
+budget-skipped: the rehearsal had already reserved part of the shared allowance.
+Production reserved $3.54260406; combined with rehearsal the upper bound was
+$7.79404120, below $8. Measured dollars remain unknown. Crew numerical-forecast
+validation remains pending a fresh daily allowance; do not call it verified.
+
+The next approved command, tournament:grade, failed with `Invalid calendar range`.
+Its first entry date was Sep30 while the as-of date was Sep29. The workflow
+stopped: no report command was run, no current-date retry was made, and no
+predictions or grades were manually modified. No outcome had matured.
+
+The future-run fix avoids requesting calendar sessions when the earliest entry
+is after the as-of date. It keeps normal entry-day and later marking behavior.
+A regression reproduced the exact invalid-range error before the guard and
+passed afterwards. Today's failure and immutable cohort are retained. The next
+regular session has a genuine preceding-session batch for comparison.

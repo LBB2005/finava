@@ -1,9 +1,9 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { MemoryTournamentLedger } from "../live/ledgerTournament";
 import { MemoryReservations } from "../live/budgetReservation";
 import { fixtureSessions, fixtureSnapshot } from "./fixtures";
 import { runDaily, MemoryJournal } from "./runtime";
-import { auditTournament, operatorAuditMarkdown, selectRunDate } from "./operator";
+import { auditTournament, operatorAuditMarkdown, selectRunDate, markingSessions } from "./operator";
 import { buildReport, leaderboardMarkdown, reportMarkdown } from "./report";
 
 async function setup(count = 20, unscored = 0, previousCount = count) {
@@ -111,4 +111,16 @@ it('audits the combined daily budget including rehearsal reservations',async()=>
  const result=await auditTournament({...args,reservations:store});
  expect(result.spend.upperUsd).toBe(8);expect(result.spend.httpAttempts).toBe(2);
  expect(result.errors).toContain('spend_not_below_daily_cap');
+});
+
+it("does not request a reversed calendar range before the first prediction entry", async () => {
+  const range = vi.fn(async (start: string, end: string) => {
+    if (start > end) throw new Error("Invalid calendar range");
+    return fixtureSessions();
+  });
+  expect(await markingSessions({range}, "2026-09-30", "2026-09-29")).toEqual([]);
+  expect(await markingSessions({range}, undefined, "2026-09-29")).toEqual([]);
+  expect(range).not.toHaveBeenCalled();
+  expect(await markingSessions({range}, "2026-09-30", "2026-09-30")).toEqual(fixtureSessions());
+  expect(range).toHaveBeenCalledWith("2026-09-30", "2026-09-30");
 });

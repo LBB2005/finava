@@ -84,3 +84,9 @@ export async function selectRunDate(
   if (!(await calendar.range(today, today)).length) return null;
   return (await calendar.mostRecentCompleted(now)).date;
 }
+
+export async function markingSessions(
+  calendar: Pick<ExchangeCalendar, "range">, firstEntryDate: string | undefined, asOfDate: string,
+) {
+  return firstEntryDate && firstEntryDate <= asOfDate ? calendar.range(firstEntryDate, asOfDate) : [];
+}

@@ -38,7 +38,7 @@ import {
   type MarkProvider,
 } from "../src/lib/tournament/portfolio";
 import { buildReport, reportMarkdown, leaderboardMarkdown } from "../src/lib/tournament/report";
-import { auditTournament, operatorAuditMarkdown, selectRunDate } from "../src/lib/tournament/operator";
+import { auditTournament, operatorAuditMarkdown, selectRunDate, markingSessions } from "../src/lib/tournament/operator";
 import type { TournamentLedger, Namespace } from "../src/lib/tournament/types";
 
 async function main() {
@@ -149,9 +149,7 @@ async function main() {
       .sort()[0];
     const marksSessions = offline
       ? fixtureSessions().slice(1, 121)
-      : first
-        ? await calendar!.range(first, easternDate(now))
-        : [];
+      : await markingSessions(calendar!, first, easternDate(now));
     const grades = await gradeMatured(
       state.ledger,
       offline ? fixtureReturns : (r) => source.returns(r),
