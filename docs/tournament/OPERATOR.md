@@ -5,8 +5,10 @@ The saved Codex heartbeat is `finava-daily-tournament-operator`, weekdays at
 `/Users/liamblackshaw-brown/code/finava-tournament-operator`.
 
 The live activation status is controlled by the saved Codex automation. Setup
-requires code on main, verified live evidence, a successful prospective two-name
-paid rehearsal, and a genuine first production batch. No historical prediction
+requires code on main, verified live evidence, an inspected prospective two-name
+paid rehearsal, and a genuine first production batch with usable forecasts from
+both model arms. Failed rehearsal results are retained; fixes apply only to new
+production runs, never by replacing or replaying the rehearsal. No historical prediction
 backfill is allowed. The first session is a bootstrap batch: its report must fail
 the missing baseline check. That failure cannot be waived or replaced with a
 fabricated row. The next exchange session can compare against this real baseline;

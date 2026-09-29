@@ -90,6 +90,12 @@ export const tournamentFetch: typeof fetch = async (input, init) => {
   state.calls++;
   state.unknown++;
   const response = await globalThis.fetch(input, init);
+  // Do not buffer SSE to inspect usage: the caller's idle guard must receive
+  // live events. Streaming invoice dollars remain unknown; retain the bound.
+  if (body.stream === true || response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+    await state.store.measure(id, null);
+    return response;
+  }
   // Only a provider-reported dollar cost is measured. Token/rate arithmetic is
   // an estimate, not an invoice, and is not silently labelled measured USD.
   let cost: number | null = null;

@@ -209,3 +209,31 @@ Final local checks: **299 files / 3,842 tests passed**; coverage 93.35% statemen
 84.61% branches, 93.70% functions, 94.78% lines. Lint passed (zero errors and 22
 existing warnings), TypeScript passed, all 130 smoke tests passed, and the
 production build passed. No paid run or published cohort had started.
+
+## Prospective rehearsal, 2026-09-29
+
+The actual Sep29 snapshot retained 503 names with 486 composite scores and 17
+unscored names (3.38%). Rehearsal at commit 47069ef called both model arms on APA
+and DELL. Jev 1.13.0 returned numerical event forecasts for all five horizons on
+both names. Both crew syntheses stalled and extraction correctly retained null
+forecasts. A parsed schema status of ok is not a usable-forecast success.
+Fourteen HTTP model attempts reserved $4.25143714 under the combined $8 cap;
+measured invoice dollars remain unknown.
+
+The process then exited with `3 INVALID_ARGUMENT: Invalid transaction.` Read-only
+inspection found all 20,120 prediction records and a sealed batch. The original
+failed run and null crew forecasts are preserved, with no paid replay.
+
+Review reproduced a streaming transport defect: the cost wrapper waited for
+response.clone().json() to consume the whole SSE body before returning it to the
+SDK, starving the synthesis idle guard. The future-version fix returns streaming
+responses unread and retains unknown measured dollars plus the reservation. Two
+open-stream regressions failed before the fix and passed after; they verify the
+first chunk is available before stream closure. No scoring policy was changed.
+
+Validation of the future-version fix: 299 files / 3,844 tests passed; coverage
+93.36% statements, 84.61% branches, 93.70% functions and 94.78% lines. Lint passed
+with zero errors and 22 existing warnings, TypeScript passed, 130 smoke tests
+passed, and production build passed. Independent review found no important
+remaining issues in this fix. The first production run remains separately
+identified by its own code SHA and must verify usable numerical forecasts.

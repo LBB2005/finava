@@ -129,3 +129,35 @@ it("does not label a swallowed transport failure as a free call", async () => {
   expect(result.costUsd).toBeNull();
   expect((await store.entries())[0].measuredUsd).toBeNull();
 });
+
+it.each([
+  { stream: true, contentType: 'application/octet-stream' },
+  { stream: false, contentType: 'text/event-stream; charset=utf-8' },
+])('returns streaming responses before their body closes ($contentType)', async ({stream,contentType}) => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const chunk = new TextEncoder().encode('data: {"type":"content_block_delta"}\n\n');
+  const response = new Response(new ReadableStream<Uint8Array>({start(c){controller=c;c.enqueue(chunk);}}),
+    {headers:{'content-type':contentType}});
+  const clone = vi.spyOn(response,'clone');
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response));
+  const store = new MemoryReservations();
+  let returned = false;
+  const pending = withTournamentBudget(store,8,()=>tournamentFetch('https://api.anthropic.com/v1/messages',{
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:100,stream}),
+  })).then(result=>{returned=true;return result;});
+  try {
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    expect(returned).toBe(true);
+    expect(clone).not.toHaveBeenCalled();
+    const result=await pending;
+    expect(result.costUsd).toBeNull();
+    expect((await store.entries())[0].measuredUsd).toBeNull();
+    expect((await store.entries())[0].upperUsd).toBeGreaterThan(0);
+    const reader=result.value.body!.getReader();
+    expect((await reader.read()).value).toEqual(chunk);
+    reader.releaseLock();
+  } finally {
+    controller.close();
+    await pending;
+  }
+});
