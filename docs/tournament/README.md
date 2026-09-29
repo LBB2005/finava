@@ -39,7 +39,7 @@ completed Alpaca session. It refuses a new prediction after the next entry open.
 On a current exchange holiday, the default commands exit successfully with
 `market closed`; they do not silently fall back to a previous trading day.
 
-## Configuration and remaining activation gates
+## Configuration
 
 Put secrets in ignored `.env.local` or GitHub Actions secrets; never in reports.
 The script loads `.env.local` then `.env`, preserving values already in the
@@ -53,25 +53,27 @@ not committed or copied into reports.
   [TypeSafe's model reference](https://docs.typesafe.ai/models) on 2026-09-28.
   Use your contract rate instead if it differs from public pricing.
 - `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`: existing full crew credentials.
-- `ALPACA_API_KEY`, `ALPACA_API_SECRET`: exchange calendar.
+- `ALPACA_API_KEY`, `ALPACA_API_SECRET`: calendar, SIP prices, official auction trades and corporate actions.
+- `POLYGON_API_KEY`: existing Massive account, dated issuer reference/weighted shares.
 - Existing Firebase Admin/public configuration required by `src/lib/env.ts`.
 - `TOURNAMENT_DAILY_USD_CAP`: default 8; zero disables paid HTTP requests.
-- `TOURNAMENT_DATA_DIR` or `TOURNAMENT_DATA_URL`: verified dated data archive
+- Optional `TOURNAMENT_DATA_DIR` or `TOURNAMENT_DATA_URL`: explicit dated data archive
   using the schemas below. A local directory takes precedence. Remote artifacts
   are HTTPS JSON, without credentials in URLs, no automatic retries on 429.
 
-**Live source gate remains unresolved:** the current repository does not have a
-verified daily index-membership archive or a provider asserting complete
-delisting/spin-off/distribution coverage and official entry opens. The existing
-cached UI facts and ordinary daily-bar opens cannot establish these guarantees.
-The ingestion contracts are implemented; a verified upstream archive producer
-still needs to be connected. Supplying Jev's key alone does not resolve this.
-Do not set `verified`/`coverageConfirmed` merely to bypass the gate.
+With no explicit archive configured, the CLI collects dated membership, SEC
+filings, Massive issuer reference and Alpaca market evidence directly. Successful
+raw responses are captured under ignored `.tournament/provider-cache/SESSION/`
+(or `TOURNAMENT_RAW_DIR`). Authentication stays in request headers. Missing data
+retains the constituent and its reason; it never shrinks the population.
+Run after the official close plus the account's SIP delay (at least 15 minutes).
+The scheduled 14:30 Pacific run leaves additional time for provider processing.
 
-This intentionally leaves live trading-performance validation blocked instead
-of substituting stale constituents, fabricated dividends or ordinary bar opens.
-Production collection of verified provider evidence is a remaining integration task, not
-an already completed feature of this branch.
+Source assumptions and conservative unresolved cases are preregistered in
+[SCORING.md](./SCORING.md). The collector does not claim exhaustive instantaneous
+corporate-action coverage. A real two-name rehearsal and production baseline
+must be verified before unattended operation; a first baseline report fails
+comparison with its absent predecessor by design.
 
 ## Evidence archive contract
 
@@ -132,7 +134,8 @@ variable `TOURNAMENT_ENABLED=true`; its cron was removed to avoid a competing
 scheduler. The user-selected [Codex operator](./OPERATOR.md) is saved for weekdays
 at 14:30 Pacific and remains **paused** until its activation gates are met. Its
 exact run-only prompt, bootstrap behavior and checkout setup are recorded there.
-The manual GitHub fallback needs `TOURNAMENT_DATA_URL` and the above secrets;
+The manual GitHub fallback needs the above secrets (including `POLYGON_API_KEY`),
+or an explicitly configured evidence archive;
 it serializes daily → grade → report and commits only `reports/tournament/`.
 Neither path deploys a site or places orders.
 
@@ -147,6 +150,6 @@ to calibrated probability without the existing chronological validation gate.
 - [Alpaca market-data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq) — ordinary bar opens are not a substitute for an identified official opening trade.
 - [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing) and [OpenRouter model registry](https://openrouter.ai/api/v1/models) — admission-rate checks on 2026-09-28. Provider-dollar usage, reservation ceilings and usage-based estimates are distinct.
 
-Read-only provider probes and the precise remaining collector work are documented
+Provider probes and live validation status are documented
 in [SOURCE-READINESS.md](./SOURCE-READINESS.md). Existing credentials suffice for
-those probes; the blocker is verified ingestion, not another Jev key.
+the collector; no additional Jev key is required.

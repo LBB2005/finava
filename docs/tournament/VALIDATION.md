@@ -130,3 +130,48 @@ before model execution with the following captured error (no retry):
 ```text
 Verified dated data source is not configured. Set TOURNAMENT_DATA_DIR or TOURNAMENT_DATA_URL; current UI facts are not a point-in-time archive.
 ```
+
+## Live collector implementation — 2026-09-29
+
+This supersedes the earlier "archive producer not connected" blocker. The CLI
+now collects dated membership, filed SEC financials, Massive issuer-equivalent
+shares and Alpaca SIP/action evidence through existing credentials. Historical
+source inspection below is research-only: no prediction, grade or model backfill.
+
+- Read-only 2026-09-28 coverage: **503 retained members, 486 composite scored,
+  17 unscored (3.3797216699801194%)**, satisfying the strict below-5% source gate.
+  Value/quality each 487; growth/momentum each 489; contrarian 442 (its quality
+  floor intentionally excludes additional names). Unscored: APTV, BDX, BNY,
+  CCL, CMCSA, DD, DOC, FDX, FERG, HON, HONA, OKE, PSKY, SPGI, TEL, VMRK, XOM.
+  Reasons retain incomplete financial history, identity discontinuity and
+  unsupported corporate actions; none were removed from the universe.
+- Full suite: **298 files / 3,822 tests passed** with two workers. Coverage:
+  statements 93.21%, branches 84.43%, functions 93.48%, lines 94.62%. Three additional
+  final SEC edge-case tests passed in the subsequent **56-test focused check**.
+  Coverage thresholds and test timeouts are unchanged.
+- Full-universe storage regression publishes 20,120 SHA prediction IDs using
+  an immutable chunked ID manifest within Firestore document/request limits;
+  exact canonical batch/hash semantics are preserved. Atomic failure, identical
+  recovery, legacy batches and chunk corruption are covered. Only the real
+  boundary case uses 20,120 rows; smaller chunked cases test recovery/corruption.
+- Source regressions cover filing cutoffs, matched balance periods, complete
+  debt withholding, actual TTM/annual periods and age, direct same-filing EPS,
+  class-equivalent valuation, provider credential isolation, all-page checks,
+  official primary auction prices, split/cash entitlements and unknown actions.
+- Independent source/storage review completed. Mixed-period returns, partial
+  debt labelled as total debt and ambiguous multi-class valuation were fixed.
+  Final review found no additional important issues.
+- Read-only authentication checks: Anthropic and OpenRouter returned HTTP 200;
+  Massive dated reference requests succeeded for multi-class issuers. These
+  checks made zero paid model requests and do not establish forecast quality.
+
+Live prospective rehearsal waits for the 2026-09-29 official close plus the
+account's SIP delay. It must use the committed source policy and actual current
+session evidence. The first production report will still fail the missing
+prior-session baseline check; no historical batch will be fabricated.
+
+After those final source changes: lint passed with zero errors and the same 22
+pre-existing warnings, TypeScript passed, smoke evaluation passed all 130 tests,
+and the production build passed with the existing ignored local configuration.
+The latest focused SEC/market/valuation run passed 56 tests, including the three
+additional edge cases noted above.

@@ -1,39 +1,38 @@
 # Source readiness — 2026-09-29
 
-These are read-only provider probes, not a live tournament run. Credentials were
-read from ignored local configuration and never recorded in output. No new API
-subscription was purchased and no production prediction was written.
+The default CLI now has a live collector using the existing credentials. No
+additional subscription was purchased. Raw successful responses and retrieval
+times are kept in an ignored, immutable local archive without request headers.
+The frozen source snapshot is also journaled in Firestore before model calls.
 
-| Requirement | Observed evidence | Remaining limitation |
+| Requirement | Integrated evidence | Explicit limitation |
 | --- | --- | --- |
-| Dated constituents | Wikipedia revision 1376729338, published 2026-09-25T22:49:33Z, contains 503 distinct members with CIKs; every ticker matches the 503 equities in State Street's SPY holdings dated 25-Sep-2026 | Public dated revision and ETF corroboration, not an official S&P membership contract; no production archive producer connected |
-| Dated financial inputs | SEC AAPL company-facts returns filing dates; cutoff filtering and trailing-period derivation have focused tests | Full-universe availability and missingness have not been measured; derivation helpers are not wired into live ingestion |
-| Polygon financials | Dated TTM endpoint returned HTTP 200 | Examined response has fiscal start/end but no filing timestamp; cannot label period dates as availability dates |
-| Calendar | Alpaca calendar returned exchange sessions | Already integrated; no additional calendar key needed |
-| Official opening trade | Historical SIP request for AAPL on 2026-09-25 returned an opening-condition Q trade at the open | One observation is not proof of all-universe official entry coverage; listing exchange identification and missing/ambiguous cases still need a collector |
-| Corporate actions | NVDA's 2024-06-10 split returned its 10:1 terms; SPY's 2026-09-18 dividend returned amount 1.888834 when the process-date interval included 2026-10-30 | Queries filter process date, not ex-date; a same-window empty result cannot certify no dividends. Full paging, event-date filtering, unsupported events and raw evidence preservation remain required |
-| Persistence | Read-only query of the Firestore dry-run namespace succeeded | Does not establish a completed paid dry run or production ledger write |
-| Jev | Direct API connection succeeded; see VALIDATION.md | Connectivity is not a full crew/tournament rehearsal |
+| Dated constituents | Latest Wikipedia revision at/before official close; revision 1376729338 initially matched all 503 dated SPY equity holdings | Public membership proxy, not an official S&P constituent license |
+| Financial inputs | SEC company-facts, filing-date cutoff, explicit TTM periods/age and matching balance periods | Same-day date-only filings withheld; TTM ends at most 365 days earlier; incomplete debt remains unknown |
+| Valuation | Massive date-qualified ticker reference, validated ticker/CIK/USD, issuer shares expressed in the requested class's units | Provider class-equivalent valuation; different classes never summed; missing reference means null |
+| Calendar | Alpaca exchange sessions | Completed close and next-entry deadline enforced |
+| Official entry open | Listing-exchange condition-Q SIP trade in first minute, paginated and ambiguity checked | Missing/ambiguous auctions stay unresolved, never replaced by bar opens |
+| Corporate actions | All types/qualities, complete bounded paging, 366-day process-date padding, actual ex/effective-date filtering | Provider publication delays and unsupported events remain explicit; no guarantee of exhaustive instantaneous coverage |
+| Persistence | Full 20,120-row publication test with immutable chunked ID manifest | Live paid rehearsal and real production baseline are separate acceptance steps |
+| Jev | Direct authenticated connection and conservative reservation accounting | Connection alone is not a full crew/tournament rehearsal |
 
-Alpaca's `data_quality=all` includes incomplete actions; those must remain
-explicit unknowns. Even `data_quality=complete` is a record-completeness filter,
-not an assurance of immediate availability: the provider documents processing
-delays. A collector must handle those limits rather than turn missing records
-into known zero distributions.
+A live AAPL return probe for 2026-09-28 identified the official open as 340.22
+and the daily close as 338.40, with split factor 1 and cash 0 under the declared
+provider coverage convention. It wrote no prediction or grade. The SPY dividend
+probe verified why a process-date query must extend beyond the ex-date interval.
+Missing, incomplete, foreign-currency or unsupported action terms are never
+silently turned into zero distributions. A price-only history can disregard
+cash dividends but cannot disregard share-basis changes.
 
-`collectionInputs.ts` provides preparatory pure functions for revision parsing,
-SEC filing-cutoff inputs, split-aware observed price inputs and sector peers.
-They are not invoked by `DatedSources`; the live commands still require a
-verified `TOURNAMENT_DATA_DIR` or `TOURNAMENT_DATA_URL` archive. Do not set
-`verified`, `coverageConfirmed` or `actionsComplete` just because HTTP succeeded.
-
-Activation remains blocked on that integrated archive, a prospective paid
-rehearsal and a genuine baseline. No source or API-key success should be reported
-as completion of the live tournament.
+Production and dry-run ledgers remain isolated. No retrospective prediction
+backfill is allowed. Full-universe coverage, paid rehearsal and bootstrap
+results are recorded in [VALIDATION.md](./VALIDATION.md).
 
 Primary sources:
 - [Dated constituent revision](https://en.wikipedia.org/w/index.php?title=List_of_S%26P_500_companies&oldid=1376729338)
 - [State Street SPY holdings](https://www.ssga.com/us/en/individual/etfs/state-street-spdr-sp-500-etf-trust-spy)
 - [SEC company-facts API](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
+- [Massive dated ticker details](https://massive.com/docs/rest/stocks/tickers/ticker-overview)
+- [Massive weighted/class share definitions](https://massive.com/knowledge-base/article/what-is-the-difference-between-weighted-shares-outstanding-and-share-class-shares-outstanding)
 - [Alpaca market-data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq)
 - [Alpaca corporate actions](https://docs.alpaca.markets/us/reference/corporateactions-1)
