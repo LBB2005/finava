@@ -143,6 +143,51 @@ export class MemoryTournamentLedger implements TournamentLedger {
     throw new Error("Tournament ledger is append-only");
   }
 }
+
+const BATCH_ROW_IDS_PER_CHUNK = 2000;
+type BatchRowIdChunk = { index: number; rowIds: string[] };
+type StoredTournamentBatch = Omit<TournamentBatch, "rowIds"> & {
+  rowIdStorage: {
+    version: 1;
+    count: number;
+    chunks: number;
+    hash: string;
+  };
+};
+
+function batchPublication(batch: TournamentBatch) {
+  const chunks: BatchRowIdChunk[] = [];
+  let manifest: TournamentBatch | StoredTournamentBatch = batch;
+  if (batch.rowIds.length > BATCH_ROW_IDS_PER_CHUNK) {
+    for (let i = 0; i < batch.rowIds.length; i += BATCH_ROW_IDS_PER_CHUNK)
+      chunks.push({
+        index: chunks.length,
+        rowIds: batch.rowIds.slice(i, i + BATCH_ROW_IDS_PER_CHUNK),
+      });
+    const { rowIds, ...payload } = batch;
+    manifest = {
+      ...payload,
+      rowIdStorage: {
+        version: 1,
+        count: rowIds.length,
+        chunks: chunks.length,
+        hash: hashEntry(rowIds, CHAIN_GENESIS),
+      },
+    };
+  }
+  // Preflight before any prediction create. Leave ample space for Firestore's
+  // document names, field encoding and transaction overhead (1/10 MiB limits).
+  const writes = [manifest, ...chunks, { date: batch.date, hash: batch.hash }];
+  const sizes = writes.map((value) => Buffer.byteLength(canonicalJson(value)));
+  if (
+    writes.length > 400 ||
+    sizes.some((size) => size > 512 * 1024) ||
+    sizes.reduce((total, size) => total + size + 4096, 0) > 8 * 1024 * 1024
+  )
+    throw new Error("Batch publication exceeds safe atomic Firestore limits");
+  return { manifest, chunks };
+}
+
 export async function firestoreTournamentLedger(
   namespace: Namespace,
 ): Promise<TournamentLedger> {
@@ -166,7 +211,47 @@ export async function firestoreTournamentLedger(
   const ledger: TournamentLedger = {
     async listBatches() {
       const s = await root.collection("batches").orderBy("date").get();
-      return s.docs.map((d) => d.data() as TournamentBatch);
+      return Promise.all(
+        s.docs.map(async (d) => {
+          const stored = d.data();
+          if (!("rowIdStorage" in stored)) return stored as TournamentBatch;
+          const { rowIdStorage, ...payload } = stored as StoredTournamentBatch;
+          if (
+            !rowIdStorage ||
+            rowIdStorage.version !== 1 ||
+            "rowIds" in payload ||
+            !Number.isSafeInteger(rowIdStorage.count) ||
+            rowIdStorage.count <= 0 ||
+            !Number.isSafeInteger(rowIdStorage.chunks) ||
+            rowIdStorage.chunks <= 0 ||
+            rowIdStorage.chunks > 398 ||
+            rowIdStorage.chunks !==
+              Math.ceil(rowIdStorage.count / BATCH_ROW_IDS_PER_CHUNK)
+          )
+            throw new Error(`Invalid batch row-ID manifest on ${payload.date}`);
+          const rowIds: string[] = [];
+          for (let index = 0; index < rowIdStorage.chunks; index++) {
+            const part = await d.ref.collection("rowIds").doc(String(index)).get();
+            const chunk = part.data() as BatchRowIdChunk | undefined;
+            if (
+              !chunk ||
+              chunk.index !== index ||
+              !Array.isArray(chunk.rowIds) ||
+              chunk.rowIds.length !==
+                Math.min(BATCH_ROW_IDS_PER_CHUNK, rowIdStorage.count - rowIds.length) ||
+              chunk.rowIds.some((id) => typeof id !== "string")
+            )
+              throw new Error(`Missing or invalid batch row-ID chunk on ${payload.date}`);
+            rowIds.push(...chunk.rowIds);
+          }
+          if (
+            rowIds.length !== rowIdStorage.count ||
+            hashEntry(rowIds, CHAIN_GENESIS) !== rowIdStorage.hash
+          )
+            throw new Error(`Batch row-ID integrity mismatch on ${payload.date}`);
+          return { ...payload, rowIds };
+        }),
+      );
     },
     async rows(date) {
       const s = await root
@@ -188,6 +273,7 @@ export async function firestoreTournamentLedger(
         return "duplicate";
       }
       validateBatch(batch, rows, batches.at(-1) ?? null);
+      const publication = batchPublication(batch);
       const assertTimely = () => {
         if (
           namespace === "tournament" &&
@@ -213,7 +299,10 @@ export async function firestoreTournamentLedger(
           snap = await tx.get(head);
         if ((snap.data()?.hash ?? CHAIN_GENESIS) !== batch.previousHash)
           throw new Error("Concurrent batch changed chain head");
-        tx.create(root.collection("batches").doc(batch.date), batch);
+        const batchRef = root.collection("batches").doc(batch.date);
+        for (const chunk of publication.chunks)
+          tx.create(batchRef.collection("rowIds").doc(String(chunk.index)), chunk);
+        tx.create(batchRef, publication.manifest);
         tx.set(head, { date: batch.date, hash: batch.hash });
       });
       return "created";
