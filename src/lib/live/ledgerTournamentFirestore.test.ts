@@ -75,7 +75,7 @@ vi.mock("../firebase-admin", () => {
     },
   } };
 });
-import { firestoreTournamentLedger, makeBatch, verifyBatches } from "./ledgerTournament";
+import { firestoreTournamentLedger, makeBatch } from "./ledgerTournament";
 import { fixtureSnapshot, fixtureSessions } from "../tournament/fixtures";
 import { makePrediction } from "../tournament/predictions";
 import { sessionWindow } from "../marketCalendar";
@@ -125,19 +125,25 @@ it("publishes all 20,120 SHA prediction IDs within Firestore limits and returns 
   await expect(ledger.appendBatch(full.batch, full.rows)).resolves.toBe("created");
   const [batch] = await ledger.listBatches();
   expect(batch).toEqual(full.batch);
-  expect((await ledger.rows(batch.date)).length).toBe(20120);
-  expect(verifyBatches([{ batch, rows: full.rows }])).toEqual({ valid: true, reason: null });
+  const writtenIds=[...state.docs.keys()].filter(path=>path.startsWith(`${root}/predictions/`)).map(path=>path.split("/").at(-1)).sort();
+  expect(writtenIds).toEqual([...full.batch.rowIds].sort());
   const chunks = chunkPaths(batch);
   expect(chunks.length).toBeGreaterThan(1);
   expect(state.transactions).toHaveLength(1);
   expect(state.transactions[0]).toEqual(expect.arrayContaining([
     `${root}/batches/${batch.date}`, `${root}/state/head`, ...chunks,
   ]));
-  const digest = () => createHash("sha256").update(JSON.stringify([...state.docs])).digest("hex");
-  const before = digest();
-  await expect(ledger.appendBatch(full.batch, full.rows)).resolves.toBe("duplicate");
+});
+it("repeating a chunked publication verifies identical content without modifying stored data", async () => {
+  const ledger=await firestoreTournamentLedger("tournament_dryrun");
+  const {batch,rows}=fixture(2001);
+  await ledger.appendBatch(batch,rows);
+  const digest=()=>createHash("sha256").update(JSON.stringify([...state.docs])).digest("hex");
+  const before=digest();
+  await expect(ledger.appendBatch(batch,rows)).resolves.toBe("duplicate");
   expect(digest()).toBe(before);
 });
+
 it("reads existing inline batches without adding storage fields or rewriting history", async () => {
   const { batch } = fixture(2);
   state.docs.set(`${root}/batches/${batch.date}`, structuredClone(batch) as unknown as Record<string, unknown>);

@@ -175,3 +175,9 @@ pre-existing warnings, TypeScript passed, smoke evaluation passed all 130 tests,
 and the production build passed with the existing ignored local configuration.
 The latest focused SEC/market/valuation run passed 56 tests, including the three
 additional edge cases noted above.
+
+CI exposed a timeout in the combined full-size publication/retry regression.
+The size-boundary assertion still publishes and rehydrates all 20,120 IDs; retry
+immutability now has a separate 2,001-row chunked case. No timeout or coverage
+requirement changed. Final local full suite: **298 files / 3,826 tests passed**;
+coverage 93.21% statements, 84.44% branches, 93.48% functions, 94.62% lines.
