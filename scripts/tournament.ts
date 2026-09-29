@@ -13,6 +13,7 @@ import {
 } from "../src/lib/marketCalendar";
 import { runDaily, verifyLedger } from "../src/lib/tournament/runtime";
 import { DatedSources } from "../src/lib/tournament/sources";
+import { createTournamentSources } from "../src/lib/tournament/liveSources";
 import {
   fileTournamentState,
   firestoreTournamentLedger,
@@ -66,7 +67,6 @@ async function main() {
   const registrationHash = createHash("sha256")
     .update(await readFile("docs/tournament/SCORING.md"))
     .digest("hex");
-  const source = new DatedSources();
   const now = offline ? new Date(fixtureSnapshot().observedAt) : new Date();
   let sessions: MarketSession[] = [];
   const calendar: ExchangeCalendar | undefined = offline
@@ -84,6 +84,7 @@ async function main() {
     return;
   }
   const date = selectedDate;
+  const source = offline ? new DatedSources() : createTournamentSources(calendar!, date);
   if (command === "daily") {
     sessions = offline
       ? fixtureSessions()

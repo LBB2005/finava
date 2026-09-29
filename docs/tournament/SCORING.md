@@ -24,6 +24,52 @@ registration and prior daily hash. Grades and paper marks are separate immutable
 records. Input snapshots and interrupted model attempts are archived in a
 create-only checkpoint journal. A failed model attempt is not replayed.
 
+## Initial live source policy
+
+The default collector selects the latest public Wikipedia constituent revision
+published by the official close, retains every constituent and archives the raw
+revision. This is a dated public membership proxy, not an official S&P data
+license. Initial membership was independently compared with dated SPY holdings.
+SEC company-facts are filtered to filings strictly before the session date.
+Trailing four-quarter facts may end up to 365 calendar days before cutoff; each
+fact records its actual reporting interval and age. Ratios match numerator and
+balance-component period ends. Long-term debt alone is never called total debt;
+debt/equity remains null when a complete decomposition is unproven. The explicit
+utility total concept RegulatedAndUnregulatedOperatingRevenue is eligible;
+category revenues are never added to invent a total. When four complete quarters
+are unavailable, a directly reported full fiscal year is an eligible trailing
+twelve-month period under the same 365-day age limit. Revenue growth compares
+matched annual periods. When revenue growth is unavailable, diluted EPS growth
+may use directly reported comparative quarters from the same accession/filing,
+60–125 days each, with start/end boundaries within seven days of a year apart
+and a positive prior denominator. This quarterly basis is explicitly labelled;
+no quarter EPS is inferred by subtracting cumulative EPS.
+
+Valuation uses dated Massive weighted shares (the issuer expressed in the
+requested share class's units) times the session's Alpaca SIP close, divided by
+filed trailing income/revenue. This is the provider's class-equivalent valuation,
+not an exact sum of prices across every class. Different listed classes remain
+separate index members; market caps are never summed. Missing or mismatched
+issuer identifiers/currency/reference evidence withholds valuation. Ordinary
+SEC cover-page shares are not a substitute for class-equivalent shares.
+
+Momentum uses raw SIP closes and splits/stock dividends effective by cutoff.
+Official entry prices require an opening-condition Q trade from the listing
+exchange in the first minute, with complete bounded pagination; ambiguous or
+missing auctions stay unresolved. Corporate-action queries cover all types,
+all data-quality states and process dates from 366 days before to 366 days after
+the event interval, then filter by effective/ex-date. This is a bounded provider
+coverage assumption, not a guarantee against delayed or corrected records.
+Unsupported mergers, spin-offs, rights, currency/entitlement ambiguity and
+incomplete actions remain unresolved. Same-ticker, same-CUSIP name-only
+changes can be ignored. Price history may additionally use the current ticker
+alone after a same-CUSIP incoming rename: `asof=-` prevents automatic old-symbol
+stitching. This exception never applies to holding-period returns or paper marks;
+changed or missing CUSIPs and undated identity discontinuities stay unresolved. Valid splits, stock dividends and explicitly USD cash
+distributions use dated share entitlements. Actual retrieval times and raw
+successful responses are retained without credentials. Providers can revise
+historical evidence; the frozen prediction snapshot is never replaced.
+
 ## Arms
 
 Reuse Finava's deterministic 15-factor transformations. Value averages available
