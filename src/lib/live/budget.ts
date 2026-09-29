@@ -28,22 +28,29 @@ export function tournamentReservations(
   day: string,
   namespace: "tournament" | "tournament_dryrun",
 ): ReservationStore {
-  const ref = db.collection("tournamentBudget").doc(`${namespace}_${day}`);
+  const namespaces = ["tournament", "tournament_dryrun"] as const;
+  const refs = namespaces.map(name => db.collection("tournamentBudget").doc(`${name}_${day}`));
+  const ownIndex = namespaces.indexOf(namespace);
+  const ref = refs[ownIndex];
   return {
     async reserve(id, upperUsd, cap) {
       validateReservation(upperUsd, cap);
       return db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref),
-          data = snap.data() ?? {},
-          entries = data.entries ?? {};
-        if (
-          data.blocked ||
-          entries[id] ||
-          Number(data.reservedUsd ?? 0) + upperUsd > cap
-        )
+        // Both namespaces participate in one admission transaction: a paid
+        // rehearsal must not create a second daily allowance. Keep attribution
+        // and settlement in the originating namespace's existing document.
+        const snapshots = await Promise.all(refs.map(item => tx.get(item)));
+        const records = snapshots.map(s => s.data() ?? { reservedUsd: 0, entries: {} });
+        for (const record of records) {
+          if (typeof record.reservedUsd !== "number" || !Number.isFinite(record.reservedUsd) || record.reservedUsd < 0)
+            throw new Error("Invalid persisted tournament reservation total");
+        }
+        const data = records[ownIndex], entries = data.entries ?? {};
+        const combined = records.reduce((sum, item) => sum + item.reservedUsd, 0);
+        if (records.some(item => item.blocked || item.entries?.[id]) || combined + upperUsd > cap)
           return false;
         tx.set(ref, {
-          reservedUsd: Number(data.reservedUsd ?? 0) + upperUsd,
+          reservedUsd: data.reservedUsd + upperUsd,
           entries: { ...entries, [id]: { id, upperUsd, measuredUsd: null } },
         });
         return true;
@@ -62,6 +69,10 @@ export function tournamentReservations(
             Boolean(data?.blocked) || (usd !== null && usd > item.upperUsd),
         });
       });
+    },
+    async dailyEntries() {
+      const snapshots = await Promise.all(refs.map(item => item.get()));
+      return snapshots.flatMap(s => Object.values(s.data()?.entries ?? {})) as SpendReservation[];
     },
     async entries() {
       const s = await ref.get();

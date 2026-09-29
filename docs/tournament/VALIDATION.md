@@ -181,3 +181,17 @@ The size-boundary assertion still publishes and rehydrates all 20,120 IDs; retry
 immutability now has a separate 2,001-row chunked case. No timeout or coverage
 requirement changed. Final local full suite: **298 files / 3,826 tests passed**;
 coverage 93.21% statements, 84.44% branches, 93.48% functions, 94.62% lines.
+
+Before any paid rehearsal, review caught and fixed a cross-namespace budget
+loophole: rehearsal and production now read both reservation documents in each
+admission transaction and share the same daily cap. Namespace-specific settlement
+and attribution are preserved; operator audit/report totals combine the day.
+Either namespace's measured overrun blocks further admission in both. Regressions
+cover both admission orders, competing requests, overrun blocking, malformed
+stored totals, retained attribution and strict combined-cap auditing.
+
+Final checks for that fix: **299 files / 3,837 tests passed**; statements 93.35%,
+branches 84.59%, functions 93.69%, lines 94.78%. Lint: zero errors, 22 existing
+warnings. TypeScript and all 130 smoke tests passed. Independent review found no
+important remaining budget issues. No paid tournament run had started at this
+point, so no published cohort or reservation was rewritten.

@@ -173,13 +173,14 @@ async function main() {
       grades = await state.ledger.grades(),
       portfolios = await state.ledger.portfolios();
     const data = buildReport(rows, grades, portfolios, namespace),
-      entries = await reservations.entries();
+      entries = await (reservations.dailyEntries?.() ?? reservations.entries());
     const pastSessions = offline ? fixtureSessions() : await calendar!.range(shiftDate(date, -14), date);
     const previousSessionDate = pastSessions.filter(s => s.date < date).at(-1)?.date ?? null;
     const operatorVerification = await auditTournament({
       ledger: state.ledger, date, previousSessionDate, reservations, cap: tournamentCap(),
     });
     const cost = {
+      scope: reservations.dailyEntries ? "combined_tournament_day" : "namespace",
       httpAttempts: entries.length,
       measuredUsd: entries.every((e) => e.measuredUsd !== null)
         ? entries.reduce((n, e) => n + e.measuredUsd!, 0)

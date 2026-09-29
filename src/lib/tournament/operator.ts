@@ -21,7 +21,7 @@ export function operatorAuditMarkdown(audit: OperatorAudit): string {
   return [
     `Date: ${audit.date}; batch rows: ${audit.rows}; previous: ${audit.previousRows ?? "missing"}; hash chain: ${audit.hashChainVerified ? "PASS" : "FAILED"}`,
     `Unscored names: ${audit.unscoredNames.length}/${audit.universe}; reasons: ${JSON.stringify(audit.unscoredNames)}`,
-    `LLM spend: ${audit.spend.measuredUsd === null ? "unknown measured USD" : `$${audit.spend.measuredUsd}`}; reserved upper USD: $${audit.spend.upperUsd}; cap: $${audit.spend.capUsd}`,
+    `LLM spend (combined daily): ${audit.spend.measuredUsd === null ? "unknown measured USD" : `$${audit.spend.measuredUsd}`}; reserved upper USD: $${audit.spend.upperUsd}; cap: $${audit.spend.capUsd}`,
     `Predictions graded on session date: ${audit.predictionsGradedToday}; verification: ${audit.status}${audit.errors.length ? ` (${audit.errors.join(", ")})` : ""}`,
   ].join("\n");
 }
@@ -56,7 +56,7 @@ export async function auditTournament(args: {
   });
   if (!tickers.length || unscoredNames.length / tickers.length >= 0.05)
     errors.push("unscored_names_at_least_5_percent");
-  const entries = await reservations.entries();
+  const entries = await (reservations.dailyEntries?.() ?? reservations.entries());
   const invalid = entries.some(e => !Number.isFinite(e.upperUsd) || e.upperUsd <= 0 ||
     (e.measuredUsd !== null && (!Number.isFinite(e.measuredUsd) || e.measuredUsd < 0)));
   if (invalid) errors.push("invalid_spend_evidence");

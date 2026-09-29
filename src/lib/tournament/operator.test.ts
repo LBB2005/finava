@@ -103,3 +103,12 @@ it("makes a failed saved report explicit without inventing measured spend", asyn
   expect(text).toContain("unknown measured USD; reserved upper USD: $0.25");
   expect(text.split("\n")).toHaveLength(4);
 });
+it('audits the combined daily budget including rehearsal reservations',async()=>{
+ const args=await setup();
+ const store={reserve:args.reservations.reserve.bind(args.reservations),measure:args.reservations.measure.bind(args.reservations),
+  entries:async()=>[{id:'live',upperUsd:3,measuredUsd:null}],
+  dailyEntries:async()=>[{id:'live',upperUsd:3,measuredUsd:null},{id:'dry',upperUsd:5,measuredUsd:null}]};
+ const result=await auditTournament({...args,reservations:store});
+ expect(result.spend.upperUsd).toBe(8);expect(result.spend.httpAttempts).toBe(2);
+ expect(result.errors).toContain('spend_not_below_daily_cap');
+});

@@ -9,6 +9,8 @@ export interface ReservationStore {
   reserve(id: string, upperUsd: number, cap: number): Promise<boolean>;
   measure(id: string, usd: number | null): Promise<void>;
   entries(): Promise<SpendReservation[]>;
+  /** Optional aggregate for a daily cap shared across rehearsal/production. */
+  dailyEntries?(): Promise<SpendReservation[]>;
 }
 export function tournamentCap(
   raw = process.env.TOURNAMENT_DAILY_USD_CAP,

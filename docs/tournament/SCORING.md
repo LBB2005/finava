@@ -162,10 +162,14 @@ mark; missing action state cannot silently recover.
 
 ## Spend and operational assumptions
 
-$8 default shared daily upper-bound reservation cap, configurable through
+$8 default shared daily upper-bound reservation cap across production and paid
+dry-run namespaces together, configurable through
 TOURNAMENT_DAILY_USD_CAP; zero disables paid requests. Reserve atomically before
 every HTTP attempt, including SDK retries. Retain reservations after failures
 and after successful settlement, so admission is conservative. No admin bypass.
+Each admission transaction reads both namespace budgets before writing its own
+reservation; either namespace exceeding its measured reservation blocks both.
+The daily operator audits combined spend; namespace entries retain attribution.
 Unknown routes/models are refused. Rate-card ceilings are an explicit assumption
 and must be checked when provider pricing changes; no software can guarantee an
 invoice amount under an unannounced vendor price change. Jev direct-account

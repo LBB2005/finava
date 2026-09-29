@@ -124,6 +124,9 @@ An interrupted paid step becomes unavailable rather than being spent again.
 
 Budget working state is separate in `tournamentBudget`, extending `live/budget.ts`.
 Reservations count every outbound attempt and stay reserved even on success.
+Production and paid rehearsals share one daily admission cap; a rehearsal cannot
+create a second allowance. Operator spending totals combine both namespaces,
+while request records retain their original namespace attribution.
 This deliberately underspends the cap. Unknown provider dollar usage stays null.
 Check current rate cards before changing model routes.
 
