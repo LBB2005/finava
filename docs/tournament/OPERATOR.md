@@ -6,13 +6,18 @@ The saved Codex heartbeat is `finava-daily-tournament-operator`, weekdays at
 
 The live activation status is controlled by the saved Codex automation. Setup
 requires code on main, verified live evidence, an inspected prospective two-name
-paid rehearsal, and a genuine first production batch with usable forecasts from
-both model arms. Failed rehearsal results are retained; fixes apply only to new
-production runs, never by replacing or replaying the rehearsal. No historical prediction
+paid rehearsal, and a genuine first production batch. Model budget skips remain
+explicit; startup must record which model arms returned numerical forecasts. Any
+pending model validation is checked on the next fresh daily allowance, without
+raising the cap or replaying a cohort. Failed rehearsal results are retained;
+fixes apply only to future runs, never by replacing or replaying the rehearsal. No historical prediction
 backfill is allowed. The first session is a bootstrap batch: its report must fail
 the missing baseline check. That failure cannot be waived or replaced with a
 fabricated row. The next exchange session can compare against this real baseline;
-activation does not certify that the bootstrap report passed every check.
+activation does not certify that the bootstrap report passed every check or
+that budget-skipped model arms produced forecasts. If any command fails, the
+routine stops; startup failure records are retained rather than retrospectively
+replacing them with a passing run.
 
 The GitHub workflow is a disabled-by-default manual fallback, without a second
 cron trigger. Do not enable two schedulers. The operator never installs or repairs
